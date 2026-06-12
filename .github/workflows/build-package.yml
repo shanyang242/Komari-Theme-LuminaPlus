@@ -46,4 +46,4 @@ jobs:
           files: |
             komaritheme-v*.zip
             preview.png
-          generate_release_notes: true
+          body_path: .github/release-notes/v1.1.3.md

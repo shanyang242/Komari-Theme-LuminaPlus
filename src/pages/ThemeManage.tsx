@@ -1,0 +1,826 @@
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Link, Navigate } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
+import {
+  ArrowLeft,
+  CircleDollarSign,
+  LayoutTemplate,
+  LayoutGrid,
+  Moon,
+  RefreshCw,
+  Rows3,
+  Save,
+  Search,
+  Sun,
+  SunMoon,
+} from "lucide-react";
+import { clsx } from "clsx";
+import { InstancePanel } from "@/components/instance/InstancePanel";
+import { Spinner } from "@/components/ui/Spinner";
+import { Flag } from "@/components/ui/Flag";
+import { usePublicConfig } from "@/hooks/usePublicConfig";
+import { queryClient } from "@/services/queryClient";
+import {
+  ApiRequestError,
+  getAdminClients,
+  getAdminPingTasks,
+  saveThemeSettings,
+} from "@/services/api";
+import type { AdminClient, PingTask, ThemeSettings } from "@/types/komari";
+import {
+  normalizeCostIgnoredNodes,
+  normalizeCostRateApiUrl,
+} from "@/utils/cost";
+import {
+  normalizeHomepagePingTaskBindings,
+  type HomepagePingTaskBindings,
+} from "@/utils/pingTasks";
+import {
+  DEFAULT_THEME_SETTINGS,
+  normalizeThemeSettings,
+  type Appearance,
+  type NodeViewMode,
+} from "@/utils/themeSettings";
+
+const APPEARANCE_OPTIONS = [
+  { value: "light", label: "浅色", icon: Sun },
+  { value: "system", label: "跟随系统", icon: SunMoon },
+  { value: "dark", label: "深色", icon: Moon },
+] as const;
+const NODE_VIEW_MODE_OPTIONS = [
+  { value: "large", label: "大卡片", icon: LayoutGrid },
+  { value: "compact", label: "小卡片", icon: Rows3 },
+] as const;
+
+function serializeBindings(bindings: HomepagePingTaskBindings) {
+  return JSON.stringify(
+    Object.entries(bindings)
+      .map(
+        ([taskId, clients]): [number, string[]] => [
+          Number(taskId),
+          [...clients].sort((left, right) => left.localeCompare(right)),
+        ],
+      )
+      .filter(([taskId]) => Number.isInteger(taskId) && taskId > 0)
+      .sort(([left], [right]) => Number(left) - Number(right)),
+  );
+}
+
+function serializeStringList(items: string[]) {
+  return JSON.stringify([...items].sort((left, right) => left.localeCompare(right)));
+}
+
+function sortTasks(tasks: PingTask[]) {
+  return [...tasks].sort((left, right) => {
+    if (left.weight !== right.weight) return left.weight - right.weight;
+    if (left.id !== right.id) return left.id - right.id;
+    return left.name.localeCompare(right.name);
+  });
+}
+
+function sortClients(clients: AdminClient[]) {
+  return [...clients].sort((left, right) => {
+    if (left.weight !== right.weight) return left.weight - right.weight;
+    return left.name.localeCompare(right.name);
+  });
+}
+
+function summarizeNodes(
+  uuids: string[],
+  clientsById: Map<string, AdminClient>,
+) {
+  if (uuids.length === 0) return "未绑定节点";
+  const names = uuids.map((uuid) => clientsById.get(uuid)?.name || uuid);
+  const summary = names.join("、");
+  return summary.length > 92 ? `${summary.slice(0, 92)}...` : summary;
+}
+
+function pruneBindings(bindings: HomepagePingTaskBindings) {
+  const normalized = normalizeHomepagePingTaskBindings(bindings);
+  const pruned: HomepagePingTaskBindings = {};
+
+  for (const [taskId, clients] of Object.entries(normalized)) {
+    if (clients.length > 0) {
+      pruned[taskId] = clients;
+    }
+  }
+
+  return pruned;
+}
+
+function applyClientAssignment(
+  bindings: HomepagePingTaskBindings,
+  taskId: number,
+  clientUuid: string,
+  checked: boolean,
+) {
+  const taskKey = String(taskId);
+  const next = pruneBindings(bindings);
+
+  for (const [currentTaskId, clients] of Object.entries(next)) {
+    const filtered = clients.filter((uuid) => uuid !== clientUuid);
+    if (filtered.length > 0) {
+      next[currentTaskId] = filtered;
+    } else {
+      delete next[currentTaskId];
+    }
+  }
+
+  if (checked) {
+    const selected = next[taskKey] ?? [];
+    next[taskKey] = Array.from(new Set([...selected, clientUuid])).sort((left, right) =>
+      left.localeCompare(right),
+    );
+  }
+
+  return next;
+}
+
+export function ThemeManage() {
+  const { data: config, isLoading: configLoading } = usePublicConfig();
+  const [draftAppearance, setDraftAppearance] = useState<Appearance>("system");
+  const [draftDesktopNodeViewMode, setDraftDesktopNodeViewMode] =
+    useState<NodeViewMode>("large");
+  const [draftMobileNodeViewMode, setDraftMobileNodeViewMode] =
+    useState<NodeViewMode>("compact");
+  const [draftBindings, setDraftBindings] = useState<HomepagePingTaskBindings>({});
+  const [draftShowCostSummary, setDraftShowCostSummary] = useState(true);
+  const [draftCompactShowTrafficTotal, setDraftCompactShowTrafficTotal] = useState(true);
+  const [draftCompactShowBilling, setDraftCompactShowBilling] = useState(true);
+  const [draftCostIgnoredText, setDraftCostIgnoredText] = useState("");
+  const [draftCostRateApiUrl, setDraftCostRateApiUrl] = useState(
+    DEFAULT_THEME_SETTINGS.costRateApiUrl,
+  );
+  const [expandedTaskId, setExpandedTaskId] = useState<number | null>(null);
+  const [taskSearch, setTaskSearch] = useState("");
+  const [nodeSearch, setNodeSearch] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [accessRevoked, setAccessRevoked] = useState(false);
+
+  const {
+    data: pingTasks,
+    isLoading: tasksLoading,
+    error: tasksError,
+  } = useQuery({
+    queryKey: ["admin", "ping-tasks"],
+    queryFn: getAdminPingTasks,
+    staleTime: 30_000,
+    retry: false,
+  });
+  const {
+    data: adminClients,
+    isLoading: clientsLoading,
+    error: clientsError,
+  } = useQuery({
+    queryKey: ["admin", "clients"],
+    queryFn: getAdminClients,
+    staleTime: 30_000,
+    retry: false,
+  });
+
+  const sourceThemeSettings = useMemo(
+    () => normalizeThemeSettings(config?.theme_settings),
+    [config?.theme_settings],
+  );
+  const sourceAppearance = sourceThemeSettings.defaultAppearance;
+  const sourceDesktopNodeViewMode = sourceThemeSettings.desktopNodeViewMode;
+  const sourceMobileNodeViewMode = sourceThemeSettings.mobileNodeViewMode;
+  const sourceBindings = sourceThemeSettings.homepagePingBindings;
+  const sourceShowCostSummary = sourceThemeSettings.showCostSummary;
+  const sourceCompactShowTrafficTotal = sourceThemeSettings.compactShowTrafficTotal;
+  const sourceCompactShowBilling = sourceThemeSettings.compactShowBilling;
+  const sourceCostIgnoredNodes = sourceThemeSettings.costIgnoredNodes;
+  const sourceCostIgnoredText = useMemo(
+    () => sourceCostIgnoredNodes.join("\n"),
+    [sourceCostIgnoredNodes],
+  );
+  const sourceCostRateApiUrl = sourceThemeSettings.costRateApiUrl;
+
+  // A content signature of the server-side settings. React Query hands back a new
+  // `config` object on every ["public"] refetch (focus, staleness, invalidation),
+  // which gives every `source*` value a new identity even when the bytes are
+  // identical. Keying the reseed on this signature — and tracking the last value
+  // we actually applied — prevents an identical refetch from wiping unsaved
+  // draft edits while still re-seeding when the server data genuinely changes.
+  const sourceSignature = useMemo(
+    () => JSON.stringify(sourceThemeSettings),
+    [sourceThemeSettings],
+  );
+  const lastSeededSignatureRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!config) return;
+    if (lastSeededSignatureRef.current === sourceSignature) return;
+    lastSeededSignatureRef.current = sourceSignature;
+    setDraftAppearance(sourceAppearance);
+    setDraftDesktopNodeViewMode(sourceDesktopNodeViewMode);
+    setDraftMobileNodeViewMode(sourceMobileNodeViewMode);
+    setDraftBindings(sourceBindings);
+    setDraftShowCostSummary(sourceShowCostSummary);
+    setDraftCompactShowTrafficTotal(sourceCompactShowTrafficTotal);
+    setDraftCompactShowBilling(sourceCompactShowBilling);
+    setDraftCostIgnoredText(sourceCostIgnoredText);
+    setDraftCostRateApiUrl(sourceCostRateApiUrl);
+  }, [
+    config,
+    sourceSignature,
+    sourceAppearance,
+    sourceDesktopNodeViewMode,
+    sourceMobileNodeViewMode,
+    sourceBindings,
+    sourceCompactShowBilling,
+    sourceCompactShowTrafficTotal,
+    sourceCostIgnoredText,
+    sourceCostRateApiUrl,
+    sourceShowCostSummary,
+  ]);
+
+  const sortedTasks = useMemo(() => sortTasks(pingTasks ?? []), [pingTasks]);
+  const sortedClients = useMemo(() => sortClients(adminClients ?? []), [adminClients]);
+  const clientsById = useMemo(
+    () => new Map(sortedClients.map((client) => [client.uuid, client])),
+    [sortedClients],
+  );
+
+  const filteredTasks = useMemo(() => {
+    const keyword = taskSearch.trim().toLowerCase();
+    if (!keyword) return sortedTasks;
+    return sortedTasks.filter((task) => {
+      return (
+        task.name.toLowerCase().includes(keyword) ||
+        String(task.id).includes(keyword) ||
+        task.type.toLowerCase().includes(keyword) ||
+        task.target.toLowerCase().includes(keyword)
+      );
+    });
+  }, [sortedTasks, taskSearch]);
+
+  const visibleClients = useMemo(() => {
+    const keyword = nodeSearch.trim().toLowerCase();
+    if (!keyword) return sortedClients;
+    return sortedClients.filter((client) => {
+      const group = String(client.group || "").toLowerCase();
+      const region = String(client.region || "").toLowerCase();
+      return (
+        client.name.toLowerCase().includes(keyword) ||
+        client.uuid.toLowerCase().includes(keyword) ||
+        group.includes(keyword) ||
+        region.includes(keyword)
+      );
+    });
+  }, [nodeSearch, sortedClients]);
+
+  const draftBindingsSerialized = useMemo(
+    () => serializeBindings(draftBindings),
+    [draftBindings],
+  );
+  const sourceBindingsSerialized = useMemo(
+    () => serializeBindings(sourceBindings),
+    [sourceBindings],
+  );
+  const draftCostIgnoredNodes = useMemo(
+    () => normalizeCostIgnoredNodes(draftCostIgnoredText),
+    [draftCostIgnoredText],
+  );
+  const draftCostIgnoredSerialized = useMemo(
+    () => serializeStringList(draftCostIgnoredNodes),
+    [draftCostIgnoredNodes],
+  );
+  const sourceCostIgnoredSerialized = useMemo(
+    () => serializeStringList(sourceCostIgnoredNodes),
+    [sourceCostIgnoredNodes],
+  );
+  const normalizedDraftCostRateApiUrl = normalizeCostRateApiUrl(draftCostRateApiUrl);
+  const isDirty =
+    draftAppearance !== sourceAppearance ||
+    draftDesktopNodeViewMode !== sourceDesktopNodeViewMode ||
+    draftMobileNodeViewMode !== sourceMobileNodeViewMode ||
+    draftBindingsSerialized !== sourceBindingsSerialized ||
+    draftShowCostSummary !== sourceShowCostSummary ||
+    draftCompactShowTrafficTotal !== sourceCompactShowTrafficTotal ||
+    draftCompactShowBilling !== sourceCompactShowBilling ||
+    draftCostIgnoredSerialized !== sourceCostIgnoredSerialized ||
+    normalizedDraftCostRateApiUrl !== sourceCostRateApiUrl;
+
+  // Clear the "已保存" banner once the user starts editing again, so a stale
+  // success message doesn't sit next to a dirty form.
+  useEffect(() => {
+    if (isDirty) setMessage(null);
+  }, [isDirty]);
+
+  const assignedNodeCount = useMemo(
+    () => Object.values(draftBindings).reduce((total, clients) => total + clients.length, 0),
+    [draftBindings],
+  );
+
+  const handleSave = async () => {
+    if (!config?.theme) return;
+    setSaving(true);
+    setError(null);
+    setMessage(null);
+    try {
+      const baseSettings: ThemeSettings & Record<string, unknown> = {
+        ...(config.theme_settings ?? {}),
+      };
+      delete baseSettings.homepagePingTask;
+      const nextSettings: ThemeSettings & Record<string, unknown> = {
+        ...baseSettings,
+        defaultAppearance: draftAppearance,
+        desktopNodeViewMode: draftDesktopNodeViewMode,
+        mobileNodeViewMode: draftMobileNodeViewMode,
+        homepagePingBindings: pruneBindings(draftBindings),
+        showCostSummary: draftShowCostSummary,
+        compactShowTrafficTotal: draftCompactShowTrafficTotal,
+        compactShowBilling: draftCompactShowBilling,
+        costIgnoredNodes: draftCostIgnoredNodes,
+        costRateApiUrl: normalizedDraftCostRateApiUrl,
+      };
+      await saveThemeSettings(config.theme, nextSettings);
+      await queryClient.invalidateQueries({ queryKey: ["public"] });
+      setMessage("主题设置已保存");
+    } catch (saveError) {
+      if (
+        saveError instanceof ApiRequestError &&
+        (saveError.status === 401 || saveError.status === 403)
+      ) {
+        setAccessRevoked(true);
+        return;
+      }
+      setError(saveError instanceof Error ? saveError.message : "保存失败");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleReset = () => {
+    setDraftAppearance(sourceAppearance);
+    setDraftDesktopNodeViewMode(sourceDesktopNodeViewMode);
+    setDraftMobileNodeViewMode(sourceMobileNodeViewMode);
+    setDraftBindings(sourceBindings);
+    setDraftShowCostSummary(sourceShowCostSummary);
+    setDraftCompactShowTrafficTotal(sourceCompactShowTrafficTotal);
+    setDraftCompactShowBilling(sourceCompactShowBilling);
+    setDraftCostIgnoredText(sourceCostIgnoredText);
+    setDraftCostRateApiUrl(sourceCostRateApiUrl);
+    setMessage(null);
+    setError(null);
+  };
+
+  if (configLoading) {
+    return (
+      <div className="flex min-h-[60vh] items-center justify-center">
+        <Spinner size={24} />
+      </div>
+    );
+  }
+
+  if (accessRevoked) {
+    return <Navigate to="/" replace />;
+  }
+
+  const adminAccessDenied =
+    (tasksError instanceof ApiRequestError &&
+      (tasksError.status === 401 || tasksError.status === 403)) ||
+    (clientsError instanceof ApiRequestError &&
+      (clientsError.status === 401 || clientsError.status === 403));
+
+  if (adminAccessDenied) {
+    return <Navigate to="/" replace />;
+  }
+
+  const adminError =
+    (tasksError instanceof Error ? tasksError.message : null) ||
+    (clientsError instanceof Error ? clientsError.message : null);
+  const noTasksYet = !tasksLoading && !clientsLoading && sortedTasks.length === 0;
+  const noFilteredTaskMatch = !tasksLoading && !clientsLoading && !noTasksYet && filteredTasks.length === 0;
+
+  return (
+    <div className="flex flex-col gap-5 py-2">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <Link to="/" className="instance-page-back">
+          <ArrowLeft size={14} />
+          返回首页
+        </Link>
+        <div className="theme-manage-toolbar-actions">
+          <button
+            type="button"
+            onClick={handleReset}
+            disabled={!isDirty || saving}
+            className="theme-manage-button"
+          >
+            <RefreshCw size={14} />
+            <span>重置</span>
+          </button>
+          <button
+            type="button"
+            onClick={handleSave}
+            disabled={!isDirty || saving}
+            className="theme-manage-button is-primary"
+          >
+            {saving ? <Spinner size={14} /> : <Save size={14} />}
+            <span>{saving ? "保存中" : "保存设置"}</span>
+          </button>
+        </div>
+      </div>
+
+      <InstancePanel
+        title="komaritheme 主题设置"
+        description="集中调整 komaritheme 的展示偏好与首页延迟绑定；保存后会立即应用到当前站点。"
+        aside={
+          <div className="text-right text-[11px] text-[var(--text-tertiary)]">
+            <div>主题: {config?.theme || "komaritheme"}</div>
+            <div>已绑定首页 Ping 节点 {assignedNodeCount} / {sortedClients.length}</div>
+          </div>
+        }
+      >
+        <div className="flex flex-col gap-3">
+          {message && (
+            <div
+              role="status"
+              aria-live="polite"
+              className="rounded-[12px] border border-[color-mix(in_srgb,var(--status-online)_28%,transparent)] bg-[color-mix(in_srgb,var(--status-online)_11%,var(--surface))] px-4 py-3 text-[13px] text-[var(--status-online)]"
+            >
+              {message}
+            </div>
+          )}
+          {error && (
+            <div
+              role="alert"
+              className="rounded-[12px] border border-[color-mix(in_srgb,var(--status-offline)_28%,transparent)] bg-[color-mix(in_srgb,var(--status-offline)_11%,var(--surface))] px-4 py-3 text-[13px] text-[var(--status-offline)]"
+            >
+              {error}
+            </div>
+          )}
+          {adminError && (
+            <div
+              role="alert"
+              className="rounded-[12px] border border-[color-mix(in_srgb,var(--status-offline)_28%,transparent)] bg-[color-mix(in_srgb,var(--status-offline)_11%,var(--surface))] px-4 py-3 text-[13px] text-[var(--status-offline)]"
+            >
+              无法读取后台 Ping 任务或节点列表: {adminError}
+            </div>
+          )}
+        </div>
+      </InstancePanel>
+
+      <InstancePanel
+        title="默认外观"
+        description="为首次访问或尚未手动切换外观的用户设置默认显示模式；后续仍可在首页右上角按需切换。"
+        aside={<LayoutTemplate size={16} />}
+      >
+        <div className="instance-segmented is-scrollable">
+          {APPEARANCE_OPTIONS.map(({ value, label, icon: Icon }) => (
+            <button
+              key={value}
+              type="button"
+              data-active={draftAppearance === value ? "true" : "false"}
+              aria-pressed={draftAppearance === value}
+              onClick={() => setDraftAppearance(value)}
+              className="inline-flex items-center justify-center gap-2"
+            >
+              <Icon size={14} />
+              <span>{label}</span>
+            </button>
+          ))}
+        </div>
+      </InstancePanel>
+
+      <InstancePanel
+        title="默认卡片视图"
+        description="分别设置桌面端与移动端的默认卡片尺寸；首页右上角按钮只临时切换当前设备的显示。"
+        aside={<LayoutGrid size={16} />}
+      >
+        <div className="grid gap-4 md:grid-cols-2">
+          <div className="surface-inset flex flex-col gap-3 px-4 py-4">
+            <div>
+              <div className="text-[13px] font-semibold text-[var(--text-primary)]">
+                桌面端默认
+              </div>
+              <div className="mt-1 text-[11px] text-[var(--text-tertiary)]">
+                适用于宽度大于 720px 的浏览器窗口。
+              </div>
+            </div>
+            <div className="instance-segmented is-scrollable">
+              {NODE_VIEW_MODE_OPTIONS.map(({ value, label, icon: Icon }) => (
+                <button
+                  key={value}
+                  type="button"
+                  data-active={draftDesktopNodeViewMode === value ? "true" : "false"}
+                  aria-pressed={draftDesktopNodeViewMode === value}
+                  onClick={() => setDraftDesktopNodeViewMode(value)}
+                  className="inline-flex items-center justify-center gap-2"
+                >
+                  <Icon size={14} />
+                  <span>{label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="surface-inset flex flex-col gap-3 px-4 py-4">
+            <div>
+              <div className="text-[13px] font-semibold text-[var(--text-primary)]">
+                移动端默认
+              </div>
+              <div className="mt-1 text-[11px] text-[var(--text-tertiary)]">
+                适用于宽度小于等于 720px 的手机或窄屏窗口。
+              </div>
+            </div>
+            <div className="instance-segmented is-scrollable">
+              {NODE_VIEW_MODE_OPTIONS.map(({ value, label, icon: Icon }) => (
+                <button
+                  key={value}
+                  type="button"
+                  data-active={draftMobileNodeViewMode === value ? "true" : "false"}
+                  aria-pressed={draftMobileNodeViewMode === value}
+                  onClick={() => setDraftMobileNodeViewMode(value)}
+                  className="inline-flex items-center justify-center gap-2"
+                >
+                  <Icon size={14} />
+                  <span>{label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      </InstancePanel>
+
+      <InstancePanel
+        title="小卡片显示项"
+        description="控制小卡片中间信息块的密度；实时速率始终显示，其他两项可以按需隐藏。"
+        aside={<Rows3 size={16} />}
+      >
+        <div className="grid gap-3 md:grid-cols-2">
+          <label className="surface-inset flex items-center justify-between gap-3 px-4 py-3">
+            <span className="min-w-0">
+              <span className="block text-[13px] font-medium text-[var(--text-primary)]">
+                显示累计流量
+              </span>
+              <span className="mt-1 block text-[11px] text-[var(--text-tertiary)]">
+                展示出站与入站累计流量。
+              </span>
+            </span>
+            <input
+              type="checkbox"
+              checked={draftCompactShowTrafficTotal}
+              onChange={(event) => setDraftCompactShowTrafficTotal(event.target.checked)}
+              className="h-4 w-4 shrink-0 accent-[var(--accent-500)]"
+            />
+          </label>
+          <label className="surface-inset flex items-center justify-between gap-3 px-4 py-3">
+            <span className="min-w-0">
+              <span className="block text-[13px] font-medium text-[var(--text-primary)]">
+                显示费用到期
+              </span>
+              <span className="mt-1 block text-[11px] text-[var(--text-tertiary)]">
+                展示续费价格与剩余天数。
+              </span>
+            </span>
+            <input
+              type="checkbox"
+              checked={draftCompactShowBilling}
+              onChange={(event) => setDraftCompactShowBilling(event.target.checked)}
+              className="h-4 w-4 shrink-0 accent-[var(--accent-500)]"
+            />
+          </label>
+        </div>
+      </InstancePanel>
+
+      <InstancePanel
+        title="服务器花费"
+        description="首页花费统计会使用实时汇率计算年化、月均与剩余价值；忽略列表中的节点不会计入费用。"
+        aside={<CircleDollarSign size={16} />}
+      >
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(280px,0.8fr)]">
+          <div className="flex flex-col gap-3">
+            <label className="surface-inset flex items-center justify-between gap-3 px-4 py-3">
+              <span className="min-w-0 text-[13px] font-medium text-[var(--text-primary)]">
+                显示首页花费统计
+              </span>
+              <input
+                type="checkbox"
+                checked={draftShowCostSummary}
+                onChange={(event) => setDraftShowCostSummary(event.target.checked)}
+                className="h-4 w-4 shrink-0 accent-[var(--accent-500)]"
+              />
+            </label>
+            <label className="flex flex-col gap-2">
+              <span className="text-[12px] font-medium text-[var(--text-secondary)]">
+                实时汇率接口
+              </span>
+              <input
+                value={draftCostRateApiUrl}
+                onChange={(event) => setDraftCostRateApiUrl(event.target.value)}
+                placeholder={DEFAULT_THEME_SETTINGS.costRateApiUrl}
+                className="surface-inset w-full px-3 py-2 text-[13px] outline-none"
+              />
+            </label>
+          </div>
+          <label className="flex min-w-0 flex-col gap-2">
+            <span className="text-[12px] font-medium text-[var(--text-secondary)]">
+              忽略计费节点
+            </span>
+            <textarea
+              value={draftCostIgnoredText}
+              onChange={(event) => setDraftCostIgnoredText(event.target.value)}
+              placeholder="每行一个节点名称 / UUID，也可以用逗号分隔"
+              className="surface-inset min-h-[112px] w-full resize-y px-3 py-2 text-[13px] outline-none"
+            />
+          </label>
+        </div>
+      </InstancePanel>
+
+      <InstancePanel
+        title="主页延迟检测"
+        description={
+          <>
+            为首页延迟卡片指定对应的 Ping 任务与展示节点。每个节点只能归属一个任务；未分配的节点不会显示延迟。
+            {" "}
+            如果当前还没有可用任务，请先前往
+            {" "}
+            <a href="/admin/ping" className="theme-manage-inline-link">
+              后台 Ping 管理
+            </a>
+            {" "}
+            创建任务，再回来完成绑定。
+          </>
+        }
+        aside={
+          <div className="text-[11px] text-[var(--text-tertiary)]">
+            {tasksLoading || clientsLoading ? "载入中" : `${sortedTasks.length} 个任务`}
+          </div>
+        }
+      >
+        <div className="flex flex-col gap-4">
+          <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(240px,320px)]">
+            <label className="surface-inset flex items-center gap-2 px-3 py-2">
+              <Search size={14} className="text-[var(--text-tertiary)]" />
+              <input
+                value={taskSearch}
+                onChange={(event) => setTaskSearch(event.target.value)}
+                placeholder="搜索 Ping 任务名称 / ID / 类型 / 目标"
+                aria-label="搜索 Ping 任务"
+                className="min-w-0 flex-1 bg-transparent text-[13px] outline-none placeholder:text-[var(--text-tertiary)]"
+              />
+            </label>
+            <div className="surface-inset flex items-center justify-between gap-3 px-3 py-2 text-[12px] text-[var(--text-secondary)]">
+              <span>首页绑定总数</span>
+              <strong className="text-[var(--text-primary)]">
+                {assignedNodeCount} / {sortedClients.length}
+              </strong>
+            </div>
+          </div>
+
+          {(tasksLoading || clientsLoading) && (
+            <div className="flex min-h-[20vh] items-center justify-center">
+              <Spinner size={24} />
+            </div>
+          )}
+
+          {noTasksYet && (
+            <div className="theme-manage-empty-state">
+              <span>当前还没有可用于首页展示的 Ping 任务。</span>
+              <a href="/admin/ping" className="theme-manage-inline-link">
+                前往后台 Ping 管理创建任务
+              </a>
+            </div>
+          )}
+
+          {noFilteredTaskMatch && (
+            <div className="surface-inset px-4 py-5 text-[13px] text-[var(--text-secondary)]">
+              没有匹配的 Ping 任务。
+            </div>
+          )}
+
+          {!tasksLoading &&
+            !clientsLoading &&
+            !noTasksYet &&
+            filteredTasks.map((task) => {
+              const assigned = draftBindings[String(task.id)] ?? [];
+              const isExpanded = expandedTaskId === task.id;
+              return (
+                <section key={task.id} className="surface-inset px-4 py-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h3 className="text-[15px] font-semibold text-[var(--text-primary)]">
+                          {task.name || `任务 #${task.id}`}
+                        </h3>
+                        <span className="rounded-full border border-[var(--hairline)] px-2 py-0.5 text-[10px] font-medium uppercase tracking-[0.08em] text-[var(--text-tertiary)]">
+                          {task.type || "icmp"}
+                        </span>
+                        <span className="rounded-full border border-[var(--hairline)] px-2 py-0.5 text-[10px] font-medium text-[var(--text-tertiary)]">
+                          {task.interval}s
+                        </span>
+                        <span className="rounded-full border border-[var(--hairline)] px-2 py-0.5 text-[10px] font-medium text-[var(--text-tertiary)]">
+                          ID {task.id}
+                        </span>
+                      </div>
+                      <div className="mt-2 text-[12px] text-[var(--text-secondary)]">
+                        <span className="font-medium text-[var(--text-primary)]">
+                          已绑定 {assigned.length} 个节点
+                        </span>
+                        <span className="mx-2 text-[var(--text-tertiary)]">·</span>
+                        <span title={task.target || ""}>{task.target || "未填写目标"}</span>
+                      </div>
+                      <p
+                        className="mt-2 text-[12px] text-[var(--text-tertiary)]"
+                        title={summarizeNodes(assigned, clientsById)}
+                      >
+                        {summarizeNodes(assigned, clientsById)}
+                      </p>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      {assigned.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setDraftBindings((prev) => {
+                              const next = { ...prev };
+                              delete next[String(task.id)];
+                              return pruneBindings(next);
+                            });
+                          }}
+                          className="theme-manage-button is-compact is-danger"
+                        >
+                          清空节点
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        aria-expanded={isExpanded}
+                        onClick={() => {
+                          setExpandedTaskId((current) => (current === task.id ? null : task.id));
+                          setNodeSearch("");
+                        }}
+                        className="theme-manage-button is-compact"
+                      >
+                        {isExpanded ? "收起节点" : "编辑节点"}
+                      </button>
+                    </div>
+                  </div>
+
+                  {isExpanded && (
+                    <div className="mt-4 border-t border-[var(--hairline)] pt-4">
+                      <label className="surface-inset flex items-center gap-2 px-3 py-2">
+                        <Search size={14} className="text-[var(--text-tertiary)]" />
+                        <input
+                          value={nodeSearch}
+                          onChange={(event) => setNodeSearch(event.target.value)}
+                          placeholder="搜索节点名称 / UUID / 分组 / 地区"
+                          aria-label="搜索节点"
+                          className="min-w-0 flex-1 bg-transparent text-[13px] outline-none placeholder:text-[var(--text-tertiary)]"
+                        />
+                      </label>
+
+                      <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+                        {visibleClients.map((client) => {
+                          const checked = assigned.includes(client.uuid);
+                          const subtitle = [client.group, client.uuid].filter(Boolean).join(" · ");
+                          return (
+                            <label
+                              key={client.uuid}
+                              className={clsx(
+                                "flex cursor-pointer items-start gap-3 rounded-[12px] border px-3 py-3 transition-colors",
+                                checked
+                                  ? "border-[var(--border-strong)] bg-[color-mix(in_srgb,var(--hover-bg)_72%,transparent)]"
+                                  : "border-[var(--hairline)] bg-transparent hover:bg-[var(--hover-bg)]",
+                              )}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={(event) => {
+                                  const nextChecked = event.target.checked;
+                                  setDraftBindings((prev) =>
+                                    applyClientAssignment(prev, task.id, client.uuid, nextChecked),
+                                  );
+                                }}
+                                className="mt-1 h-4 w-4 shrink-0 accent-[var(--accent-500)]"
+                              />
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-center gap-2">
+                                  <Flag region={client.region} size={14} />
+                                  <span className="truncate text-[13px] font-medium text-[var(--text-primary)]">
+                                    {client.name}
+                                  </span>
+                                </div>
+                                <div className="mt-1 text-[11px] text-[var(--text-tertiary)]">
+                                  {subtitle || client.region || "未设置分组"}
+                                </div>
+                              </div>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </section>
+              );
+            })}
+        </div>
+      </InstancePanel>
+    </div>
+  );
+}

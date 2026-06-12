@@ -1,0 +1,182 @@
+/* komaritheme color tokens.
+   Dark-mode palette is pixel-sampled from the reference card image
+   (2026-04-21_01-07-38.png). Every hex here corresponds to an actual
+   pixel color in the reference. */
+
+:root,
+[data-appearance="light"] {
+  --bg-0: #f4f4f5;
+  --bg-1: #ffffff;
+
+  --surface: #ffffff;
+  --surface-elev: #ffffff;
+  --surface-sunken: #f4f4f5;
+  --shell-bg: #0f0f10;
+  --shell-top: #111112;
+  --shell-title-bg: #0a0a0b;
+  --shell-divider: rgba(255, 255, 255, 0.05);
+
+  --border: rgba(24, 24, 27, 0.08);
+  --border-subtle: rgba(24, 24, 27, 0.06);
+  --border-strong: rgba(24, 24, 27, 0.13);
+  --hairline: rgba(24, 24, 27, 0.08);
+
+  --text-primary: #18181b;
+  --text-secondary: #52525b;
+  --text-tertiary: #71717a;
+  --text-on-strong: #ffffff;
+
+  --fill-primary: #18181b;
+  --fill-secondary: rgba(24, 24, 27, 0.1);
+  --fill-tertiary: rgba(24, 24, 27, 0.05);
+
+  --hover-bg: #f4f4f5;
+
+  --progress-bg: #e4e4e7;
+  --progress-cpu: #3b82f6;
+  --progress-memory: #8b5cf6;
+  --progress-swap: #6366f1;
+  --progress-disk: #e97b35;
+  --progress-network: #10b981;
+  --progress-traffic-from: #3b82f6;
+  --progress-traffic-to: #8b5cf6;
+
+  --status-success: #2f9e65;
+  --status-warning: #e9a23b;
+  --status-error: #dc2626;
+  --status-info: #3b82f6;
+  --status-online: #2f9e65;
+  --status-offline: #dc2626;
+
+  --tag-red-bg: #fee2e2;
+  --tag-red-fg: #b91c1c;
+  --tag-gray-bg: #e5e5e5;
+  --tag-gray-fg: #3f3f46;
+
+  --shadow-card:
+    0 0 0 1px rgba(24, 24, 27, 0.03),
+    0 1px 2px rgba(24, 24, 27, 0.04),
+    0 12px 32px -16px rgba(24, 24, 27, 0.12);
+
+  --ring: rgba(59, 130, 246, 0.35);
+}
+
+[data-appearance="dark"] {
+  /* Pixel-sampled from reference image */
+  --bg-0: #090909;
+  --bg-1: #0d0d0e;
+
+  --surface: #0f0f10;
+  --surface-elev: #121214;
+  --surface-sunken: #0b0b0c;
+  --shell-bg: #0d0d0e;
+  --shell-top: #111112;
+  --shell-title-bg: #0a0a0b;
+  --shell-divider: rgba(255, 255, 255, 0.05);
+
+  --border: rgba(255, 255, 255, 0.055);
+  --border-subtle: rgba(255, 255, 255, 0.04);
+  --border-strong: rgba(255, 255, 255, 0.1);
+  --hairline: rgba(255, 255, 255, 0.06);
+
+  --text-primary: #dddddf;
+  --text-secondary: #a5a5aa;
+  --text-tertiary: #76767c;
+  --text-on-strong: #0f0f0f;
+
+  --fill-primary: #e6e6e6;
+  --fill-secondary: rgba(230, 230, 230, 0.075);
+  --fill-tertiary: rgba(230, 230, 230, 0.045);
+
+  --hover-bg: #17171a;
+
+  --progress-bg: #26262a;
+  --progress-cpu: #5d88ff;
+  --progress-memory: #a35cf5;
+  --progress-swap: #818cf8;
+  --progress-disk: #f1873d;
+  --progress-network: #5bbb8a;
+  --progress-traffic-from: #5d88ff;
+  --progress-traffic-to: #a35cf5;
+
+  --status-success: #61c08f;
+  --status-warning: #d4a54a;
+  --status-error: #d84e45;
+  --status-info: #5d88ff;
+  --status-online: #61c08f;
+  --status-offline: #d84e45;
+
+  --tag-red-bg: #9e3426;
+  --tag-red-fg: #ececee;
+  --tag-gray-bg: #26262a;
+  --tag-gray-fg: #dedee1;
+
+  --shadow-card:
+    0 0 0 1px rgba(255, 255, 255, 0.012),
+    0 1px 2px rgba(0, 0, 0, 0.05),
+    0 10px 20px -20px rgba(0, 0, 0, 0.35);
+
+  --ring: rgba(93, 136, 255, 0.46);
+}
+
+/* Tag palette — DStatus-style pills colored by tag color name */
+[data-tag="ruby"],
+[data-tag="red"],
+[data-tag="tomato"],
+[data-tag="crimson"] {
+  --tag-bg: var(--tag-red-bg);
+  --tag-fg: var(--tag-red-fg);
+  --tag-border: transparent;
+}
+[data-tag="gold"],
+[data-tag="amber"],
+[data-tag="yellow"] {
+  --tag-bg: rgba(233, 162, 59, 0.16);
+  --tag-fg: #e9a23b;
+  --tag-border: transparent;
+}
+[data-tag="orange"],
+[data-tag="bronze"],
+[data-tag="brown"] {
+  --tag-bg: rgba(233, 123, 53, 0.16);
+  --tag-fg: #e97b35;
+  --tag-border: transparent;
+}
+[data-tag="green"],
+[data-tag="grass"],
+[data-tag="mint"],
+[data-tag="jade"],
+[data-tag="lime"] {
+  --tag-bg: rgba(84, 180, 132, 0.16);
+  --tag-fg: #54b484;
+  --tag-border: transparent;
+}
+[data-tag="blue"],
+[data-tag="sky"],
+[data-tag="cyan"],
+[data-tag="teal"] {
+  --tag-bg: rgba(78, 129, 238, 0.16);
+  --tag-fg: #4e81ee;
+  --tag-border: transparent;
+}
+[data-tag="violet"],
+[data-tag="purple"],
+[data-tag="plum"],
+[data-tag="iris"],
+[data-tag="indigo"],
+[data-tag="pink"] {
+  --tag-bg: rgba(157, 90, 239, 0.16);
+  --tag-fg: #9d5aef;
+  --tag-border: transparent;
+}
+[data-tag="slate"] {
+  --tag-bg: rgba(100, 116, 139, 0.16);
+  --tag-fg: #64748b;
+  --tag-border: transparent;
+}
+[data-tag="gray"],
+[data-tag=""] {
+  --tag-bg: var(--tag-gray-bg);
+  --tag-fg: var(--tag-gray-fg);
+  --tag-border: transparent;
+}

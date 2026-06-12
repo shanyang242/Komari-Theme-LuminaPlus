@@ -1,0 +1,46 @@
+{
+  "name": "komaritheme",
+  "private": true,
+  "version": "1.1.2",
+  "type": "module",
+  "description": "komaritheme",
+  "author": "codex&shark&shanyang",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview",
+    "package": "node scripts/make-preview.mjs && node scripts/package-zip.mjs",
+    "lint": "eslint .",
+    "typecheck": "tsc -b",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "release": "node scripts/release.mjs"
+  },
+  "dependencies": {
+    "@fontsource-variable/inter": "^5.2.5",
+    "@tanstack/react-query": "^5.80.7",
+    "clsx": "^2.1.1",
+    "lucide-react": "^0.473.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "react-router-dom": "^7.17.0",
+    "uplot": "^1.6.32",
+    "uplot-react": "^1.2.4",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.0.6",
+    "@types/node": "^22.13.1",
+    "@types/react": "^19.0.8",
+    "@types/react-dom": "^19.0.3",
+    "@vitejs/plugin-react": "^4.3.4",
+    "eslint": "^9.39.4",
+    "eslint-plugin-react-hooks": "^5.2.0",
+    "globals": "^17.6.0",
+    "tailwindcss": "^4.0.6",
+    "typescript": "^5.7.3",
+    "typescript-eslint": "^8.61.0",
+    "vite": "^7.0.0",
+    "vitest": "^3.2.6"
+  }
+}

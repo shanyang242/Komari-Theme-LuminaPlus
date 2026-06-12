@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" href="/favicon.ico" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta
+      name="keywords"
+      content="komaritheme, server monitor, real-time server status, server performance dashboard, monitoring tool" />
+    <meta name="theme-color" content="#000000" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="komaritheme" />
+    <meta property="og:title" content="komaritheme" />
+    <meta property="og:description" content="A Komari monitor theme." />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="komaritheme" />
+    <meta name="twitter:description" content="A Komari monitor theme." />
+    <title>komaritheme</title>
+    <meta name="description" content="A Komari monitor theme." />
+    <script>
+      (() => {
+        const parseAppearance = (value) => {
+          if (value == null) return null;
+          try {
+            const parsed = JSON.parse(value);
+            if (parsed === "system" || parsed === "light" || parsed === "dark") {
+              return parsed;
+            }
+          } catch {
+            if (value === "system" || value === "light" || value === "dark") {
+              return value;
+            }
+          }
+          return null;
+        };
+
+        let appearance = "system";
+        try {
+          const explicitAppearance = parseAppearance(localStorage.getItem("appearance"));
+          const cachedDefaultAppearance = parseAppearance(
+            localStorage.getItem("appearance_default"),
+          );
+          if (explicitAppearance != null) {
+            appearance = explicitAppearance;
+            localStorage.setItem("appearance", JSON.stringify(explicitAppearance));
+          } else if (cachedDefaultAppearance != null) {
+            appearance = cachedDefaultAppearance;
+            localStorage.setItem(
+              "appearance_default",
+              JSON.stringify(cachedDefaultAppearance),
+            );
+          }
+        } catch {
+          appearance = "system";
+        }
+        const resolved =
+          appearance === "system"
+            ? window.matchMedia("(prefers-color-scheme: dark)").matches
+              ? "dark"
+              : "light"
+            : appearance;
+        document.documentElement.dataset.appearance = resolved;
+        document.documentElement.style.colorScheme = resolved;
+        const meta = document.querySelector('meta[name="theme-color"]');
+        if (meta) meta.content = resolved === "dark" ? "#000000" : "#F5F5F7";
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root" class="relative z-30"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

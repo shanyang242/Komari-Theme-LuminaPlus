@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useSyncExternalStore } from "react";
+import { useCallback, useSyncExternalStore } from "react";
 import { useThemeSettings } from "@/hooks/useThemeSettings";
 import { isNodeViewMode, type NodeViewMode } from "@/utils/themeSettings";
 
@@ -126,14 +126,43 @@ function clearMediaSubscription() {
   subscribedMediaQuery = null;
 }
 
+// Cross-tab override sync. Registered once for the whole module (on the first
+// subscriber) rather than per-hook-instance — every consumer shares the same
+// global state, so N components would otherwise install N identical listeners.
+const handleStorage = (event: StorageEvent) => {
+  if (event.key === DESKTOP_OVERRIDE_KEY || event.key === MOBILE_OVERRIDE_KEY) {
+    refreshSnapshot();
+    emit();
+  }
+};
+let storageListenerAttached = false;
+
+function ensureStorageSubscription() {
+  if (storageListenerAttached || typeof window === "undefined") return;
+  window.addEventListener("storage", handleStorage);
+  storageListenerAttached = true;
+}
+
+function clearStorageSubscription() {
+  if (!storageListenerAttached || typeof window === "undefined") return;
+  window.removeEventListener("storage", handleStorage);
+  storageListenerAttached = false;
+}
+
 function subscribe(listener: () => void) {
   const wasEmpty = listeners.size === 0;
   listeners.add(listener);
-  if (wasEmpty) ensureMediaSubscription();
+  if (wasEmpty) {
+    ensureMediaSubscription();
+    ensureStorageSubscription();
+  }
 
   return () => {
     listeners.delete(listener);
-    if (listeners.size === 0) clearMediaSubscription();
+    if (listeners.size === 0) {
+      clearMediaSubscription();
+      clearStorageSubscription();
+    }
   };
 }
 
@@ -145,20 +174,6 @@ export function useViewMode() {
       ? themeSettings.mobileNodeViewMode
       : themeSettings.desktopNodeViewMode;
   const mode = state.override ?? defaultMode;
-
-  useEffect(() => {
-    const handleStorage = (event: StorageEvent) => {
-      if (
-        event.key === DESKTOP_OVERRIDE_KEY ||
-        event.key === MOBILE_OVERRIDE_KEY
-      ) {
-        refreshSnapshot();
-        emit();
-      }
-    };
-    window.addEventListener("storage", handleStorage);
-    return () => window.removeEventListener("storage", handleStorage);
-  }, []);
 
   const setMode = useCallback(
     (next: NodeViewMode) => {

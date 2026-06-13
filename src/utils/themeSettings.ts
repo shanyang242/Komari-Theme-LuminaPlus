@@ -1,5 +1,6 @@
 import type { ThemeSettings } from "@/types/komari";
 import { DEFAULT_COST_RATE_API_URL, normalizeCostIgnoredNodes, normalizeCostRateApiUrl } from "@/utils/cost";
+import { normalizeHomeGroupOrder } from "@/utils/homeNodes";
 import { normalizeHomepagePingTaskBindings, type HomepagePingTaskBindings } from "@/utils/pingTasks";
 
 export type Appearance = "system" | "light" | "dark";
@@ -14,6 +15,7 @@ export interface ResolvedThemeSettings {
   homepagePingBindings: HomepagePingTaskBindings;
   showHomeOverview: boolean;
   showGroupTabs: boolean;
+  homeGroupOrder: string[];
   moveOfflineNodesBack: boolean;
   showCostSummary: boolean;
   compactShowTrafficTotal: boolean;
@@ -31,6 +33,7 @@ export const DEFAULT_THEME_SETTINGS: ResolvedThemeSettings = {
   homepagePingBindings: {},
   showHomeOverview: true,
   showGroupTabs: true,
+  homeGroupOrder: [],
   moveOfflineNodesBack: true,
   showCostSummary: true,
   compactShowTrafficTotal: true,
@@ -83,6 +86,7 @@ export function normalizeThemeSettings(
     homepagePingBindings: normalizeHomepagePingTaskBindings(settings?.homepagePingBindings),
     showHomeOverview: enabledUnlessFalse(settings?.showHomeOverview),
     showGroupTabs: enabledUnlessFalse(settings?.showGroupTabs),
+    homeGroupOrder: normalizeHomeGroupOrder(settings?.homeGroupOrder),
     moveOfflineNodesBack: enabledUnlessFalse(settings?.moveOfflineNodesBack),
     showCostSummary: enabledUnlessFalse(settings?.showCostSummary),
     compactShowTrafficTotal: enabledUnlessFalse(settings?.compactShowTrafficTotal),

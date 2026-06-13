@@ -118,7 +118,7 @@ export function CostSummary() {
             value={summary ? `${summary.nodeCount}` : "计算中"}
           />
           <CostMetric
-            label="总价值"
+            label="年化总支出"
             value={summary ? formatCnyMoney(summary.totalCny) : "计算中"}
           />
           <CostMetric
@@ -126,7 +126,7 @@ export function CostSummary() {
             value={summary ? formatCnyMoney(summary.monthlyCny) : "--"}
           />
           <CostMetric
-            label="剩余总价值"
+            label="剩余价值"
             value={summary ? formatCnyMoney(summary.remainingCny) : "--"}
           />
           <div className="cost-summary-detail-list" aria-label="服务器剩余价值明细">

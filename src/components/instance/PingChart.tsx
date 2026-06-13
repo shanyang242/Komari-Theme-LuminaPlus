@@ -5,11 +5,13 @@ import { Eye, EyeOff, RefreshCw } from "lucide-react";
 import { usePingRecords } from "@/hooks/useRecords";
 import { InstancePanel } from "./InstancePanel";
 import {
+  colorForSeries,
   formatHourMinuteAxis,
   formatTooltipTime,
   getChartTooltipPosition,
   toChartSeconds,
   useResponsiveChartSize,
+  type ChartTooltipState,
 } from "./chartShared";
 import {
   cutPeakValues,
@@ -20,25 +22,6 @@ import { latencyHeatColor, lossHeatColor } from "@/utils/metricTone";
 import { usePreferences } from "@/hooks/usePreferences";
 import type { PingRecord } from "@/types/komari";
 import type { TimedMetricPoint } from "./chartData";
-
-interface TooltipState {
-  show: boolean;
-  left: number;
-  top: number;
-  rows: Array<{ label: string; value: string; color: string }>;
-  time: string;
-}
-
-function colorForTask(index: number) {
-  const colors = [
-    "#5d88ff",
-    "#61c08f",
-    "#a35cf5",
-    "#f1873d",
-    "#d4a54a",
-  ] as const;
-  return colors[index % colors.length];
-}
 
 // Caller passes an ascending-sorted array so min/max/p50/p99 all reuse one sort
 // instead of re-sorting (and instead of `Math.min(...values)`, which can throw
@@ -69,7 +52,7 @@ export function PingChart({
   const [connectNulls, setConnectNulls] = useState(false);
   const [cutPeak, setCutPeak] = useState(false);
   const chartRef = useRef<uPlot.AlignedData>([[]]);
-  const [tooltip, setTooltip] = useState<TooltipState>({
+  const [tooltip, setTooltip] = useState<ChartTooltipState>({
     show: false,
     left: 0,
     top: 0,
@@ -93,7 +76,7 @@ export function PingChart({
     );
   }, [tasks]);
   const taskColors = useMemo(
-    () => new Map(tasks.map((task, index) => [task.id, colorForTask(index)] as const)),
+    () => new Map(tasks.map((task, index) => [task.id, colorForSeries(index)] as const)),
     [tasks],
   );
   const taskKeySet = useMemo(() => new Set(tasks.map((task) => String(task.id))), [tasks]);
@@ -247,7 +230,7 @@ export function PingChart({
         { label: "time" },
         ...tasks.map((task, index) => ({
           label: taskLabels.get(task.id) ?? `任务 #${task.id}`,
-          stroke: taskColors.get(task.id) ?? colorForTask(index),
+          stroke: taskColors.get(task.id) ?? colorForSeries(index),
           width: 1.7,
           spanGaps: connectNulls,
           show: !hiddenTasks.has(task.id),
@@ -283,7 +266,7 @@ export function PingChart({
               return {
                 label: taskLabels.get(task.id) ?? `任务 #${task.id}`,
                 value: value == null ? "—" : `${value.toFixed(1)} ms`,
-                color: taskColors.get(task.id) ?? colorForTask(taskIndex),
+                color: taskColors.get(task.id) ?? colorForSeries(taskIndex),
               };
             });
             const anchorY = typeof u.cursor.top === "number" ? u.cursor.top : bbox.height * 0.5;
@@ -355,7 +338,7 @@ export function PingChart({
         total,
         lost,
         loss,
-        color: taskColors.get(task.id) ?? colorForTask(index),
+        color: taskColors.get(task.id) ?? colorForSeries(index),
       };
     });
   }, [data, taskColors, tasks]);

@@ -322,7 +322,11 @@ function NodeTrafficSection({
   );
 }
 
-function NodeHealthSection({
+// Memoized: across the ~1s metrics ticks that re-render the parent card, every
+// prop here is reference-stable — ping data refreshes ~every 60s, the hover
+// state only moves on pointer interaction, and the onHover props are stable
+// setState identities — so the latency/loss bars subtree skips per-tick work.
+const NodeHealthSection = memo(function NodeHealthSection({
   ping,
   pingBuckets,
   redrawKey,
@@ -443,7 +447,7 @@ function NodeHealthSection({
       </div>
     </div>
   );
-}
+});
 
 function NodeCardFooter({
   expire,

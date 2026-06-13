@@ -6,12 +6,14 @@ import { useLoadRecords } from "@/hooks/useRecords";
 import { useNodeMetrics } from "@/hooks/useNode";
 import { InstancePanel } from "./InstancePanel";
 import {
+  CHART_PALETTE,
   createTimeAxisFormatter,
   formatChartCoverageTime,
   formatTooltipTime,
   getChartTooltipPosition,
   toChartSeconds,
   useResponsiveChartSize,
+  type ChartTooltipState,
 } from "./chartShared";
 import {
   fillMissingMetricPoints,
@@ -21,31 +23,23 @@ import { formatBytes, formatTrafficRateLabel } from "@/utils/format";
 import { usePreferences } from "@/hooks/usePreferences";
 import type { NodeMetrics } from "@/types/komari";
 
-const CHART_COLORS = {
-  cpu: "#5d88ff",
-  memory: "#a35cf5",
-  disk: "#f1873d",
-  success: "#61c08f",
-  warning: "#d4a54a",
-} as const;
-
 const LOAD_HISTORY_SAMPLE_LIMIT = 360;
 const LOAD_HISTORY_RENDER_LIMIT = 720;
 const REALTIME_HISTORY_SEED_LIMIT = 120;
 const REALTIME_SAMPLE_LIMIT = 600;
 
 const CPU_KEYS = ["cpu"];
-const CPU_COLORS = [CHART_COLORS.cpu];
+const CPU_COLORS = [CHART_PALETTE.cpu];
 const MEMORY_KEYS = ["ram", "swap"];
-const MEMORY_COLORS = [CHART_COLORS.memory, CHART_COLORS.warning];
+const MEMORY_COLORS = [CHART_PALETTE.memory, CHART_PALETTE.warning];
 const DISK_KEYS = ["disk"];
-const DISK_COLORS = [CHART_COLORS.disk];
+const DISK_COLORS = [CHART_PALETTE.disk];
 const NETWORK_KEYS = ["netIn", "netOut"];
-const NETWORK_COLORS = [CHART_COLORS.success, CHART_COLORS.cpu];
+const NETWORK_COLORS = [CHART_PALETTE.success, CHART_PALETTE.cpu];
 const CONNECTION_KEYS = ["connections", "udp"];
-const CONNECTION_COLORS = [CHART_COLORS.memory, CHART_COLORS.cpu];
+const CONNECTION_COLORS = [CHART_PALETTE.memory, CHART_PALETTE.cpu];
 const PROCESS_KEYS = ["process"];
-const PROCESS_COLORS = [CHART_COLORS.warning];
+const PROCESS_COLORS = [CHART_PALETTE.warning];
 const SERIES_LABELS: Record<string, string> = {
   cpu: "CPU",
   ram: "内存",
@@ -78,13 +72,6 @@ interface ChartPoint {
   [key: string]: number | null;
 }
 
-interface TooltipState {
-  show: boolean;
-  left: number;
-  top: number;
-  rows: Array<{ label: string; value: string; color: string }>;
-  time: string;
-}
 
 function metricData(points: ChartPoint[], keys: string[]): uPlot.AlignedData {
   const times = points.map((point) => point.time);
@@ -282,7 +269,7 @@ const ChartCard = memo(function ChartCard({
   axisSize?: number;
 }) {
   const dataRef = useRef<uPlot.AlignedData>([[]]);
-  const [tooltip, setTooltip] = useState<TooltipState>({
+  const [tooltip, setTooltip] = useState<ChartTooltipState>({
     show: false,
     left: 0,
     top: 0,

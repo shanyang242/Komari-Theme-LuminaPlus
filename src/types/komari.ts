@@ -139,6 +139,7 @@ export interface ThemeSettings {
   homepagePingBindings?: Record<string, string[]>;
   showHomeOverview?: boolean;
   showGroupTabs?: boolean;
+  homeGroupOrder?: string[];
   moveOfflineNodesBack?: boolean;
   showCostSummary?: boolean;
   compactShowTrafficTotal?: boolean;

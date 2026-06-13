@@ -1,8 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, Navigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import {
   ArrowLeft,
+  ChevronDown,
+  ChevronUp,
   CircleDollarSign,
   LayoutTemplate,
   LayoutGrid,
@@ -33,6 +35,11 @@ import {
   normalizeCostRateApiUrl,
 } from "@/utils/cost";
 import {
+  dedupeGroupLabels,
+  normalizeHomeGroupOrder,
+  sortHomeGroupOptions,
+} from "@/utils/homeNodes";
+import {
   normalizeHomepagePingTaskBindings,
   type HomepagePingTaskBindings,
 } from "@/utils/pingTasks";
@@ -41,6 +48,7 @@ import {
   normalizeThemeSettings,
   type Appearance,
   type NodeViewMode,
+  type ResolvedThemeSettings,
 } from "@/utils/themeSettings";
 
 const APPEARANCE_OPTIONS = [
@@ -52,24 +60,6 @@ const NODE_VIEW_MODE_OPTIONS = [
   { value: "large", label: "大卡片", icon: LayoutGrid },
   { value: "compact", label: "小卡片", icon: Rows3 },
 ] as const;
-
-function serializeBindings(bindings: HomepagePingTaskBindings) {
-  return JSON.stringify(
-    Object.entries(bindings)
-      .map(
-        ([taskId, clients]): [number, string[]] => [
-          Number(taskId),
-          [...clients].sort((left, right) => left.localeCompare(right)),
-        ],
-      )
-      .filter(([taskId]) => Number.isInteger(taskId) && taskId > 0)
-      .sort(([left], [right]) => Number(left) - Number(right)),
-  );
-}
-
-function serializeStringList(items: string[]) {
-  return JSON.stringify([...items].sort((left, right) => left.localeCompare(right)));
-}
 
 function sortTasks(tasks: PingTask[]) {
   return [...tasks].sort((left, right) => {
@@ -171,6 +161,28 @@ function applyAvailableClientAssignments(
   return next;
 }
 
+function pickManagedThemeSettings(settings: ResolvedThemeSettings): ThemeSettings {
+  return {
+    defaultAppearance: settings.defaultAppearance,
+    desktopNodeViewMode: settings.desktopNodeViewMode,
+    mobileNodeViewMode: settings.mobileNodeViewMode,
+    homepagePingBindings: settings.homepagePingBindings,
+    showHomeOverview: settings.showHomeOverview,
+    showGroupTabs: settings.showGroupTabs,
+    homeGroupOrder: settings.homeGroupOrder,
+    moveOfflineNodesBack: settings.moveOfflineNodesBack,
+    showCostSummary: settings.showCostSummary,
+    compactShowTrafficTotal: settings.compactShowTrafficTotal,
+    compactShowBilling: settings.compactShowBilling,
+    costIgnoredNodes: settings.costIgnoredNodes,
+    costRateApiUrl: settings.costRateApiUrl,
+  };
+}
+
+function managedSettingsSignature(settings: ThemeSettings & Record<string, unknown>) {
+  return JSON.stringify(pickManagedThemeSettings(normalizeThemeSettings(settings)));
+}
+
 export function ThemeManage() {
   const { data: config, isLoading: configLoading } = usePublicConfig();
   const [draftAppearance, setDraftAppearance] = useState<Appearance>("system");
@@ -181,6 +193,7 @@ export function ThemeManage() {
   const [draftBindings, setDraftBindings] = useState<HomepagePingTaskBindings>({});
   const [draftShowHomeOverview, setDraftShowHomeOverview] = useState(true);
   const [draftShowGroupTabs, setDraftShowGroupTabs] = useState(true);
+  const [draftHomeGroupOrder, setDraftHomeGroupOrder] = useState<string[]>([]);
   const [draftMoveOfflineNodesBack, setDraftMoveOfflineNodesBack] = useState(true);
   const [draftShowCostSummary, setDraftShowCostSummary] = useState(true);
   const [draftCompactShowTrafficTotal, setDraftCompactShowTrafficTotal] = useState(true);
@@ -222,23 +235,6 @@ export function ThemeManage() {
     () => normalizeThemeSettings(config?.theme_settings),
     [config?.theme_settings],
   );
-  const sourceAppearance = sourceThemeSettings.defaultAppearance;
-  const sourceDesktopNodeViewMode = sourceThemeSettings.desktopNodeViewMode;
-  const sourceMobileNodeViewMode = sourceThemeSettings.mobileNodeViewMode;
-  const sourceBindings = sourceThemeSettings.homepagePingBindings;
-  const sourceShowHomeOverview = sourceThemeSettings.showHomeOverview;
-  const sourceShowGroupTabs = sourceThemeSettings.showGroupTabs;
-  const sourceMoveOfflineNodesBack = sourceThemeSettings.moveOfflineNodesBack;
-  const sourceShowCostSummary = sourceThemeSettings.showCostSummary;
-  const sourceCompactShowTrafficTotal = sourceThemeSettings.compactShowTrafficTotal;
-  const sourceCompactShowBilling = sourceThemeSettings.compactShowBilling;
-  const sourceCostIgnoredNodes = sourceThemeSettings.costIgnoredNodes;
-  const sourceCostIgnoredText = useMemo(
-    () => sourceCostIgnoredNodes.join("\n"),
-    [sourceCostIgnoredNodes],
-  );
-  const sourceCostRateApiUrl = sourceThemeSettings.costRateApiUrl;
-
   // A content signature of the server-side settings. React Query hands back a new
   // `config` object on every ["public"] refetch (focus, staleness, invalidation),
   // which gives every `source*` value a new identity even when the bytes are
@@ -246,43 +242,35 @@ export function ThemeManage() {
   // we actually applied — prevents an identical refetch from wiping unsaved
   // draft edits while still re-seeding when the server data genuinely changes.
   const sourceSignature = useMemo(
-    () => JSON.stringify(sourceThemeSettings),
+    () => JSON.stringify(pickManagedThemeSettings(sourceThemeSettings)),
     [sourceThemeSettings],
   );
   const lastSeededSignatureRef = useRef<string | null>(null);
+
+  // Single source of truth for pushing server settings into the draft fields —
+  // used by both the reseed effect and the reset button, so they can't drift.
+  const seedDrafts = useCallback((next: ResolvedThemeSettings) => {
+    setDraftAppearance(next.defaultAppearance);
+    setDraftDesktopNodeViewMode(next.desktopNodeViewMode);
+    setDraftMobileNodeViewMode(next.mobileNodeViewMode);
+    setDraftBindings(next.homepagePingBindings);
+    setDraftShowHomeOverview(next.showHomeOverview);
+    setDraftShowGroupTabs(next.showGroupTabs);
+    setDraftHomeGroupOrder(next.homeGroupOrder);
+    setDraftMoveOfflineNodesBack(next.moveOfflineNodesBack);
+    setDraftShowCostSummary(next.showCostSummary);
+    setDraftCompactShowTrafficTotal(next.compactShowTrafficTotal);
+    setDraftCompactShowBilling(next.compactShowBilling);
+    setDraftCostIgnoredText(next.costIgnoredNodes.join("\n"));
+    setDraftCostRateApiUrl(next.costRateApiUrl);
+  }, []);
 
   useEffect(() => {
     if (!config) return;
     if (lastSeededSignatureRef.current === sourceSignature) return;
     lastSeededSignatureRef.current = sourceSignature;
-    setDraftAppearance(sourceAppearance);
-    setDraftDesktopNodeViewMode(sourceDesktopNodeViewMode);
-    setDraftMobileNodeViewMode(sourceMobileNodeViewMode);
-    setDraftBindings(sourceBindings);
-    setDraftShowHomeOverview(sourceShowHomeOverview);
-    setDraftShowGroupTabs(sourceShowGroupTabs);
-    setDraftMoveOfflineNodesBack(sourceMoveOfflineNodesBack);
-    setDraftShowCostSummary(sourceShowCostSummary);
-    setDraftCompactShowTrafficTotal(sourceCompactShowTrafficTotal);
-    setDraftCompactShowBilling(sourceCompactShowBilling);
-    setDraftCostIgnoredText(sourceCostIgnoredText);
-    setDraftCostRateApiUrl(sourceCostRateApiUrl);
-  }, [
-    config,
-    sourceSignature,
-    sourceAppearance,
-    sourceDesktopNodeViewMode,
-    sourceMobileNodeViewMode,
-    sourceMoveOfflineNodesBack,
-    sourceBindings,
-    sourceCompactShowBilling,
-    sourceCompactShowTrafficTotal,
-    sourceCostIgnoredText,
-    sourceCostRateApiUrl,
-    sourceShowGroupTabs,
-    sourceShowHomeOverview,
-    sourceShowCostSummary,
-  ]);
+    seedDrafts(sourceThemeSettings);
+  }, [config, sourceSignature, sourceThemeSettings, seedDrafts]);
 
   const sortedTasks = useMemo(() => sortTasks(pingTasks ?? []), [pingTasks]);
   const sortedClients = useMemo(() => sortClients(adminClients ?? []), [adminClients]);
@@ -290,6 +278,25 @@ export function ThemeManage() {
     () => new Map(sortedClients.map((client) => [client.uuid, client])),
     [sortedClients],
   );
+
+  // Groups actually present in the backend, ordered the way the homepage tabs
+  // will render them given the current draft order (configured groups first,
+  // then any not-yet-ordered groups). The user reorders this list directly.
+  const availableGroups = useMemo(
+    () => dedupeGroupLabels(sortedClients.map((client) => client.group)),
+    [sortedClients],
+  );
+  const orderedDraftGroups = useMemo(
+    () => sortHomeGroupOptions(availableGroups, draftHomeGroupOrder),
+    [availableGroups, draftHomeGroupOrder],
+  );
+  const moveGroup = (index: number, direction: -1 | 1) => {
+    const target = index + direction;
+    if (target < 0 || target >= orderedDraftGroups.length) return;
+    const next = [...orderedDraftGroups];
+    [next[index], next[target]] = [next[target], next[index]];
+    setDraftHomeGroupOrder(next);
+  };
 
   const filteredTasks = useMemo(() => {
     const keyword = taskSearch.trim().toLowerCase();
@@ -319,40 +326,56 @@ export function ThemeManage() {
     });
   }, [nodeSearch, sortedClients]);
 
-  const draftBindingsSerialized = useMemo(
-    () => serializeBindings(draftBindings),
-    [draftBindings],
-  );
-  const sourceBindingsSerialized = useMemo(
-    () => serializeBindings(sourceBindings),
-    [sourceBindings],
-  );
   const draftCostIgnoredNodes = useMemo(
     () => normalizeCostIgnoredNodes(draftCostIgnoredText),
     [draftCostIgnoredText],
   );
-  const draftCostIgnoredSerialized = useMemo(
-    () => serializeStringList(draftCostIgnoredNodes),
-    [draftCostIgnoredNodes],
-  );
-  const sourceCostIgnoredSerialized = useMemo(
-    () => serializeStringList(sourceCostIgnoredNodes),
-    [sourceCostIgnoredNodes],
-  );
   const normalizedDraftCostRateApiUrl = normalizeCostRateApiUrl(draftCostRateApiUrl);
-  const isDirty =
-    draftAppearance !== sourceAppearance ||
-    draftDesktopNodeViewMode !== sourceDesktopNodeViewMode ||
-    draftMobileNodeViewMode !== sourceMobileNodeViewMode ||
-    draftBindingsSerialized !== sourceBindingsSerialized ||
-    draftShowHomeOverview !== sourceShowHomeOverview ||
-    draftShowGroupTabs !== sourceShowGroupTabs ||
-    draftMoveOfflineNodesBack !== sourceMoveOfflineNodesBack ||
-    draftShowCostSummary !== sourceShowCostSummary ||
-    draftCompactShowTrafficTotal !== sourceCompactShowTrafficTotal ||
-    draftCompactShowBilling !== sourceCompactShowBilling ||
-    draftCostIgnoredSerialized !== sourceCostIgnoredSerialized ||
-    normalizedDraftCostRateApiUrl !== sourceCostRateApiUrl;
+
+  // The settings payload built from the current draft. It is the single source
+  // for both the save request and the dirty check — adding a new setting means
+  // touching only this object (and seedDrafts), not six parallel call sites.
+  const draftThemeSettings = useMemo<ThemeSettings>(
+    () => ({
+      defaultAppearance: draftAppearance,
+      desktopNodeViewMode: draftDesktopNodeViewMode,
+      mobileNodeViewMode: draftMobileNodeViewMode,
+      homepagePingBindings: pruneBindings(draftBindings),
+      showHomeOverview: draftShowHomeOverview,
+      showGroupTabs: draftShowGroupTabs,
+      homeGroupOrder: normalizeHomeGroupOrder(draftHomeGroupOrder),
+      moveOfflineNodesBack: draftMoveOfflineNodesBack,
+      showCostSummary: draftShowCostSummary,
+      compactShowTrafficTotal: draftCompactShowTrafficTotal,
+      compactShowBilling: draftCompactShowBilling,
+      costIgnoredNodes: draftCostIgnoredNodes,
+      costRateApiUrl: normalizedDraftCostRateApiUrl,
+    }),
+    [
+      draftAppearance,
+      draftDesktopNodeViewMode,
+      draftMobileNodeViewMode,
+      draftBindings,
+      draftShowHomeOverview,
+      draftShowGroupTabs,
+      draftHomeGroupOrder,
+      draftMoveOfflineNodesBack,
+      draftShowCostSummary,
+      draftCompactShowTrafficTotal,
+      draftCompactShowBilling,
+      draftCostIgnoredNodes,
+      normalizedDraftCostRateApiUrl,
+    ],
+  );
+
+  // Compare only settings this page actually manages. Hidden settings such as
+  // enableAdminButton/showPingChart are preserved on save via baseSettings, but
+  // must not make this form appear dirty forever.
+  const draftSignature = useMemo(
+    () => managedSettingsSignature(draftThemeSettings as ThemeSettings & Record<string, unknown>),
+    [draftThemeSettings],
+  );
+  const isDirty = draftSignature !== sourceSignature;
 
   // Clear the "已保存" banner once the user starts editing again, so a stale
   // success message doesn't sit next to a dirty form.
@@ -377,18 +400,7 @@ export function ThemeManage() {
       delete baseSettings.homepagePingTask;
       const nextSettings: ThemeSettings & Record<string, unknown> = {
         ...baseSettings,
-        defaultAppearance: draftAppearance,
-        desktopNodeViewMode: draftDesktopNodeViewMode,
-        mobileNodeViewMode: draftMobileNodeViewMode,
-        homepagePingBindings: pruneBindings(draftBindings),
-        showHomeOverview: draftShowHomeOverview,
-        showGroupTabs: draftShowGroupTabs,
-        moveOfflineNodesBack: draftMoveOfflineNodesBack,
-        showCostSummary: draftShowCostSummary,
-        compactShowTrafficTotal: draftCompactShowTrafficTotal,
-        compactShowBilling: draftCompactShowBilling,
-        costIgnoredNodes: draftCostIgnoredNodes,
-        costRateApiUrl: normalizedDraftCostRateApiUrl,
+        ...draftThemeSettings,
       };
       await saveThemeSettings(config.theme, nextSettings);
       await queryClient.invalidateQueries({ queryKey: ["public"] });
@@ -408,18 +420,7 @@ export function ThemeManage() {
   };
 
   const handleReset = () => {
-    setDraftAppearance(sourceAppearance);
-    setDraftDesktopNodeViewMode(sourceDesktopNodeViewMode);
-    setDraftMobileNodeViewMode(sourceMobileNodeViewMode);
-    setDraftBindings(sourceBindings);
-    setDraftShowHomeOverview(sourceShowHomeOverview);
-    setDraftShowGroupTabs(sourceShowGroupTabs);
-    setDraftMoveOfflineNodesBack(sourceMoveOfflineNodesBack);
-    setDraftShowCostSummary(sourceShowCostSummary);
-    setDraftCompactShowTrafficTotal(sourceCompactShowTrafficTotal);
-    setDraftCompactShowBilling(sourceCompactShowBilling);
-    setDraftCostIgnoredText(sourceCostIgnoredText);
-    setDraftCostRateApiUrl(sourceCostRateApiUrl);
+    seedDrafts(sourceThemeSettings);
     setMessage(null);
     setError(null);
   };
@@ -656,6 +657,61 @@ export function ThemeManage() {
             />
           </label>
         </div>
+
+        <div className="mt-4">
+          <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+            <span className="text-[13px] font-medium text-[var(--text-primary)]">分组排序</span>
+            <span className="text-[11px] text-[var(--text-tertiary)]">
+              调整首页分组 Tab 的显示顺序；未列出的分组按后端顺序排在后面。
+            </span>
+          </div>
+          {orderedDraftGroups.length === 0 ? (
+            <p className="surface-inset mt-2 px-4 py-3 text-[12px] text-[var(--text-tertiary)]">
+              {clientsLoading ? "正在加载分组…" : "暂无分组（节点未设置分组时无需排序）"}
+            </p>
+          ) : (
+            <ul className="mt-2 flex flex-col gap-2">
+              {orderedDraftGroups.map((group, index) => (
+                <li
+                  key={group}
+                  className="surface-inset flex items-center justify-between gap-3 px-4 py-2.5"
+                >
+                  <span className="flex min-w-0 items-center gap-2">
+                    <span className="tabular text-[12px] text-[var(--text-tertiary)]">
+                      {index + 1}
+                    </span>
+                    <span
+                      className="truncate text-[13px] text-[var(--text-primary)]"
+                      title={group}
+                    >
+                      {group}
+                    </span>
+                  </span>
+                  <span className="flex shrink-0 items-center gap-1">
+                    <button
+                      type="button"
+                      disabled={index === 0}
+                      onClick={() => moveGroup(index, -1)}
+                      className="theme-manage-button is-compact"
+                      aria-label={`上移 ${group}`}
+                    >
+                      <ChevronUp size={14} />
+                    </button>
+                    <button
+                      type="button"
+                      disabled={index === orderedDraftGroups.length - 1}
+                      onClick={() => moveGroup(index, 1)}
+                      className="theme-manage-button is-compact"
+                      aria-label={`下移 ${group}`}
+                    >
+                      <ChevronDown size={14} />
+                    </button>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
       </InstancePanel>
 
       <InstancePanel
@@ -701,7 +757,7 @@ export function ThemeManage() {
 
       <InstancePanel
         title="服务器花费"
-        description="首页花费统计会使用实时汇率计算年化、月均与剩余价值；忽略列表中的节点不会计入费用。"
+        description="首页花费统计会使用实时汇率计算年化总支出、月均支出与剩余价值；忽略列表中的节点不会计入费用。"
         aside={<CircleDollarSign size={16} />}
       >
         <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(280px,0.8fr)]">

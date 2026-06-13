@@ -20,22 +20,15 @@ export function useNodeCardModel(uuid: string, pingBucketCount?: number) {
   const ping = usePingMini(uuid);
   const pingBuckets = usePingMiniBuckets(ping, pingBucketCount);
 
-  return useMemo(() => {
-    if (!meta || !metrics) {
-      return {
-        node: undefined,
-        trafficTrend,
-        ping,
-        pingBuckets,
-      };
-    }
-
-    const node = { ...meta, ...metrics };
+  // Meta-derived fields — tag parsing, expiry, renewal price, OS lookup — only
+  // change when meta changes (rarely), so they must not recompute on every ~1s
+  // metrics tick. Kept in a dedicated memo keyed on meta alone.
+  const metaModel = useMemo(() => {
+    if (!meta) return null;
     const tags = parseTags(meta.tags);
     const subtitleParts = [meta.group, meta.public_remark]
       .map((part) => part?.trim())
       .filter((part): part is string => Boolean(part));
-    const subtitle = joinDisplayParts(subtitleParts);
     const subtitleLabels = new Set(subtitleParts.map((part) => part.toLowerCase()));
     const compactFooterTags = tags.filter(
       (tag) => !subtitleLabels.has(tag.label.trim().toLowerCase()),
@@ -46,37 +39,58 @@ export function useNodeCardModel(uuid: string, pingBucketCount?: number) {
         : meta.group
           ? [{ label: meta.group, color: "gray" }]
           : [];
-    const expire = formatExpireDays(meta.expired_at);
-    const loadBaseline = meta.cpu_cores > 0 ? meta.cpu_cores : 4;
-    const isOffline = metrics.online === false;
-
     return {
-      node,
-      trafficTrend,
-      ping,
-      pingBuckets,
       tags,
       footerTags: fallbackFooterTags,
       compactFooterTags,
-      subtitle,
-      expire,
+      subtitle: joinDisplayParts(subtitleParts),
+      expire: formatExpireDays(meta.expired_at),
       expireColor: getExpireTextColor(meta.expired_at),
-      uptime: formatUptimeDays(metrics.uptime),
       renewalPrice: formatRenewalPrice(meta),
+      osName: resolveOsInfo(meta.os).name,
+      loadBaseline: meta.cpu_cores > 0 ? meta.cpu_cores : 4,
+    };
+  }, [meta]);
+
+  // Ping-derived colors only change when the ping item changes.
+  const pingModel = useMemo(
+    () => ({
       latencyColor: latencyHeatColor(ping.lastValue),
       lossColor: lossHeatColor(ping.loss),
-      loadBaseline,
+      hasHomepagePingBinding: ping.isAssigned,
+    }),
+    [ping],
+  );
+
+  return useMemo(() => {
+    if (!meta || !metrics || !metaModel) {
+      return {
+        node: undefined,
+        trafficTrend,
+        ping,
+        pingBuckets,
+      };
+    }
+
+    const { loadBaseline } = metaModel;
+
+    return {
+      node: { ...meta, ...metrics },
+      trafficTrend,
+      ping,
+      pingBuckets,
+      ...metaModel,
+      ...pingModel,
+      uptime: formatUptimeDays(metrics.uptime),
       loadFraction: Math.max(0, Math.min(1, metrics.load1 / loadBaseline)),
       upRate: formatTrafficRate(metrics.netUp),
       downRate: formatTrafficRate(metrics.netDown),
-      hasHomepagePingBinding: ping.isAssigned,
       isOnline: metrics.online === true,
-      isOffline,
+      isOffline: metrics.online === false,
       // The duration itself is computed in OfflineMask with a ticker so it keeps
       // advancing while the node stays offline (metrics — and thus this memo —
       // stop updating). Here we only expose the last-seen timestamp.
       offlineSince: metrics.updatedAt,
-      osName: resolveOsInfo(meta.os).name,
     };
-  }, [meta, metrics, ping, pingBuckets, trafficTrend]);
+  }, [meta, metrics, metaModel, pingModel, ping, pingBuckets, trafficTrend]);
 }

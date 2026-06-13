@@ -39,6 +39,17 @@ jobs:
             komaritheme-v*.zip
             preview.png
 
+      - name: Resolve release notes
+        if: startsWith(github.ref, 'refs/tags/')
+        id: release-notes
+        shell: bash
+        run: |
+          notes=".github/release-notes/${GITHUB_REF_NAME}.md"
+          if [[ ! -f "$notes" ]]; then
+            notes=".github/release-notes/v1.1.4.md"
+          fi
+          echo "path=$notes" >> "$GITHUB_OUTPUT"
+
       - name: Publish GitHub release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
@@ -46,4 +57,4 @@ jobs:
           files: |
             komaritheme-v*.zip
             preview.png
-          body_path: .github/release-notes/v1.1.3.md
+          body_path: ${{ steps.release-notes.outputs.path }}

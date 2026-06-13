@@ -536,7 +536,11 @@ function CompactNodeInfoStrip({
   );
 }
 
-function CompactNodeHealth({
+// Memoized: every prop is ping-derived and stays reference-stable across the
+// ~1s metrics ticks that re-render the parent card (ping data only refreshes
+// ~every 60s), so this skips re-rendering the latency/loss HealthBars subtree —
+// the dominant per-tick DOM cost — until the ping data actually changes.
+const CompactNodeHealth = memo(function CompactNodeHealth({
   ping,
   pingBuckets,
   latencyColor,
@@ -575,7 +579,7 @@ function CompactNodeHealth({
       </CompactHealthItem>
     </div>
   );
-}
+});
 
 export const CompactNodeCard = memo(function CompactNodeCard({
   uuid,

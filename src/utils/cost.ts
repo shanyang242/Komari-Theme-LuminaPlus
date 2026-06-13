@@ -4,6 +4,7 @@ const COST_TARGET_CURRENCY = "CNY";
 export const DEFAULT_COST_RATE_API_URL = "https://api.frankfurter.dev/v2/rates?base=USD";
 const RATE_CACHE_TTL_MS = 60 * 60 * 1000;
 const RATE_CACHE_KEY_PREFIX = "komaritheme:cost-rates:";
+const RATE_REQUEST_TIMEOUT_MS = 10_000;
 
 const CURRENCY_ALIASES: Record<string, string> = {
   "$": "USD",
@@ -266,7 +267,10 @@ export async function getExchangeRates(rateApiUrl: string): Promise<ExchangeRate
   if (cached) return cached;
 
   try {
-    const response = await fetch(rateApiUrl, { cache: "no-store" });
+    const response = await fetch(rateApiUrl, {
+      cache: "no-store",
+      signal: AbortSignal.timeout(RATE_REQUEST_TIMEOUT_MS),
+    });
     if (!response.ok) {
       throw new Error(`rate http ${response.status}`);
     }

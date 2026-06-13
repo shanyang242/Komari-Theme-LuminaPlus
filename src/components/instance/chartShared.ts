@@ -1,6 +1,38 @@
 import { useEffect, useState } from "react";
 import type uPlot from "uplot";
 
+// Shared chart palette. LoadChart keys colors by metric (cpu/memory/…) while
+// PingChart cycles them per task; both draw from this single source so the hex
+// values can't drift between the two charts.
+export const CHART_PALETTE = {
+  cpu: "#5d88ff",
+  memory: "#a35cf5",
+  disk: "#f1873d",
+  success: "#61c08f",
+  warning: "#d4a54a",
+} as const;
+
+const CHART_SERIES_COLORS = [
+  CHART_PALETTE.cpu,
+  CHART_PALETTE.success,
+  CHART_PALETTE.memory,
+  CHART_PALETTE.disk,
+  CHART_PALETTE.warning,
+] as const;
+
+export function colorForSeries(index: number): string {
+  return CHART_SERIES_COLORS[index % CHART_SERIES_COLORS.length];
+}
+
+// Shared hover-tooltip state shape for the uPlot charts (LoadChart / PingChart).
+export interface ChartTooltipState {
+  show: boolean;
+  left: number;
+  top: number;
+  rows: Array<{ label: string; value: string; color: string }>;
+  time: string;
+}
+
 interface TimeRangeOption {
   label: string;
   value: number;

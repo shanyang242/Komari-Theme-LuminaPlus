@@ -129,9 +129,55 @@ function commit(next: Partial<PrefsState>) {
   emit();
 }
 
+// When in "system" mode, re-resolve against the OS preference. Named (not an
+// inline closure) so the listeners below can be removed again.
+function refreshSystemAppearance() {
+  if (snapshot.appearance === "system") {
+    commit({ appearance: "system" });
+  }
+}
+
+function handleVisibilityChange() {
+  if (!document.hidden) refreshSystemAppearance();
+}
+
+let systemListenersAttached = false;
+
+function ensureSystemListeners() {
+  if (systemListenersAttached || typeof window === "undefined") return;
+  systemListenersAttached = true;
+  const mediaQuery = getSystemAppearanceMediaQuery();
+  if (mediaQuery) {
+    if (typeof mediaQuery.addEventListener === "function") {
+      mediaQuery.addEventListener("change", refreshSystemAppearance);
+    } else {
+      mediaQuery.addListener(refreshSystemAppearance);
+    }
+  }
+  window.addEventListener("focus", refreshSystemAppearance);
+  document.addEventListener("visibilitychange", handleVisibilityChange);
+}
+
+function clearSystemListeners() {
+  if (!systemListenersAttached || typeof window === "undefined") return;
+  systemListenersAttached = false;
+  const mediaQuery = getSystemAppearanceMediaQuery();
+  if (mediaQuery) {
+    if (typeof mediaQuery.removeEventListener === "function") {
+      mediaQuery.removeEventListener("change", refreshSystemAppearance);
+    } else {
+      mediaQuery.removeListener(refreshSystemAppearance);
+    }
+  }
+  window.removeEventListener("focus", refreshSystemAppearance);
+  document.removeEventListener("visibilitychange", handleVisibilityChange);
+}
+
 // Initialize at module load — before React renders — so the persisted appearance
 // is on <html> ahead of first paint (no flash) and none of this runs during the
-// render phase. The server-side default (when there's no explicit preference) is
+// render phase. The system-preference listeners are attached lazily by the first
+// subscriber (and torn down with the last) instead of leaking for the page
+// lifetime. The server-side default (when there's no explicit preference) is
 // applied separately by the effect in usePreferences, which reads it from the
 // shared React Query ["public"] cache instead of a duplicate fetch here.
 function initializeAppearance() {
@@ -145,24 +191,6 @@ function initializeAppearance() {
     resolvedAppearance: resolveAppearance(stored.appearance),
   };
   applyResolvedAppearance(snapshot.resolvedAppearance);
-
-  const refreshSystemAppearance = () => {
-    if (snapshot.appearance === "system") {
-      commit({ appearance: "system" });
-    }
-  };
-  const mediaQuery = getSystemAppearanceMediaQuery();
-  if (mediaQuery) {
-    if (typeof mediaQuery.addEventListener === "function") {
-      mediaQuery.addEventListener("change", refreshSystemAppearance);
-    } else {
-      mediaQuery.addListener(refreshSystemAppearance);
-    }
-  }
-  window.addEventListener("focus", refreshSystemAppearance);
-  document.addEventListener("visibilitychange", () => {
-    if (!document.hidden) refreshSystemAppearance();
-  });
 }
 
 if (typeof window !== "undefined" && typeof document !== "undefined") {
@@ -170,8 +198,13 @@ if (typeof window !== "undefined" && typeof document !== "undefined") {
 }
 
 function subscribe(l: () => void) {
+  const wasEmpty = listeners.size === 0;
   listeners.add(l);
-  return () => listeners.delete(l);
+  if (wasEmpty) ensureSystemListeners();
+  return () => {
+    listeners.delete(l);
+    if (listeners.size === 0) clearSystemListeners();
+  };
 }
 
 function getSnapshot() {

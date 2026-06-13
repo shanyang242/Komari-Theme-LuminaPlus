@@ -10,11 +10,16 @@ import {
   getHomeGroupLabel,
   getHomeGroupOptions,
   HOME_ALL_GROUP,
+  sortHomeGroupOptions,
   sortHomeNodeSummaries,
 } from "@/utils/homeNodes";
 import { CompactNodeCard } from "./CompactNodeCard";
 import { CostSummary } from "./CostSummary";
 import { NodeCard } from "./NodeCard";
+
+// Joins uuids into a single signature string for memo keying. A comma is safe:
+// node uuids are standard UUIDs ([0-9a-f-]) and never contain one.
+const UUID_KEY_SEPARATOR = ",";
 
 interface HomeOverview {
   totalNodes: number;
@@ -161,7 +166,10 @@ export function NodeGrid() {
     [me?.logged_in, nodes],
   );
   const overview = useMemo(() => buildHomeOverview(visibleNodes), [visibleNodes]);
-  const groupOptions = useMemo(() => getHomeGroupOptions(visibleNodes), [visibleNodes]);
+  const groupOptions = useMemo(
+    () => sortHomeGroupOptions(getHomeGroupOptions(visibleNodes), themeSettings.homeGroupOrder),
+    [visibleNodes, themeSettings.homeGroupOrder],
+  );
   const filteredNodes = useMemo(() => {
     const filtered =
       selectedGroup === HOME_ALL_GROUP
@@ -176,7 +184,23 @@ export function NodeGrid() {
     }
   }, [groupOptions, selectedGroup]);
 
-  const uuids = filteredNodes.map((node) => node.uuid);
+  // The summary objects get a fresh reference every ~1s tick, so filteredNodes
+  // (and a naive uuids map) rebuild constantly. Key the rendered card list on a
+  // stable uuid signature instead, so the list only re-renders when the set or
+  // order actually changes — each card subscribes to its own store slices and
+  // updates independently.
+  const uuidsKey = useMemo(
+    () => filteredNodes.map((node) => node.uuid).join(UUID_KEY_SEPARATOR),
+    [filteredNodes],
+  );
+  const cards = useMemo(() => {
+    const uuids = uuidsKey ? uuidsKey.split(UUID_KEY_SEPARATOR) : [];
+    return uuids.map((uuid) => (
+      <div key={uuid} className="min-w-0">
+        {mode === "compact" ? <CompactNodeCard uuid={uuid} /> : <NodeCard uuid={uuid} />}
+      </div>
+    ));
+  }, [uuidsKey, mode]);
   const showGroupTabs = themeSettings.showGroupTabs && groupOptions.length > 0;
 
   if (visibleNodes.length === 0) {
@@ -212,15 +236,7 @@ export function NodeGrid() {
               : "repeat(auto-fill, minmax(min(100%, 360px), 1fr))",
         }}
       >
-        {uuids.map((uuid) => (
-          <div key={uuid} className="min-w-0">
-            {mode === "compact" ? (
-              <CompactNodeCard uuid={uuid} />
-            ) : (
-              <NodeCard uuid={uuid} />
-            )}
-          </div>
-        ))}
+        {cards}
       </div>
     </>
   );

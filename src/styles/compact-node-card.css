@@ -1,6 +1,16 @@
 /* Compact node card */
 .compact-node-card {
   position: relative;
+  /* Skip layout/style/paint for off-screen cards. On the home grid only ~16 of
+     N cards are in the viewport, but every off-screen card was still being laid
+     out and painted on each ~1s metrics tick (style/inline-var churn) and during
+     scroll — the dominant cost in production profiling. `auto <length>` keeps a
+     placeholder size so the scrollbar is stable; the browser remembers each
+     card's real height after its first render, so compact cards (which vary in
+     height with the billing/traffic tiles) don't jump on scroll-back. The value
+     is only a first-paint estimate, not reused 438px from the large card. */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 300px;
   display: flex;
   min-height: 0;
   flex-direction: column;
@@ -231,28 +241,35 @@
   letter-spacing: -0.02em;
 }
 
+/* Single segmented bar (was 18 <span>s). Fill is a hard-stop gradient up to
+   --compact-gauge-fill; the repeating mask carves 18 bars separated by 2px
+   transparent gutters (the gutters reveal the card surface, matching the old
+   grid `gap`). Period = (100% + 2px) / 18, gutter = last 2px of each period. */
 .compact-node-gauge-track {
-  display: grid;
-  grid-template-columns: repeat(18, minmax(0, 1fr));
-  align-items: stretch;
-  gap: 2px;
   min-width: 0;
   height: 8px;
   overflow: hidden;
-}
-
-.compact-node-gauge-track span {
-  display: block;
-  min-width: 2px;
-  height: 100%;
-  border-radius: 2px;
-  background: var(--progress-bg);
-  box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.14);
-}
-
-.compact-node-gauge-track span[data-active="true"] {
-  background: var(--compact-gauge-color);
-  opacity: var(--compact-segment-alpha, 0.94);
+  background: linear-gradient(
+    to right,
+    var(--compact-gauge-color) 0,
+    var(--compact-gauge-color) var(--compact-gauge-fill, 0%),
+    var(--progress-bg) var(--compact-gauge-fill, 0%),
+    var(--progress-bg) 100%
+  );
+  -webkit-mask: repeating-linear-gradient(
+    to right,
+    #000 0,
+    #000 calc((100% + 2px) / 18 - 2px),
+    transparent calc((100% + 2px) / 18 - 2px),
+    transparent calc((100% + 2px) / 18)
+  );
+  mask: repeating-linear-gradient(
+    to right,
+    #000 0,
+    #000 calc((100% + 2px) / 18 - 2px),
+    transparent calc((100% + 2px) / 18 - 2px),
+    transparent calc((100% + 2px) / 18)
+  );
 }
 
 .compact-node-info-strip {
@@ -346,20 +363,10 @@
     transform 180ms cubic-bezier(0.32, 0.72, 0, 1);
 }
 
-.compact-node-traffic-pulse span[data-active="true"] {
-  animation: compact-traffic-dot-pulse 1200ms ease-in-out infinite;
-  animation-delay: var(--compact-traffic-dot-delay);
-}
-
-@keyframes compact-traffic-dot-pulse {
-  0%,
-  100% {
-    filter: saturate(1);
-  }
-  50% {
-    filter: saturate(1.18) brightness(1.05);
-  }
-}
+/* Active traffic dots are styled statically via inline color/opacity/scale set
+   in CompactTrafficPulse. The previous infinite `filter` keyframe animation ran
+   on up to 16 dots per card across every (incl. off-screen) card — a continuous
+   compositor/paint cost that hurt scroll. Static dots carry the same signal. */
 
 .compact-node-health,
 .compact-node-bottom {

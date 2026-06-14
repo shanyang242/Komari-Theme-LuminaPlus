@@ -20,6 +20,7 @@ export interface ResolvedThemeSettings {
   showCostSummary: boolean;
   compactShowTrafficTotal: boolean;
   compactShowBilling: boolean;
+  showConnections: boolean;
   costIgnoredNodes: string[];
   costRateApiUrl: string;
 }
@@ -38,6 +39,7 @@ export const DEFAULT_THEME_SETTINGS: ResolvedThemeSettings = {
   showCostSummary: true,
   compactShowTrafficTotal: true,
   compactShowBilling: true,
+  showConnections: false,
   costIgnoredNodes: [],
   costRateApiUrl: DEFAULT_COST_RATE_API_URL,
 };
@@ -91,6 +93,9 @@ export function normalizeThemeSettings(
     showCostSummary: enabledUnlessFalse(settings?.showCostSummary),
     compactShowTrafficTotal: enabledUnlessFalse(settings?.compactShowTrafficTotal),
     compactShowBilling: enabledUnlessFalse(settings?.compactShowBilling),
+    // Default OFF (opt-in): connection counts are a niche metric and many agents
+    // don't report them, so we only show when explicitly enabled.
+    showConnections: settings?.showConnections === true,
     costIgnoredNodes: normalizeCostIgnoredNodes(settings?.costIgnoredNodes),
     costRateApiUrl: normalizeCostRateApiUrl(settings?.costRateApiUrl),
   };

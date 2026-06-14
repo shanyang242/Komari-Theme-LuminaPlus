@@ -12,6 +12,7 @@ import {
   Gauge,
   HardDrive,
   MemoryStick,
+  Network,
   Upload,
   Unplug,
 } from "lucide-react";
@@ -38,7 +39,6 @@ import type { TrafficRateDisplay } from "@/utils/format";
 
 const TRAFFIC_DOT_COUNT = 16;
 const HEALTH_BAR_COUNT = 18;
-const HARDWARE_BAR_COUNT = 18;
 type CompactNode = NodeInfo & NodeMetrics;
 type CompactTag = { label: string; color: string };
 type CompactExpire = { value: string; unit: string };
@@ -69,8 +69,14 @@ function CompactGauge({
   color: string;
   fraction: number;
 }) {
-  const activeSegments = clamp01(fraction) * HARDWARE_BAR_COUNT;
-  const style = { "--compact-gauge-color": color } as CSSProperties;
+  // Single-element segmented bar: a hard-stop fill gradient up to the fraction,
+  // with a repeating mask punching the 18 inter-segment gutters. Replaces 18
+  // per-segment <span>s (×4 gauges/card) — the per-tick reconciliation + style
+  // recalc of those spans on every off-screen card was a top render cost.
+  const style = {
+    "--compact-gauge-color": color,
+    "--compact-gauge-fill": `${clamp01(fraction) * 100}%`,
+  } as CSSProperties;
 
   return (
     <div
@@ -85,23 +91,7 @@ function CompactGauge({
         </span>
         <strong className="tabular">{value}</strong>
       </div>
-      <div className="compact-node-gauge-track" aria-hidden>
-        {Array.from({ length: HARDWARE_BAR_COUNT }, (_, index) => {
-          const fillLevel = Math.max(0, Math.min(1, activeSegments - index));
-          const active = fillLevel > 0;
-          return (
-            <span
-              key={index}
-              data-active={active ? "true" : "false"}
-              style={
-                active
-                  ? ({ "--compact-segment-alpha": `${0.42 + fillLevel * 0.54}` } as CSSProperties)
-                  : undefined
-              }
-            />
-          );
-        })}
-      </div>
+      <div className="compact-node-gauge-track" aria-hidden />
     </div>
   );
 }
@@ -153,7 +143,6 @@ function CompactTrafficPulse({
         const style = {
           "--compact-traffic-dot-color": active ? color : "var(--progress-bg)",
           "--compact-traffic-dot-scale": active ? `${0.68 + level * 0.62}` : "0.48",
-          "--compact-traffic-dot-delay": `${index * 42}ms`,
           opacity: active ? 0.5 + level * 0.42 : 0.38,
         } as CSSProperties;
 
@@ -461,6 +450,7 @@ function CompactNodeInfoStrip({
   downRate,
   showTrafficTotal,
   showBilling,
+  showConnections,
   expire,
   expireColor,
   renewalPrice,
@@ -471,11 +461,13 @@ function CompactNodeInfoStrip({
   downRate: TrafficRateDisplay;
   showTrafficTotal: boolean;
   showBilling: boolean;
+  showConnections: boolean;
   expire: CompactExpire;
   expireColor: string;
   renewalPrice: string | null;
 }) {
-  const infoTileCount = 1 + (showTrafficTotal ? 1 : 0) + (showBilling ? 1 : 0);
+  const infoTileCount =
+    1 + (showTrafficTotal ? 1 : 0) + (showBilling ? 1 : 0) + (showConnections ? 1 : 0);
 
   return (
     <div
@@ -529,6 +521,21 @@ function CompactNodeInfoStrip({
             icon={<CircleDollarSign size={12} strokeWidth={2.2} />}
             value={renewalPrice || "未填"}
             color={renewalPrice ? "var(--status-success)" : "var(--text-tertiary)"}
+          />
+        </CompactInfoTile>
+      )}
+      {showConnections && (
+        <CompactInfoTile label="连接数" color="var(--progress-network)">
+          <CompactInfoRow
+            icon={<Network size={12} strokeWidth={2.1} />}
+            label="TCP"
+            value={node.connectionsTcp.toLocaleString()}
+            color="var(--progress-network)"
+          />
+          <CompactInfoRow
+            icon={<Network size={12} strokeWidth={2.1} />}
+            label="UDP"
+            value={node.connectionsUdp.toLocaleString()}
           />
         </CompactInfoTile>
       )}
@@ -621,6 +628,7 @@ export const CompactNodeCard = memo(function CompactNodeCard({
     .join(" / ");
   const showTrafficTotal = themeSettings.isReady && themeSettings.compactShowTrafficTotal;
   const showBilling = themeSettings.isReady && themeSettings.compactShowBilling;
+  const showConnections = themeSettings.isReady && themeSettings.showConnections;
 
   return (
     <article className={clsx("compact-node-card", isOffline && "is-offline")}>
@@ -639,6 +647,7 @@ export const CompactNodeCard = memo(function CompactNodeCard({
         downRate={downRate}
         showTrafficTotal={showTrafficTotal}
         showBilling={showBilling}
+        showConnections={showConnections}
         expire={expire}
         expireColor={expireColor}
         renewalPrice={renewalPrice}

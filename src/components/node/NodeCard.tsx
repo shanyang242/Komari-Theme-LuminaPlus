@@ -14,9 +14,11 @@ import {
   RefreshCw,
   Power,
   CircleDollarSign,
+  Network,
 } from "lucide-react";
 import { useNodeCardModel } from "@/hooks/useNodeCardModel";
 import { usePreferences } from "@/hooks/usePreferences";
+import { useThemeSettings } from "@/hooks/useThemeSettings";
 import {
   formatBytes,
   formatOfflineDuration,
@@ -51,6 +53,7 @@ export const NodeCard = memo(function NodeCard({
   uuid: string;
 }) {
   const { resolvedAppearance } = usePreferences();
+  const themeSettings = useThemeSettings();
   const model = useNodeCardModel(uuid);
   const [hoveredLatencyIndex, setHoveredLatencyIndex] = useState<number | null>(null);
   const [hoveredLossIndex, setHoveredLossIndex] = useState<number | null>(null);
@@ -87,6 +90,7 @@ export const NodeCard = memo(function NodeCard({
     offlineSince,
     osName,
   } = model;
+  const showConnections = themeSettings.isReady && themeSettings.showConnections;
   const hoveredLatencyBucket =
     hoveredLatencyIndex != null ? (pingBuckets[hoveredLatencyIndex] ?? null) : null;
   const hoveredLossBucket =
@@ -123,6 +127,23 @@ export const NodeCard = memo(function NodeCard({
             isOnline={isOnline}
             redrawKey={resolvedAppearance}
           />
+
+          {showConnections && (
+            <div className="card-metric-section card-metric-divided server-card-meta-grid">
+              <FooterStat
+                icon={<Network size={13} strokeWidth={2} />}
+                label="TCP 连接"
+                value={node.connectionsTcp.toLocaleString()}
+                color="var(--progress-network)"
+              />
+              <FooterStat
+                icon={<Network size={13} strokeWidth={2} />}
+                label="UDP 连接"
+                value={node.connectionsUdp.toLocaleString()}
+                color="var(--progress-network)"
+              />
+            </div>
+          )}
 
           <NodeHealthSection
             ping={ping}

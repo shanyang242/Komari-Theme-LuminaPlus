@@ -144,6 +144,7 @@ export interface ThemeSettings {
   showCostSummary?: boolean;
   compactShowTrafficTotal?: boolean;
   compactShowBilling?: boolean;
+  showConnections?: boolean;
   costIgnoredNodes?: string[];
   costRateApiUrl?: string;
 }

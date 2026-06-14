@@ -174,6 +174,7 @@ function pickManagedThemeSettings(settings: ResolvedThemeSettings): ThemeSetting
     showCostSummary: settings.showCostSummary,
     compactShowTrafficTotal: settings.compactShowTrafficTotal,
     compactShowBilling: settings.compactShowBilling,
+    showConnections: settings.showConnections,
     costIgnoredNodes: settings.costIgnoredNodes,
     costRateApiUrl: settings.costRateApiUrl,
   };
@@ -198,6 +199,7 @@ export function ThemeManage() {
   const [draftShowCostSummary, setDraftShowCostSummary] = useState(true);
   const [draftCompactShowTrafficTotal, setDraftCompactShowTrafficTotal] = useState(true);
   const [draftCompactShowBilling, setDraftCompactShowBilling] = useState(true);
+  const [draftShowConnections, setDraftShowConnections] = useState(false);
   const [draftCostIgnoredText, setDraftCostIgnoredText] = useState("");
   const [draftCostRateApiUrl, setDraftCostRateApiUrl] = useState(
     DEFAULT_THEME_SETTINGS.costRateApiUrl,
@@ -261,6 +263,7 @@ export function ThemeManage() {
     setDraftShowCostSummary(next.showCostSummary);
     setDraftCompactShowTrafficTotal(next.compactShowTrafficTotal);
     setDraftCompactShowBilling(next.compactShowBilling);
+    setDraftShowConnections(next.showConnections);
     setDraftCostIgnoredText(next.costIgnoredNodes.join("\n"));
     setDraftCostRateApiUrl(next.costRateApiUrl);
   }, []);
@@ -348,6 +351,7 @@ export function ThemeManage() {
       showCostSummary: draftShowCostSummary,
       compactShowTrafficTotal: draftCompactShowTrafficTotal,
       compactShowBilling: draftCompactShowBilling,
+      showConnections: draftShowConnections,
       costIgnoredNodes: draftCostIgnoredNodes,
       costRateApiUrl: normalizedDraftCostRateApiUrl,
     }),
@@ -363,6 +367,7 @@ export function ThemeManage() {
       draftShowCostSummary,
       draftCompactShowTrafficTotal,
       draftCompactShowBilling,
+      draftShowConnections,
       draftCostIgnoredNodes,
       normalizedDraftCostRateApiUrl,
     ],
@@ -387,6 +392,18 @@ export function ThemeManage() {
     () => Object.values(draftBindings).reduce((total, clients) => total + clients.length, 0),
     [draftBindings],
   );
+
+  // Inverted lookup of which task each client is bound to. Rebuilt only when
+  // draftBindings changes (so it never goes stale across edits). Replaces the
+  // per-render getAssignedTaskId() scan, turning the selectable-clients filter
+  // from O(tasks × clients × bindings) into O(tasks × clients).
+  const assignedTaskByClientUuid = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const [taskId, clients] of Object.entries(draftBindings)) {
+      for (const clientUuid of clients) map.set(clientUuid, taskId);
+    }
+    return map;
+  }, [draftBindings]);
 
   const handleSave = async () => {
     if (!config?.theme) return;
@@ -752,6 +769,22 @@ export function ThemeManage() {
               className="h-4 w-4 shrink-0 accent-[var(--accent-500)]"
             />
           </label>
+          <label className="surface-inset flex items-center justify-between gap-3 px-4 py-3">
+            <span className="min-w-0">
+              <span className="block text-[13px] font-medium text-[var(--text-primary)]">
+                显示连接数（TCP/UDP）
+              </span>
+              <span className="mt-1 block text-[11px] text-[var(--text-tertiary)]">
+                在大卡片与小卡片展示实时 TCP / UDP 连接数；需被控端上报，未上报显示 0。默认关闭。
+              </span>
+            </span>
+            <input
+              type="checkbox"
+              checked={draftShowConnections}
+              onChange={(event) => setDraftShowConnections(event.target.checked)}
+              className="h-4 w-4 shrink-0 accent-[var(--accent-500)]"
+            />
+          </label>
         </div>
       </InstancePanel>
 
@@ -868,7 +901,7 @@ export function ThemeManage() {
               const assigned = draftBindings[String(task.id)] ?? [];
               const isExpanded = expandedTaskId === task.id;
               const selectableVisibleClients = visibleClients.filter((client) => {
-                const assignedTaskId = getAssignedTaskId(draftBindings, client.uuid);
+                const assignedTaskId = assignedTaskByClientUuid.get(client.uuid);
                 return !assignedTaskId || assignedTaskId === String(task.id);
               });
               const unselectedVisibleClients = selectableVisibleClients.filter(

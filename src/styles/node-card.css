@@ -535,12 +535,21 @@
 }
 
 .dstatus-price-chip {
-  flex: 0 0 auto;
+  /* Shrinkable (not 0 0 auto) with min-width:0 + overflow:hidden so a tight row
+     clips it gracefully instead of the parent's overflow:hidden cutting it down to
+     a content-less background block. */
+  flex: 0 1 auto;
+  min-width: 0;
   display: inline-flex;
   align-items: center;
   gap: 5px;
+  /* Plain rgba() fallback first, color-mix() override second: browsers without
+     color-mix() support (old WebKit) keep a readable green pill instead of an
+     undefined background; modern browsers still get the theme-adaptive mix. */
+  border: 1px solid rgba(47, 158, 101, 0.22);
   border: 1px solid color-mix(in srgb, var(--status-success) 18%, transparent);
   border-radius: 8px;
+  background: rgba(47, 158, 101, 0.1);
   background: color-mix(in srgb, var(--status-success) 10%, var(--surface-elev));
   color: var(--status-success);
   padding: 0.38rem 0.62rem;
@@ -548,6 +557,7 @@
   line-height: 1.15;
   font-weight: 720;
   white-space: nowrap;
+  overflow: hidden;
 }
 
 .dstatus-price-chip svg {

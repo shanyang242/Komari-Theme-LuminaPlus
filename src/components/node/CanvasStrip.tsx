@@ -41,6 +41,87 @@ export function resolveCssColor(color: string): string {
   return resolved || color;
 }
 
+function parseHexColor(color: string): { r: number; g: number; b: number } | null {
+  const value = color.trim();
+  const short = /^#([\da-f])([\da-f])([\da-f])$/i.exec(value);
+  if (short) {
+    return {
+      r: parseInt(`${short[1]}${short[1]}`, 16),
+      g: parseInt(`${short[2]}${short[2]}`, 16),
+      b: parseInt(`${short[3]}${short[3]}`, 16),
+    };
+  }
+  const full = /^#([\da-f]{2})([\da-f]{2})([\da-f]{2})$/i.exec(value);
+  if (full) {
+    return {
+      r: parseInt(full[1], 16),
+      g: parseInt(full[2], 16),
+      b: parseInt(full[3], 16),
+    };
+  }
+  return null;
+}
+
+// JS equivalent of `color-mix(in srgb, baseColor <w*100>%, white <(1-w)*100>%)`,
+// returning an rgb() string. Computed here instead of handing a `color-mix()`
+// string to the canvas because old WebKit (Safari < 16.2) can't parse color-mix()
+// as a canvas color and throws "The string did not match the expected pattern.".
+// sRGB mixing is a plain per-channel lerp on the 0–255 values, so the result is
+// numerically identical to color-mix on every browser. Falls back to the base
+// color unchanged when it isn't a hex we can parse (still a valid canvas color).
+export function mixSrgbTowardWhite(baseColor: string, baseWeight: number): string {
+  const rgb = parseHexColor(baseColor);
+  if (!rgb) return baseColor;
+  const w = Math.max(0, Math.min(1, baseWeight));
+  const channel = (value: number) => Math.round(value * w + 255 * (1 - w));
+  return `rgb(${channel(rgb.r)}, ${channel(rgb.g)}, ${channel(rgb.b)})`;
+}
+
+function hslToRgb(h: number, s: number, l: number): { r: number; g: number; b: number } {
+  const sat = Math.max(0, Math.min(1, s / 100));
+  const lig = Math.max(0, Math.min(1, l / 100));
+  const c = (1 - Math.abs(2 * lig - 1)) * sat;
+  const hp = ((((h % 360) + 360) % 360)) / 60;
+  const x = c * (1 - Math.abs((hp % 2) - 1));
+  const m = lig - c / 2;
+  let r = 0;
+  let g = 0;
+  let b = 0;
+  if (hp < 1) [r, g, b] = [c, x, 0];
+  else if (hp < 2) [r, g, b] = [x, c, 0];
+  else if (hp < 3) [r, g, b] = [0, c, x];
+  else if (hp < 4) [r, g, b] = [0, x, c];
+  else if (hp < 5) [r, g, b] = [x, 0, c];
+  else [r, g, b] = [c, 0, x];
+  return {
+    r: Math.round((r + m) * 255),
+    g: Math.round((g + m) * 255),
+    b: Math.round((b + m) * 255),
+  };
+}
+
+// Single chokepoint for every color handed to a canvas. Old WebKit (Safari < 16)
+// can't parse modern color syntaxes as a canvas color and throws "The string did
+// not match the expected pattern." — so resolve `var(...)` and rewrite `hsl()`
+// (which toHsl emits in the modern space-separated form) to `rgb()`. Hex / rgb()
+// pass through; anything else is returned as-is (we no longer produce color-mix()).
+export function safeCanvasColor(color: string): string {
+  const value = (color.startsWith("var(") ? resolveCssColor(color) : color).trim();
+  const hsl = /^hsla?\(([^)]+)\)$/i.exec(value);
+  if (hsl) {
+    const parts = hsl[1]
+      .replace(/\//g, " ")
+      .split(/[\s,]+/)
+      .filter(Boolean)
+      .map((part) => parseFloat(part));
+    if (parts.length >= 3 && parts.slice(0, 3).every((n) => Number.isFinite(n))) {
+      const { r, g, b } = hslToRgb(parts[0], parts[1], parts[2]);
+      return `rgb(${r}, ${g}, ${b})`;
+    }
+  }
+  return value;
+}
+
 export function fillRoundedRect(
   ctx: CanvasRenderingContext2D,
   x: number,
@@ -86,6 +167,11 @@ export function CanvasStrip({
     };
 
     updateWidth();
+    if (typeof ResizeObserver === "undefined") {
+      window.addEventListener("resize", updateWidth);
+      return () => window.removeEventListener("resize", updateWidth);
+    }
+
     const observer = new ResizeObserver(() => {
       updateWidth();
     });

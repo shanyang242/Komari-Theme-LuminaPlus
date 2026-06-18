@@ -28,7 +28,7 @@ import {
 } from "@/utils/format";
 import { latencyHeatColor, lossHeatColor } from "@/utils/metricTone";
 import { formatHealthBucketTooltip } from "./pingBucketText";
-import { nodeDetailLinkLabels } from "./nodeCardShared";
+import { joinTagTitle, nodeDetailLinkLabels } from "./nodeCardShared";
 import type {
   NodeInfo,
   NodeMetrics,
@@ -372,15 +372,16 @@ function CompactNodeHeader({
 
 function CompactNodeChips({
   subtitle,
-  visibleTags,
-  hiddenTagCount,
-  hiddenTagTitle,
+  tags,
 }: {
   subtitle: string;
-  visibleTags: CompactTag[];
-  hiddenTagCount: number;
-  hiddenTagTitle: string;
+  tags: CompactTag[];
 }) {
+  // Full tag list lives in the lane's tooltip; the chips carry no title of their
+  // own so hovering any chip falls through to it — that's how tags that wrap out
+  // of the clipped lane stay discoverable, without a visible "+N" badge.
+  const tagTitle = joinTagTitle(tags);
+
   return (
     <div className="compact-node-chip-row">
       {subtitle && (
@@ -388,20 +389,18 @@ function CompactNodeChips({
           {subtitle}
         </span>
       )}
-      {visibleTags.map((tag, index) => (
-        <span
-          key={`${tag.label}-${index}`}
-          className="compact-node-tag"
-          data-tag={tag.color}
-          title={tag.label}
-        >
-          {tag.label}
-        </span>
-      ))}
-      {hiddenTagCount > 0 && (
-        <span className="compact-node-tag compact-node-tag-more" title={hiddenTagTitle}>
-          +{hiddenTagCount}
-        </span>
+      {tags.length > 0 && (
+        <div className="compact-node-tag-lane" title={tagTitle}>
+          {tags.map((tag, index) => (
+            <span
+              key={`${tag.label}-${index}`}
+              className="compact-node-tag"
+              data-tag={tag.color}
+            >
+              {tag.label}
+            </span>
+          ))}
+        </div>
       )}
     </div>
   );
@@ -678,13 +677,6 @@ export const CompactNodeCard = memo(function CompactNodeCard({
     hasHomepagePingBinding,
     osName,
   } = model;
-  const visibleTagLimit = subtitle ? 2 : 3;
-  const visibleTags = footerTags.slice(0, visibleTagLimit);
-  const hiddenTagCount = Math.max(0, footerTags.length - visibleTags.length);
-  const hiddenTagTitle = footerTags
-    .slice(visibleTags.length)
-    .map((tag) => tag.label)
-    .join(" / ");
   const showTrafficTotal = themeSettings.isReady && themeSettings.compactShowTrafficTotal;
   const showBilling = themeSettings.isReady && themeSettings.compactShowBilling;
   const showUptime = themeSettings.isReady && themeSettings.compactShowUptime;
@@ -695,12 +687,7 @@ export const CompactNodeCard = memo(function CompactNodeCard({
   return (
     <article className={clsx("compact-node-card", isOffline && "is-offline")}>
       <CompactNodeHeader node={node} osName={osName} />
-      <CompactNodeChips
-        subtitle={subtitle}
-        visibleTags={visibleTags}
-        hiddenTagCount={hiddenTagCount}
-        hiddenTagTitle={hiddenTagTitle}
-      />
+      <CompactNodeChips subtitle={subtitle} tags={footerTags} />
       <CompactNodeVitals node={node} loadBaseline={loadBaseline} />
       <CompactNodeInfoStrip
         node={node}

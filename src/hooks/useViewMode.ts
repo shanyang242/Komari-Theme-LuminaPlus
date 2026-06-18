@@ -205,3 +205,16 @@ export function useViewMode() {
     toggleMode,
   };
 }
+
+// Non-reactive read for contexts that can't use hooks (e.g. the class ErrorBoundary
+// diagnostics). Reports device + any session override; the theme default isn't
+// included because resolving it needs themeSettings (a hook), but device + override
+// already disambiguate compact-vs-large in the common cases.
+export function readViewModeHint(): string {
+  try {
+    const { device, override } = readSnapshot();
+    return override ? `${device}/${override}(override)` : `${device}/default`;
+  } catch {
+    return "unknown";
+  }
+}

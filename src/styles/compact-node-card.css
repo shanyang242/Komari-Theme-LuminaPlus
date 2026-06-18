@@ -163,6 +163,22 @@
   overflow: hidden;
 }
 
+/* Whole-tag track: tags keep their natural size and only ever appear in full —
+   those that don't fit wrap onto a clipped second line (max-height pins it to one
+   row), so nothing is ever sliced mid-word and there is no "+N" badge. Pure CSS,
+   no width measurement. The full list lives in the lane's tooltip. */
+.compact-node-tag-lane {
+  display: flex;
+  flex: 1 1 0;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  align-items: center;
+  gap: 6px;
+  max-height: 22px;
+  overflow: hidden;
+}
+
 .compact-node-tag {
   display: inline-flex;
   height: 22px;
@@ -180,6 +196,10 @@
 }
 
 .compact-node-tag {
+  /* Whole tags wrap out of the clipped lane rather than being squeezed, so their
+     sizes stay consistent (wrap never overflows a line, so flex-shrink never fires
+     on multi-tag lines). Shrink stays enabled only so a lone tag wider than the
+     lane ellipsizes cleanly (max-width cap) instead of being hard-clipped mid-word. */
   flex: 0 1 auto;
   max-width: 8.5rem;
   overflow: hidden;
@@ -187,12 +207,6 @@
   background: var(--tag-bg);
   color: var(--tag-fg);
   text-overflow: ellipsis;
-}
-
-.compact-node-tag-more {
-  flex: 0 0 auto;
-  background: var(--tag-gray-bg);
-  color: var(--tag-gray-fg);
 }
 
 .compact-node-vitals {

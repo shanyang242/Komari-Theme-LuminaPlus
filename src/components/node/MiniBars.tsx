@@ -1,5 +1,5 @@
 import { useCallback, useMemo } from "react";
-import { CanvasStrip, fillRoundedRect, resolveCssColor } from "./CanvasStrip";
+import { CanvasStrip, fillRoundedRect, safeCanvasColor } from "./CanvasStrip";
 import { latencyHeatColor } from "@/utils/metricTone";
 import type { PingOverviewBucket } from "@/types/komari";
 
@@ -19,7 +19,9 @@ export function MiniBars({ buckets, max, redrawKey, onHoverIndex }: MiniBarsProp
       buckets.map((bucket) => ({
         value: bucket.value ?? 0,
         index: bucket.index,
-        tone: latencyHeatColor(bucket.value),
+        // Normalize to a canvas-safe color here (per bucket, on data change) rather
+        // than per bar on every redraw.
+        tone: safeCanvasColor(latencyHeatColor(bucket.value)),
       })),
     [buckets],
   );
@@ -38,7 +40,7 @@ export function MiniBars({ buckets, max, redrawKey, onHoverIndex }: MiniBarsProp
   // doesn't redraw on every parent metrics tick — only on ping refreshes.
   const draw = useCallback(
     (ctx: CanvasRenderingContext2D, width: number, height: number) => {
-      const inactiveColor = resolveCssColor("var(--progress-bg)");
+      const inactiveColor = safeCanvasColor("var(--progress-bg)");
       const gap = bars.length > 48 ? 1 : 2;
       const barWidth = Math.max(1, (width - gap * (bars.length - 1)) / Math.max(1, bars.length));
       const safeMax = max > 0 ? max : 1;

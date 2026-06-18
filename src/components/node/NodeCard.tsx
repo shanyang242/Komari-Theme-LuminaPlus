@@ -33,8 +33,8 @@ import { OsLogo } from "@/components/ui/OsLogo";
 import { MetricBar } from "./MetricBar";
 import { MiniBars } from "./MiniBars";
 import { QualityBars } from "./QualityBars";
-import { CanvasStrip, resolveCssColor } from "./CanvasStrip";
-import { nodeDetailLinkLabels } from "./nodeCardShared";
+import { CanvasStrip, mixSrgbTowardWhite, safeCanvasColor } from "./CanvasStrip";
+import { joinTagTitle, nodeDetailLinkLabels } from "./nodeCardShared";
 import {
   formatLatencyBucketSummary,
   formatLossBucketSummary,
@@ -503,14 +503,16 @@ const NodeHealthSection = memo(function NodeHealthSection({
 });
 
 // Shared by the visible footer row and the off-screen measurement row so a style
-// tweak can't drift between the two. The measurement row omits `title` (aria-hidden).
-function FooterTagChip({ tag, titled }: { tag: DisplayTag; titled?: boolean }) {
+// tweak can't drift between the two. No own `title`: the visible row carries the
+// full tag list as its title, and a chip without a title lets the hover fall
+// through to it, so hovering any chip reveals every tag (incl. ones the fit pass
+// dropped) instead of just that chip's label.
+function FooterTagChip({ tag }: { tag: DisplayTag }) {
   return (
     <span
       data-tag={tag.color}
       className="dstatus-tag-chip"
       style={{ background: "var(--tag-bg)", color: "var(--tag-fg)" }}
-      title={titled ? tag.label : undefined}
     >
       {tag.label}
     </span>
@@ -546,6 +548,10 @@ function NodeCardFooter({
   const measureRef = useRef<HTMLDivElement>(null);
   const [visibleTagCount, setVisibleTagCount] = useState(footerTags.length);
   const visibleTags = footerTags.slice(0, visibleTagCount);
+  // Full tag list lives in the row's tooltip; the chips carry no title of their
+  // own so hovering any chip falls through to it — that's how tags dropped by the
+  // fit pass stay discoverable, without a visible "+N" badge.
+  const tagTitle = joinTagTitle(footerTags);
 
   useLayoutEffect(() => {
     const row = rowRef.current;
@@ -585,8 +591,13 @@ function NodeCardFooter({
     updateVisibleTags();
 
     let cancelled = false;
-    const observer = new ResizeObserver(updateVisibleTags);
-    observer.observe(row);
+    const observer =
+      typeof ResizeObserver === "undefined" ? null : new ResizeObserver(updateVisibleTags);
+    if (observer) {
+      observer.observe(row);
+    } else {
+      window.addEventListener("resize", updateVisibleTags);
+    }
     // Font swap can change tag widths after first paint; re-measure once ready,
     // but bail if the card unmounted before the promise resolved.
     document.fonts?.ready.then(() => {
@@ -595,7 +606,8 @@ function NodeCardFooter({
 
     return () => {
       cancelled = true;
-      observer.disconnect();
+      observer?.disconnect();
+      if (!observer) window.removeEventListener("resize", updateVisibleTags);
     };
   }, [footerTags, renewalPrice]);
 
@@ -619,9 +631,9 @@ function NodeCardFooter({
       </div>
       {(footerTags.length > 0 || renewalPrice) && (
         <>
-          <div className="dstatus-tags-row" ref={rowRef}>
+          <div className="dstatus-tags-row" ref={rowRef} title={footerTags.length > 0 ? tagTitle : undefined}>
             {visibleTags.map((tag, index) => (
-              <FooterTagChip key={`${tag.label}-${index}`} tag={tag} titled />
+              <FooterTagChip key={`${tag.label}-${index}`} tag={tag} />
             ))}
             {renewalPrice && <FooterPriceChip renewalPrice={renewalPrice} titled />}
           </div>
@@ -708,15 +720,19 @@ function TrafficDotStrip({
     (ctx: CanvasRenderingContext2D, width: number, height: number) => {
       if (samples.length === 0) return;
       const slotWidth = width / samples.length;
-      const baseColor = resolveCssColor(color);
-      const inactiveColor = resolveCssColor("var(--progress-bg)");
+      // Normalize once: safeCanvasColor resolves var() and converts hsl()→rgb(), so
+      // baseColor/inactiveColor are canvas-safe and mixSrgbTowardWhite's hex output
+      // is too — no per-dot color normalization needed inside the loop below.
+      const baseColor = safeCanvasColor(color);
+      const inactiveColor = safeCanvasColor("var(--progress-bg)");
 
       samples.forEach((sample, index) => {
         const hasTraffic = sample.value > 0;
         const scale = hasTraffic ? 0.72 + sample.level * 0.82 : 0.46;
         const radius = 2 * scale;
+        // JS sRGB mix (not a canvas `color-mix()` string, which old WebKit rejects).
         const tone = hasTraffic
-          ? `color-mix(in srgb, ${baseColor} ${Math.round(68 + sample.level * 20)}%, white ${Math.round(32 - sample.level * 20)}%)`
+          ? mixSrgbTowardWhite(baseColor, (68 + sample.level * 20) / 100)
           : inactiveColor;
         const x = index * slotWidth + slotWidth / 2;
         const y = height / 2;

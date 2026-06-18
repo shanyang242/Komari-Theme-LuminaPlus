@@ -1,5 +1,5 @@
 import { useCallback, type ReactNode } from "react";
-import { CanvasStrip, fillRoundedRect, resolveCssColor } from "./CanvasStrip";
+import { CanvasStrip, fillRoundedRect, safeCanvasColor } from "./CanvasStrip";
 
 const METRIC_SEGMENT_COUNT = 18;
 
@@ -46,7 +46,7 @@ export function MetricBar({
   // the CanvasStrip redraw effect doesn't fire on every parent metrics tick.
   const draw = useCallback(
     (ctx: CanvasRenderingContext2D, width: number, height: number) => {
-      const inactiveColor = resolveCssColor("var(--progress-bg)");
+      const inactiveColor = safeCanvasColor("var(--progress-bg)");
       const gap = 2;
       const segmentWidth = Math.max(
         1,
@@ -56,11 +56,11 @@ export function MetricBar({
         paintKind === "gradient"
           ? (() => {
               const gradient = ctx.createLinearGradient(0, 0, width, 0);
-              gradient.addColorStop(0, resolveCssColor(paintFrom));
-              gradient.addColorStop(1, resolveCssColor(paintTo));
+              gradient.addColorStop(0, safeCanvasColor(paintFrom));
+              gradient.addColorStop(1, safeCanvasColor(paintTo));
               return gradient;
             })()
-          : resolveCssColor(paintColor);
+          : safeCanvasColor(paintColor);
 
       for (let index = 0; index < METRIC_SEGMENT_COUNT; index += 1) {
         const x = index * (segmentWidth + gap);

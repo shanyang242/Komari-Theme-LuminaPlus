@@ -1,5 +1,5 @@
 import { useCallback, useMemo } from "react";
-import { CanvasStrip, fillRoundedRect, resolveCssColor } from "./CanvasStrip";
+import { CanvasStrip, fillRoundedRect, safeCanvasColor } from "./CanvasStrip";
 import { lossHeatColor } from "@/utils/metricTone";
 import type { PingOverviewBucket } from "@/types/komari";
 
@@ -21,7 +21,9 @@ export function QualityBars({ buckets, redrawKey, onHoverIndex }: QualityBarsPro
         return {
           active: hasBucketValue,
           index: bucket.index,
-          tone: hasBucketValue ? lossHeatColor(bucket.loss) : "var(--progress-bg)",
+          // Normalize to a canvas-safe color here (per bucket, on data change)
+          // rather than per bar on every redraw.
+          tone: safeCanvasColor(hasBucketValue ? lossHeatColor(bucket.loss) : "var(--progress-bg)"),
         };
       }),
     [buckets],
@@ -39,7 +41,7 @@ export function QualityBars({ buckets, redrawKey, onHoverIndex }: QualityBarsPro
 
   const draw = useCallback(
     (ctx: CanvasRenderingContext2D, width: number, height: number) => {
-      const inactiveColor = resolveCssColor("var(--progress-bg)");
+      const inactiveColor = safeCanvasColor("var(--progress-bg)");
       const gap = bars.length > 48 ? 1 : 2;
       const barWidth = Math.max(1, (width - gap * (bars.length - 1)) / Math.max(1, bars.length));
       const barHeight = height * ACTIVE_BAR_HEIGHT;

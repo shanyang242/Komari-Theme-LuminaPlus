@@ -3,17 +3,6 @@ import { CanvasStrip, fillRoundedRect, safeCanvasColor } from "./CanvasStrip";
 
 const METRIC_SEGMENT_COUNT = 18;
 
-type MetricPaint =
-  | {
-      kind: "solid";
-      color: string;
-    }
-  | {
-      kind: "gradient";
-      from: string;
-      to: string;
-    };
-
 interface MetricBarProps {
   icon: ReactNode;
   label: string;
@@ -22,7 +11,7 @@ interface MetricBarProps {
   detailText?: string;
   fraction: number; // 0..1
   redrawKey?: string;
-  paint: MetricPaint;
+  paint: string; // 填充色 (CSS color)
 }
 
 export function MetricBar({
@@ -37,10 +26,6 @@ export function MetricBar({
 }: MetricBarProps) {
   const clamped = Math.max(0, Math.min(1, fraction));
   const activeSegments = clamped * METRIC_SEGMENT_COUNT;
-  const paintKind = paint.kind;
-  const paintColor = paint.kind === "solid" ? paint.color : "";
-  const paintFrom = paint.kind === "gradient" ? paint.from : "";
-  const paintTo = paint.kind === "gradient" ? paint.to : "";
 
   // 除非填充比例或配色真正变化,否则跨渲染保持稳定,这样 CanvasStrip 的重绘 effect
   // 不会在父组件每个 metrics tick 都触发。
@@ -52,15 +37,7 @@ export function MetricBar({
         1,
         (width - gap * (METRIC_SEGMENT_COUNT - 1)) / METRIC_SEGMENT_COUNT,
       );
-      const activePaint =
-        paintKind === "gradient"
-          ? (() => {
-              const gradient = ctx.createLinearGradient(0, 0, width, 0);
-              gradient.addColorStop(0, safeCanvasColor(paintFrom));
-              gradient.addColorStop(1, safeCanvasColor(paintTo));
-              return gradient;
-            })()
-          : safeCanvasColor(paintColor);
+      const activePaint = safeCanvasColor(paint);
 
       for (let index = 0; index < METRIC_SEGMENT_COUNT; index += 1) {
         const x = index * (segmentWidth + gap);
@@ -80,7 +57,7 @@ export function MetricBar({
 
       ctx.globalAlpha = 1;
     },
-    [activeSegments, paintKind, paintColor, paintFrom, paintTo],
+    [activeSegments, paint],
   );
 
   return (

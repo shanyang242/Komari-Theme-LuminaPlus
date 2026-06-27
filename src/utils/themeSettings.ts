@@ -7,7 +7,15 @@ import {
   normalizeSurfaceOpacity,
 } from "@/utils/background";
 import { DEFAULT_COST_RATE_API_URL, normalizeCostIgnoredNodes, normalizeCostRateApiUrl } from "@/utils/cost";
+import { normalizeNodeIdentityList } from "@/utils/nodeIdentity";
 import { normalizeHomeGroupOrder } from "@/utils/homeNodes";
+import {
+  HOME_SORT_NATURAL_DIRECTION,
+  isHomeSortDirection,
+  isHomeSortField,
+  type HomeSortDirection,
+  type HomeSortField,
+} from "@/utils/homeSort";
 import {
   isOverviewRatingStyle,
   type OverviewRatingStyle,
@@ -27,7 +35,9 @@ export interface ResolvedThemeSettings {
   showHomeOverview: boolean;
   showGroupTabs: boolean;
   homeGroupOrder: string[];
-  moveOfflineNodesBack: boolean;
+  enableHomeSort: boolean;
+  homeSortField: HomeSortField;
+  homeSortDirection: HomeSortDirection;
   showCostSummary: boolean;
   showCostSummaryFloatingButton: boolean;
   showOverviewRatings: boolean;
@@ -42,6 +52,7 @@ export interface ResolvedThemeSettings {
   compactShowBilling: boolean;
   compactShowUptime: boolean;
   showConnections: boolean;
+  hiddenNodes: string[];
   costIgnoredNodes: string[];
   costRateApiUrl: string;
   backgroundImage: string;
@@ -60,7 +71,9 @@ export const DEFAULT_THEME_SETTINGS: ResolvedThemeSettings = {
   showHomeOverview: true,
   showGroupTabs: true,
   homeGroupOrder: [],
-  moveOfflineNodesBack: true,
+  enableHomeSort: true,
+  homeSortField: "default",
+  homeSortDirection: HOME_SORT_NATURAL_DIRECTION.default,
   showCostSummary: true,
   showCostSummaryFloatingButton: true,
   showOverviewRatings: true,
@@ -75,6 +88,7 @@ export const DEFAULT_THEME_SETTINGS: ResolvedThemeSettings = {
   compactShowBilling: true,
   compactShowUptime: true,
   showConnections: false,
+  hiddenNodes: [],
   costIgnoredNodes: [],
   costRateApiUrl: DEFAULT_COST_RATE_API_URL,
   backgroundImage: "",
@@ -113,6 +127,20 @@ function normalizePlainText(value: unknown) {
   return typeof value === "string" ? value : "";
 }
 
+// 管理员默认排序:字段非法回落 default;方向非法时回落该字段的自然方向(文本升、数值降)。
+function normalizeHomeSortDefault(
+  field: unknown,
+  direction: unknown,
+): { homeSortField: HomeSortField; homeSortDirection: HomeSortDirection } {
+  const homeSortField = isHomeSortField(field) ? field : "default";
+  return {
+    homeSortField,
+    homeSortDirection: isHomeSortDirection(direction)
+      ? direction
+      : HOME_SORT_NATURAL_DIRECTION[homeSortField],
+  };
+}
+
 export function normalizeThemeSettings(
   settings: (ThemeSettings & Record<string, unknown>) | null | undefined,
 ): ResolvedThemeSettings {
@@ -132,7 +160,8 @@ export function normalizeThemeSettings(
     showHomeOverview: enabledUnlessFalse(settings?.showHomeOverview),
     showGroupTabs: enabledUnlessFalse(settings?.showGroupTabs),
     homeGroupOrder: normalizeHomeGroupOrder(settings?.homeGroupOrder),
-    moveOfflineNodesBack: enabledUnlessFalse(settings?.moveOfflineNodesBack),
+    enableHomeSort: enabledUnlessFalse(settings?.enableHomeSort),
+    ...normalizeHomeSortDefault(settings?.homeSortField, settings?.homeSortDirection),
     showCostSummary: enabledUnlessFalse(settings?.showCostSummary),
     showCostSummaryFloatingButton: enabledUnlessFalse(settings?.showCostSummaryFloatingButton),
     showOverviewRatings: enabledUnlessFalse(settings?.showOverviewRatings),
@@ -150,6 +179,7 @@ export function normalizeThemeSettings(
     compactShowUptime: enabledUnlessFalse(settings?.compactShowUptime),
     // 默认关闭(需手动开启):连接数是个小众指标,很多 agent 也不上报,所以只在显式启用时才显示。
     showConnections: settings?.showConnections === true,
+    hiddenNodes: normalizeNodeIdentityList(settings?.hiddenNodes),
     costIgnoredNodes: normalizeCostIgnoredNodes(settings?.costIgnoredNodes),
     costRateApiUrl: normalizeCostRateApiUrl(settings?.costRateApiUrl),
     backgroundImage: normalizeBackgroundUrl(settings?.backgroundImage),

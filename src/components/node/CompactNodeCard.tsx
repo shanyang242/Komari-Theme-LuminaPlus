@@ -34,6 +34,7 @@ import {
 } from "@/utils/metricTone";
 import { formatHealthBucketTooltip } from "./pingBucketText";
 import { joinTagTitle, nodeDetailLinkLabels, pingEmptyLabels } from "./nodeCardShared";
+import { IpStackBadges } from "./IpStackBadges";
 import type {
   NodeInfo,
   NodeMetrics,
@@ -267,7 +268,9 @@ function HealthBars({
         const hasSamples = bucket.total > 0;
         const latencyValue = bucket.value ?? 0;
         const lossValue = bucket.loss ?? 0;
-        const active = kind === "latency" ? hasSamples && latencyValue > 0 : hasSamples;
+        // 延迟柱:value 非 null(含 0=亚毫秒成功)即视为有有效延迟;全丢包/无样本时 value 为 null
+        // 仍画空槽(由丢包柱体现)。丢包柱沿用 hasSamples。
+        const active = kind === "latency" ? bucket.value != null : hasSamples;
         const height =
           kind === "latency"
             ? `${active ? Math.max(26, Math.min(100, (latencyValue / safeMax) * 100)) : 24}%`
@@ -380,9 +383,13 @@ function CompactNodeHeader({
 function CompactNodeChips({
   subtitle,
   tags,
+  ipv4,
+  ipv6,
 }: {
   subtitle: string;
   tags: CompactTag[];
+  ipv4?: string | null;
+  ipv6?: string | null;
 }) {
   // 完整 tag 列表挂在 lane 的 tooltip 上;chip 不带自己的 title,hover 会穿透到 lane 上 ——
   // 被裁剪 lane 折行挤出去的 tag 就靠这个保持可见,不用显示"+N"角标。
@@ -395,6 +402,7 @@ function CompactNodeChips({
           {subtitle}
         </span>
       )}
+      <IpStackBadges ipv4={ipv4} ipv6={ipv6} />
       {tags.length > 0 && (
         <div className="compact-node-tag-lane" title={tagTitle}>
           {tags.map((tag, index) => (
@@ -451,7 +459,7 @@ function CompactNodeVitals({
         value={node.load1.toFixed(2)}
         detail={`${node.load5.toFixed(2)} / ${node.load15.toFixed(2)}`}
         fraction={loadFraction}
-        color="var(--progress-network)"
+        color="var(--progress-load)"
       />
     </div>
   );
@@ -689,7 +697,7 @@ export const CompactNodeCard = memo(function CompactNodeCard({
   return (
     <article className={clsx("compact-node-card", isOffline && "is-offline")}>
       <CompactNodeHeader node={node} osName={osName} />
-      <CompactNodeChips subtitle={subtitle} tags={footerTags} />
+      <CompactNodeChips subtitle={subtitle} tags={footerTags} ipv4={node.ipv4} ipv6={node.ipv6} />
       <CompactNodeVitals node={node} loadFraction={loadFraction} />
       <CompactNodeInfoStrip
         node={node}

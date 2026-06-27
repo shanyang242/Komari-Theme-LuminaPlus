@@ -186,7 +186,6 @@ export function getCountryCodeFromRegion(region: string | null | undefined): str
   const whole = upper.match(/^[A-Z]{2}$/)?.[0];
   if (whole && isValidToken(whole)) return resolveToken(whole);
 
-  ISO_CODE_RE.lastIndex = 0;
   for (const match of upper.matchAll(ISO_CODE_RE)) {
     const token = match[0];
     if (isValidToken(token)) return resolveToken(token);

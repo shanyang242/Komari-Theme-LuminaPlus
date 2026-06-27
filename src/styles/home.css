@@ -200,7 +200,7 @@
   background: var(--overview-offline);
 }
 
-/* 块状版(节点数 5–10):每台一格,规格与主题分段格(.metric-segment / .traffic-quota-segment)
+/* 块状版(节点数 5–10):每台一格,规格与主题分段格(MetricBar 的 canvas 分段)
    一致——10px 高、2px 间隙、2px 圆角、内阴影,读作有厚度的格子而非切条。颜色与
    .overview-bar-online/offline 同源,保持同步;默认格为中性底色,只有真离线才变红,避免条状那种「首帧闪红」。 */
 .overview-blocks {
@@ -369,5 +369,139 @@
     max-width: 200px;
     padding: 0 10px;
     font-size: 11px;
+  }
+}
+
+/* 首页控件条:复用卡片网格列定义(见 NodeGrid 的 gridTemplateColumns)。分组标签自动落在
+   第一列(=一张卡宽,随响应式动态变化、左缘对齐首卡);排序控件钉最后一列右对齐。窄屏只剩
+   1 列时,排序与分组冲突列位 → 自动落到下一行、仍右对齐。 */
+.home-controls-bar {
+  align-items: center;
+}
+
+.home-sort {
+  position: relative;
+}
+
+.home-controls-bar .home-sort {
+  grid-column: -2 / -1;
+  justify-self: end;
+  align-self: center;
+}
+
+.home-sort-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 38px;
+  padding: 0 12px;
+  border: 1px solid color-mix(in srgb, var(--border-strong) 54%, transparent);
+  border-radius: 14px;
+  background: var(--surface-a);
+  box-shadow:
+    0 14px 30px -26px rgba(0, 0, 0, 0.5),
+    inset 0 1px 0 color-mix(in srgb, white 16%, transparent);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 650;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    color 160ms ease,
+    border-color 160ms ease,
+    background 160ms ease;
+}
+
+.home-sort-trigger svg {
+  display: block;
+  flex: none;
+}
+
+.home-sort-trigger:hover,
+.home-sort-trigger[aria-expanded="true"] {
+  color: var(--text-primary);
+  border-color: var(--border-strong);
+  background: color-mix(in srgb, var(--hover-bg-a) 60%, var(--surface-a));
+}
+
+.home-sort-panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 180px;
+  /* 移动端不超出视口 */
+  max-width: min(260px, calc(100vw - 32px));
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: var(--shadow-card);
+}
+
+.home-sort-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 34px;
+  padding: 0 10px;
+  border-radius: 10px;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    color 160ms ease,
+    background 160ms ease;
+}
+
+.home-sort-item:hover {
+  color: var(--text-primary);
+  background: var(--hover-bg);
+}
+
+.home-sort-item[data-active="true"] {
+  color: var(--text-primary);
+  background: color-mix(in srgb, var(--surface-elev-a) 92%, var(--hover-bg-a));
+  font-weight: 600;
+}
+
+.home-sort-item-label {
+  flex: 1 1 auto;
+}
+
+.home-sort-item svg {
+  display: block;
+  flex: none;
+}
+
+.home-sort-item[data-active="true"] svg {
+  color: var(--accent-500);
+}
+
+/* 移动端:网格塌成 1 列时,排序控件会被挤到分组下一行。这里改用 flex 让两者并排同一行——
+   分组占满可用宽、溢出横向滚动,排序钮固定在右、不收缩。桌面端(>768px)维持上方的网格布局
+   (分组落第一列、对齐首卡),不受影响。 */
+@media (max-width: 768px) {
+  .home-controls-bar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .home-controls-bar .home-group-tabs {
+    flex: 1 1 auto;
+    width: auto;
+    min-width: 0;
+  }
+
+  .home-controls-bar .home-sort {
+    grid-column: auto;
+    align-self: auto;
   }
 }

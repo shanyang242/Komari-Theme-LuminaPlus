@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { Flag } from "@/components/ui/Flag";
+import { useAuth } from "@/hooks/useAuth";
 import { useAllNodeMeta } from "@/hooks/useNode";
 import { useThemeSettings } from "@/hooks/useThemeSettings";
 import {
@@ -15,6 +16,7 @@ import {
   formatCnyMoney,
   getExchangeRates,
 } from "@/utils/cost";
+import { collectMatchingNodeUuids } from "@/utils/nodeIdentity";
 import { getExpireDaysRemaining, LONG_TERM_EXPIRE_DAYS } from "@/utils/format";
 
 type CostSortField = "weight" | "price" | "remain";
@@ -80,9 +82,24 @@ export function CostSummary({
   const [sortField, setSortField] = useState<CostSortField>("weight");
   const [sortDirection, setSortDirection] = useState<CostSortDirection>("asc");
   const hiddenTabIndex = resolvedOpen ? undefined : -1;
-  const nodes = useAllNodeMeta();
+  const allNodes = useAllNodeMeta();
+  const { data: me } = useAuth();
   const themeSettings = useThemeSettings();
   const rateApiUrl = themeSettings.costRateApiUrl;
+  // 与首页总览同一可见性口径剔除节点(不进数量/总额/明细):主题级隐藏对所有人剔除;
+  // 后台 hidden 仅登录管理员可见,访客一律剔除(否则访客能从资产明细读到隐藏节点的
+  // 名称/价格/到期)。auth 未就绪时按访客处理(fail-closed)。
+  const hiddenUuids = useMemo(
+    () => collectMatchingNodeUuids(allNodes, themeSettings.hiddenNodes),
+    [allNodes, themeSettings.hiddenNodes],
+  );
+  const nodes = useMemo(
+    () =>
+      allNodes.filter(
+        (node) => (me?.logged_in === true || !node.hidden) && !hiddenUuids.has(node.uuid),
+      ),
+    [allNodes, me?.logged_in, hiddenUuids],
+  );
   // 是否挂载、是否显示悬浮球(showLauncher)由父组件 NodeGrid 决定;这里只看数据
   // 是否可用。若改成依赖 showCostSummary,会在卡内详情按钮关闭时错误地把整个组件
   // (连同悬浮球)一起 null 掉。

@@ -13,6 +13,7 @@ import {
   useResponsiveChartSize,
   type ChartTooltipState,
 } from "./chartShared";
+import { ChartTooltip, SwitchToggle } from "./ChartParts";
 import {
   cutPeakValues,
   detectTypicalIntervalSeconds,
@@ -37,11 +38,13 @@ function percentileFromSorted(sorted: number[], ratio: number) {
   return sorted[lower] + (sorted[upper] - sorted[lower]) * weight;
 }
 
-// 渲染前先按时间分桶降采样到这么多点（避免 uPlot 抽稀尖刺），再做按点数的滑动平均磨平。
-// 降采样后各时段点数一致，用固定点窗能让 1h/4h/1d 平滑度统一。点窗调大 → 更平滑。
+// 渲染前先按时间分桶降采样到这么多点（避免 uPlot 抽稀尖刺）。
 const MAX_RENDER_POINTS = 160;
-const SMOOTH_WINDOW_POINTS = 7; // 默认轻度平滑
-const SMOOTH_WINDOW_POINTS_PEAK = 13; // “削峰平滑”开启时更强
+// “削峰平滑”关闭：窗口=1 即不再叠加滑动平均（之前默认 7 会把长时段磨成近似直线），
+// 改由保峰降采样让真实尖峰穿透显示——“关闭”此时真的等于“不额外平滑”。
+const SMOOTH_WINDOW_POINTS = 1;
+// “削峰平滑”开启：均值降采样 + EWMA 削峰 + 更强滑动平均，得到平滑曲线。点窗调大 → 更平滑。
+const SMOOTH_WINDOW_POINTS_PEAK = 13;
 
 export function PingChart({
   uuid,
@@ -52,7 +55,7 @@ export function PingChart({
   hours: number;
   active?: boolean;
 }) {
-  const { data, isLoading, refetch, dataUpdatedAt } = usePingRecords(uuid, hours, active);
+  const { data, isLoading, refetch } = usePingRecords(uuid, hours, active);
   const { resolvedAppearance } = usePreferences();
   const { w, h, ref: chartSizeRef } = useResponsiveChartSize("wide");
   const [hiddenTasks, setHiddenTasks] = useState<Set<number>>(new Set());
@@ -67,7 +70,10 @@ export function PingChart({
     time: "",
   });
   const isDark = resolvedAppearance === "dark";
-  const tasks = useMemo(() => [...(data?.tasks ?? [])].sort((a, b) => a.id - b.id), [data]);
+  // 后端 (GetAllPingTasks) 已按 `weight ASC, id ASC` 排好序返回，但响应里不携带 weight 数值，
+  // 所以这里不能再自行按 weight/id 重排——直接保留后端顺序，才能与后台"延迟检测设置"里的
+  // 拖动排序一致。（旧代码强制按 id 升序，拖动过顺序的用户就会看到卡片/线条顺序与后台不符。）
+  const tasks = useMemo(() => [...(data?.tasks ?? [])], [data]);
   const taskLabels = useMemo(() => {
     const counts = new Map<string, number>();
     for (const task of tasks) {
@@ -142,7 +148,8 @@ export function PingChart({
       const anchor = time - lastAnchor <= tolerance ? lastAnchor : time;
       if (anchor === time) lastAnchor = time;
       const current = pointMap.get(anchor) ?? { time: anchor };
-      current[String(record.task_id)] = record.value > 0 ? record.value : null;
+      // value>=0 都是成功（0 表示往返 <1ms，被后端取整成 0）；只有 value<0（即 -1）才是真丢包→断点。
+      current[String(record.task_id)] = record.value >= 0 ? record.value : null;
       pointMap.set(anchor, current);
     }
 
@@ -166,8 +173,9 @@ export function PingChart({
       chartPoints.map((point) => point[taskKey]),
     );
 
-    const reduced = downsampleAligned(times, perTask, MAX_RENDER_POINTS);
-    // 始终做轻度按点滑动平均消抖（各时段一致）；“削峰平滑”开启时点窗加大（并已在前面叠加 cutPeakValues 削峰）。
+    // 关闭削峰：保峰降采样（真实尖峰穿透）；开启削峰：均值降采样（配合后面的强平滑磨平尖峰）。
+    const reduced = downsampleAligned(times, perTask, MAX_RENDER_POINTS, !cutPeak);
+    // 关闭削峰时窗口=1（不额外平滑，如实显示）；开启削峰时点窗加大（并已在前面叠加 cutPeakValues 削峰）。
     const smoothed = smoothByCount(
       reduced.perTask,
       cutPeak ? SMOOTH_WINDOW_POINTS_PEAK : SMOOTH_WINDOW_POINTS,
@@ -191,7 +199,7 @@ export function PingChart({
       const series = chart[index + 1] as Array<number | null | undefined> | undefined;
       if (!series) continue;
       for (const value of series) {
-        if (typeof value === "number" && Number.isFinite(value) && value > 0) {
+        if (typeof value === "number" && Number.isFinite(value) && value >= 0) {
           if (value < min) min = value;
           if (value > max) max = value;
         }
@@ -301,22 +309,23 @@ export function PingChart({
 
     return tasks.map((task, index) => {
       const records = grouped.get(task.id) ?? [];
-      const positives = records
-        .filter((record) => record.value > 0)
+      // 有效样本含 0（0 = 往返 <1ms 被取整）；只有 value<0（-1）才是丢包，统计里排除。
+      const valid = records
+        .filter((record) => record.value >= 0)
         .map((record) => record.value)
         .sort((a, b) => a - b);
-      const latest = [...records].reverse().find((record) => record.value > 0)?.value ?? null;
-      const avg = positives.length
-        ? positives.reduce((sum, value) => sum + value, 0) / positives.length
+      const latest = [...records].reverse().find((record) => record.value >= 0)?.value ?? null;
+      const avg = valid.length
+        ? valid.reduce((sum, value) => sum + value, 0) / valid.length
         : null;
-      const min = positives.length ? positives[0] : null;
-      const max = positives.length ? positives[positives.length - 1] : null;
-      const p50 = percentileFromSorted(positives, 0.5);
-      const p99 = percentileFromSorted(positives, 0.99);
-      // positives 全部 > 0，所以非 null 的 p50 必然 > 0——旧的 `p50 > 0` 子判断是多余的。
+      const min = valid.length ? valid[0] : null;
+      const max = valid.length ? valid[valid.length - 1] : null;
+      const p50 = percentileFromSorted(valid, 0.5);
+      const p99 = percentileFromSorted(valid, 0.99);
+      // p50 现在可能为 0（亚毫秒任务），`p50 &&` 守卫仍需保留：避免 p99/0 得到 Infinity。
       const volatility = p50 && p99 ? p99 / p50 : null;
       const total = records.length;
-      const lost = records.filter((record) => record.value <= 0).length;
+      const lost = records.filter((record) => record.value < 0).length;
       const loss = total > 0 ? (lost / total) * 100 : task.loss;
       return {
         ...task,
@@ -363,38 +372,18 @@ export function PingChart({
   return (
     <InstancePanel title="Ping 图表">
       <div className="instance-ping-toolbar">
-        <button
-          type="button"
-          className="instance-toggle-button instance-switch-button"
-          data-active={cutPeak ? "true" : "false"}
-          onClick={() => setCutPeak((value) => !value)}
-          aria-pressed={cutPeak}
+        <SwitchToggle
+          label="削峰平滑"
+          active={cutPeak}
+          onToggle={() => setCutPeak((value) => !value)}
           title="对尖峰值做轻度平滑，仅影响图线显示"
-        >
-          <span className="instance-switch-copy">削峰平滑</span>
-          <span className="instance-switch-track" aria-hidden>
-            <span className="instance-switch-thumb" />
-          </span>
-          <span className="instance-switch-state">
-            {cutPeak ? "开启" : "关闭"}
-          </span>
-        </button>
-        <button
-          type="button"
-          className="instance-toggle-button instance-switch-button"
-          data-active={connectNulls ? "true" : "false"}
-          onClick={() => setConnectNulls((value) => !value)}
-          aria-pressed={connectNulls}
+        />
+        <SwitchToggle
+          label="断点连线"
+          active={connectNulls}
+          onToggle={() => setConnectNulls((value) => !value)}
           title="关闭：如实显示中断/丢包断点；开启：跨过所有空缺连成完整曲线（更好看，但看不出掉线）。注：偶尔漏一两次采样的小空缺始终自动桥接，不受此开关影响。"
-        >
-          <span className="instance-switch-copy">断点连线</span>
-          <span className="instance-switch-track" aria-hidden>
-            <span className="instance-switch-thumb" />
-          </span>
-          <span className="instance-switch-state">
-            {connectNulls ? "开启" : "关闭"}
-          </span>
-        </button>
+        />
         <button type="button" className="instance-toggle-button" onClick={toggleAll}>
           {hiddenTasks.size === 0 ? <EyeOff size={14} /> : <Eye size={14} />}
           {hiddenTasks.size === 0 ? "隐藏全部" : "显示全部"}
@@ -434,7 +423,7 @@ export function PingChart({
               </span>
               <span
                 className="instance-ping-task-loss"
-                style={{ color: task.loss > 0 ? lossHeatColor(task.loss) : "var(--text-tertiary)" }}
+                style={{ color: lossHeatColor(task.loss) }}
               >
                 {task.loss.toFixed(1)}%
               </span>
@@ -449,27 +438,14 @@ export function PingChart({
             <UplotReact
               // 把 cutPeak/connectNulls 纳入 key:这两个 toggle 改了数据与 y 轴 range,
               // 复用同一 uPlot 实例(resetScales=false)时会卡成空白且关掉也不恢复;
-              // 改变 key 强制重建一个干净实例,开关都能正确重绘。
-              key={`${uuid}-${hours}-${cutPeak ? "smooth" : "raw"}-${connectNulls ? "span" : "gap"}-${dataUpdatedAt}`}
+              // 改变 key 强制重建一个干净实例,开关都能正确重绘。轮询刷新走 data prop 原地
+              // setData,不进 key——否则每次 refetch 都重建实例、丢掉进行中的拖拽缩放。
+              key={`${uuid}-${hours}-${cutPeak ? "smooth" : "raw"}-${connectNulls ? "span" : "gap"}`}
               options={options}
               data={chart}
               resetScales={false}
             />
-            {tooltip.show && (
-              <div
-                className="instance-chart-tooltip"
-                style={{ left: tooltip.left, top: tooltip.top }}
-              >
-                <div className="instance-chart-tooltip-time">{tooltip.time}</div>
-                {tooltip.rows.map((row) => (
-                  <div key={`${row.label}-${row.color}`} className="instance-chart-tooltip-row">
-                    <span className="instance-chart-tooltip-dot" style={{ background: row.color }} />
-                    <span>{row.label}</span>
-                    <strong>{row.value}</strong>
-                  </div>
-                ))}
-              </div>
-            )}
+            <ChartTooltip tooltip={tooltip} />
           </>
         ) : (
           <div className="instance-empty">当前已隐藏全部线路，点击上方按钮可恢复显示</div>

@@ -4,7 +4,6 @@ import {
   getHomeGroupOptions,
   normalizeHomeGroupOrder,
   sortHomeGroupOptions,
-  sortHomeNodeSummaries,
 } from "@/utils/homeNodes";
 
 function node(partial: Partial<HomeNodeSummary> & Pick<HomeNodeSummary, "uuid">): HomeNodeSummary {
@@ -34,33 +33,6 @@ describe("home node helpers", () => {
     ).toEqual(["US 美国", "HK 香港"]);
   });
 
-  it("moves offline nodes behind online nodes without crossing the filtered set", () => {
-    const sorted = sortHomeNodeSummaries(
-      [
-        node({ uuid: "offline-low", online: false, weight: 1 }),
-        node({ uuid: "online-high", online: true, weight: 8 }),
-        node({ uuid: "online-low", online: true, weight: 2 }),
-        node({ uuid: "unknown", online: null, weight: 0 }),
-      ],
-      true,
-    );
-
-    expect(sorted.map((item) => item.uuid)).toEqual([
-      "unknown",
-      "online-low",
-      "online-high",
-      "offline-low",
-    ]);
-  });
-
-  it("preserves backend order when offline sorting is disabled", () => {
-    const nodes = [
-      node({ uuid: "offline", online: false, weight: 1 }),
-      node({ uuid: "online", online: true, weight: 2 }),
-    ];
-
-    expect(sortHomeNodeSummaries(nodes, false)).toBe(nodes);
-  });
 });
 
 describe("home group ordering", () => {

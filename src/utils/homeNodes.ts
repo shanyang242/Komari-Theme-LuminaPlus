@@ -56,17 +56,3 @@ export function sortHomeGroupOptions(groups: string[], order: string[]): string[
 
   return result;
 }
-
-export function sortHomeNodeSummaries(
-  nodes: HomeNodeSummary[],
-  moveOfflineNodesBack: boolean,
-) {
-  if (!moveOfflineNodesBack) return nodes;
-  return [...nodes].sort((left, right) => {
-    const leftOffline = left.online === false ? 1 : 0;
-    const rightOffline = right.online === false ? 1 : 0;
-    if (leftOffline !== rightOffline) return leftOffline - rightOffline;
-    if (left.weight !== right.weight) return left.weight - right.weight;
-    return left.uuid.localeCompare(right.uuid);
-  });
-}

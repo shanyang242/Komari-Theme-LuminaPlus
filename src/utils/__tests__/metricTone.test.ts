@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  latencyHeatColor,
+  lossHeatColor,
   speedRateColor,
   speedRateColorFromBytes,
   trafficQuotaSegmentColor,
@@ -18,6 +20,35 @@ function oklchHue(color: string): number {
   return Number(match[1]);
 }
 
+
+describe("latencyHeatColor", () => {
+  it("treats 0ms (sub-millisecond success) as the greenest latency, not neutral", () => {
+    // 后端把往返 <1ms 取整成 0；0 是最优延迟,取最绿端(色相 ~145°),不能当无数据画成中性灰。
+    const color = latencyHeatColor(0);
+    expect(color).not.toBe("var(--text-tertiary)");
+    expect(hue(color)).toBeCloseTo(145, 0);
+  });
+
+  it("returns neutral only for no data (null/undefined) or loss (negative / non-finite)", () => {
+    expect(latencyHeatColor(null)).toBe("var(--text-tertiary)");
+    expect(latencyHeatColor(undefined)).toBe("var(--text-tertiary)");
+    expect(latencyHeatColor(-1)).toBe("var(--text-tertiary)");
+    expect(latencyHeatColor(Number.NaN)).toBe("var(--text-tertiary)");
+  });
+
+  it("rotates hue green→red as latency grows", () => {
+    expect(hue(latencyHeatColor(0))).toBeGreaterThan(hue(latencyHeatColor(120)));
+    expect(hue(latencyHeatColor(120))).toBeGreaterThan(hue(latencyHeatColor(500)));
+  });
+});
+
+describe("lossHeatColor", () => {
+  it("treats 0% loss as the greenest, neutral only for negative / no data", () => {
+    expect(hue(lossHeatColor(0))).toBeCloseTo(145, 0);
+    expect(lossHeatColor(null)).toBe("var(--text-tertiary)");
+    expect(lossHeatColor(-1)).toBe("var(--text-tertiary)");
+  });
+});
 
 describe("trafficUsageColor", () => {
   it("returns the success token for no usage / unlimited / invalid", () => {
@@ -81,20 +112,22 @@ describe("trafficQuotaSegmentColor", () => {
 });
 
 describe("speedRateColor", () => {
-  it("maps each rate-unit tier to its own heat token (KB→MB→GB→TB)", () => {
-    expect(speedRateColor("KB/s")).toBe("var(--speed-kb)");
-    expect(speedRateColor("MB/s")).toBe("var(--speed-mb)");
-    expect(speedRateColor("GB/s")).toBe("var(--speed-gb)");
-    expect(speedRateColor("TB/s")).toBe("var(--speed-tb)");
+  it("maps each rate-unit tier to its own heat token (B→KB→MB→GB+)", () => {
+    expect(speedRateColor("KB/s")).toBe("var(--speed-low)");
+    expect(speedRateColor("MB/s")).toBe("var(--speed-high)");
+    expect(speedRateColor("GB/s")).toBe("var(--speed-max)");
+    // TB/s·PB/s 现实到不了,并入急速顶档(--speed-max)而非各占一档。
+    expect(speedRateColor("TB/s")).toBe("var(--speed-max)");
+    expect(speedRateColor("PB/s")).toBe("var(--speed-max)");
   });
 
-  it("maps idle (B/s) to the low green tier, only unknown units go neutral", () => {
-    expect(speedRateColor("B/s")).toBe("var(--speed-kb)");
+  it("maps idle (B/s) to its own 超低速 tier, only unknown units go neutral", () => {
+    expect(speedRateColor("B/s")).toBe("var(--speed-idle)");
     expect(speedRateColor("")).toBe("var(--text-tertiary)");
   });
 
   it("speedRateColorFromBytes routes raw bytes/sec through the unit tier", () => {
-    expect(speedRateColorFromBytes(0)).toBe("var(--speed-kb)");
-    expect(speedRateColorFromBytes(5 * 1024 * 1024)).toBe("var(--speed-mb)");
+    expect(speedRateColorFromBytes(0)).toBe("var(--speed-idle)");
+    expect(speedRateColorFromBytes(5 * 1024 * 1024)).toBe("var(--speed-high)");
   });
 });

@@ -9,8 +9,11 @@ export type TimedMetricPoint = {
 // 每个检测到的 gap 最多插入的 null 标记点数上限，避免长时间中断把对齐数组撑成上千个点。
 const MAX_SENTINELS_PER_GAP = 6;
 
-// 空缺超过「周期 × 此倍数」才算真实中断插 null 断点；更小的空缺留给 uPlot 跨过，避免漏采把线切碎。
-const GAP_BREAK_INTERVAL_MULTIPLIER = 3;
+// 空缺超过「桥接阈值」才算真实中断、插 null 断点；更小的空缺留给 uPlot 跨过，避免漏采把线切碎。
+// 阈值：周期 × 6，再钳到 [2min, 30min]。
+const GAP_BREAK_INTERVAL_MULTIPLIER = 6;
+const GAP_BREAK_MIN_SECONDS = 120; // 下限 2min：短周期任务偶尔抖动不至于一漏就断
+const GAP_BREAK_MAX_SECONDS = 1800; // 上限 30min：再长的洞一定断，不画跨越超长空缺的假线
 
 // 在升序 `times` 上二分查找与 `target` 相差在 `tolerance` 内的下标，没有则返回 -1。
 // 用于把断点 null 合并到已有的他 task anchor 上，而不是新建一个近重复列。
@@ -183,7 +186,10 @@ export function insertMetricGapSentinels(
     if (!Number.isFinite(interval) || interval <= 0) continue;
 
     const tolerance = Math.max(1, interval * toleranceRatio);
-    const breakThreshold = interval * GAP_BREAK_INTERVAL_MULTIPLIER;
+    const breakThreshold = Math.min(
+      GAP_BREAK_MAX_SECONDS,
+      Math.max(GAP_BREAK_MIN_SECONDS, interval * GAP_BREAK_INTERVAL_MULTIPLIER),
+    );
     for (let index = 1; index < validTimes.length; index += 1) {
       const previous = validTimes[index - 1];
       const current = validTimes[index];
@@ -364,12 +370,20 @@ export function cutPeakValues<T extends { [key: string]: any }>(
   return result;
 }
 
-// 按时间等宽分桶降采样，桶内对每条探测点的样本取均值：降到 uPlot 抽稀阈值以下避免尖刺。
-// 三态保留：任何 null→null（断点优先，避免丢包被均值吞掉），有值→均值，全 off-phase→undefined。
+// 桶内偏离均值超过这个相对比例才判定为「真尖峰」，保峰模式下输出极值而非均值。
+// 调小 → 更多波动被保留（线更跳）；调大 → 只有非常突出的尖峰才显出来。
+const PEAK_PRESERVE_SPIKE_RATIO = 0.3;
+
+// 按时间等宽分桶降采样：降到 uPlot 抽稀阈值以下避免尖刺。
+// 三态保留：任何 null→null（断点优先，避免丢包被均值吞掉），有值→见下，全 off-phase→undefined。
+// preservePeaks=false（默认）：桶内取均值——平滑，但单点尖峰会被均值吞掉。
+// preservePeaks=true：平坦桶仍取均值（基线干净），但桶内极值偏离均值超过 PEAK_PRESERVE_SPIKE_RATIO
+//   时输出该极值——让真实尖峰/突降穿透降采样显示出来（配合关闭额外滑动平均使用）。
 export function downsampleAligned(
   times: number[],
   perTask: Array<Array<number | null | undefined>>,
   maxPoints: number,
+  preservePeaks = false,
 ): { times: number[]; perTask: Array<Array<number | null | undefined>> } {
   const length = times.length;
   if (length <= maxPoints || maxPoints <= 0) return { times, perTask };
@@ -386,6 +400,13 @@ export function downsampleAligned(
   const valueSum = perTask.map(() => new Array<number>(maxPoints).fill(0));
   const valueCount = perTask.map(() => new Array<number>(maxPoints).fill(0));
   const nullCount = perTask.map(() => new Array<number>(maxPoints).fill(0));
+  // 仅保峰模式需要：记录每桶每序列的最大/最小值，用来判断并输出尖峰极值。
+  const valueMax = preservePeaks
+    ? perTask.map(() => new Array<number>(maxPoints).fill(Number.NEGATIVE_INFINITY))
+    : null;
+  const valueMin = preservePeaks
+    ? perTask.map(() => new Array<number>(maxPoints).fill(Number.POSITIVE_INFINITY))
+    : null;
 
   for (let i = 0; i < length; i += 1) {
     let bucket = Math.floor((times[i] - min) / bucketDuration);
@@ -398,6 +419,8 @@ export function downsampleAligned(
       if (typeof value === "number" && Number.isFinite(value)) {
         valueSum[s][bucket] += value;
         valueCount[s][bucket] += 1;
+        if (valueMax && value > valueMax[s][bucket]) valueMax[s][bucket] = value;
+        if (valueMin && value < valueMin[s][bucket]) valueMin[s][bucket] = value;
       } else if (value === null) {
         nullCount[s][bucket] += 1;
       }
@@ -410,13 +433,26 @@ export function downsampleAligned(
     if (timeCount[bucket] === 0) continue; // 跳过没有任何样本的空桶
     outTimes.push(timeSum[bucket] / timeCount[bucket]);
     for (let s = 0; s < seriesCount; s += 1) {
-      outPerTask[s].push(
-        nullCount[s][bucket] > 0
-          ? null
-          : valueCount[s][bucket] > 0
-            ? valueSum[s][bucket] / valueCount[s][bucket]
-            : undefined,
-      );
+      if (nullCount[s][bucket] > 0) {
+        outPerTask[s].push(null); // 断点优先：桶内有丢包就断开
+        continue;
+      }
+      if (valueCount[s][bucket] === 0) {
+        outPerTask[s].push(undefined); // 全 off-phase：跨过、不当断点
+        continue;
+      }
+      const mean = valueSum[s][bucket] / valueCount[s][bucket];
+      if (!preservePeaks || !valueMax || !valueMin) {
+        outPerTask[s].push(mean);
+        continue;
+      }
+      // 保峰：取偏离均值更大的一侧极值；只有偏离超过阈值才用极值，否则保持均值基线干净。
+      const upDev = valueMax[s][bucket] - mean;
+      const downDev = mean - valueMin[s][bucket];
+      const extreme = upDev >= downDev ? valueMax[s][bucket] : valueMin[s][bucket];
+      const extDev = Math.max(upDev, downDev);
+      const isSpike = mean > 0 && extDev > mean * PEAK_PRESERVE_SPIKE_RATIO;
+      outPerTask[s].push(isSpike ? extreme : mean);
     }
   }
 

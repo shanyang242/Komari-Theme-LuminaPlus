@@ -25,6 +25,11 @@ const CANVAS_COLOR_FALLBACKS = {
     "--progress-memory": "#8b5cf6",
     "--progress-disk": "#e97b35",
     "--progress-network": "#10b981",
+    "--progress-load": "#ec4899",
+    "--speed-idle": "#3aa76a",
+    "--speed-low": "#d9992b",
+    "--speed-high": "#e07a35",
+    "--speed-max": "#d6463d",
     "--status-success": "#2f9e65",
     "--status-warning": "#e9a23b",
     "--status-error": "#dc2626",
@@ -39,6 +44,11 @@ const CANVAS_COLOR_FALLBACKS = {
     "--progress-memory": "#a35cf5",
     "--progress-disk": "#f1873d",
     "--progress-network": "#5bbb8a",
+    "--progress-load": "#f472b6",
+    "--speed-idle": "#61c08f",
+    "--speed-low": "#e0b34f",
+    "--speed-high": "#ef8f55",
+    "--speed-max": "#ec6a5e",
     "--status-success": "#61c08f",
     "--status-warning": "#d4a54a",
     "--status-error": "#d84e45",
@@ -61,7 +71,14 @@ function fallbackCanvasColor(varName: string | null): string {
   ] ?? "#000000";
 }
 
-export function resolveCssColor(color: string): string {
+// 用户改了自定义指标配色时，颜色没换明暗模式，appearance-key 不会触发上面的失效逻辑，
+// canvas 会继续画缓存里的旧色。改色后由 useMetricColors 调这个手动清缓存，下次重绘读到新值。
+export function clearCssColorCache() {
+  cssColorCache.clear();
+  cssColorCacheKey = null;
+}
+
+function resolveCssColor(color: string): string {
   const varName = extractCssVarName(color);
   if (!varName) return color;
 

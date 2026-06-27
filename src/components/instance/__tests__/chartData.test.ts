@@ -102,7 +102,7 @@ describe("insertMetricGapSentinels — three-state ping semantics", () => {
   it("preserves real loss (null) as a break", () => {
     const points: TimedMetricPoint[] = [
       { time: 0, A: 10 },
-      { time: 60, A: null }, // value <= 0 已被分桶器编码成 null
+      { time: 60, A: null }, // value < 0（丢包）已被分桶器编码成 null；0 是亚毫秒成功，不入此列
       { time: 120, A: 12 },
     ];
 
@@ -136,12 +136,12 @@ describe("insertMetricGapSentinels — three-state ping semantics", () => {
     expect(out.every((point) => point.A !== null)).toBe(true);
   });
 
-  it("breaks once the gap exceeds 3x interval", () => {
-    // 空缺 = 4 倍 interval → 真实较长中断，必须插 null 断点。
+  it("breaks once the gap exceeds 6x interval", () => {
+    // 空缺 = 7 倍 interval（> 桥接阈值 6×=360s）→ 真实较长中断，必须插 null 断点。
     const points: TimedMetricPoint[] = [
       { time: 0, A: 10 },
-      { time: 240, A: 14 }, // 60、120、180 三处漏采 → 空缺 = 4 倍 interval
-      { time: 300, A: 15 },
+      { time: 420, A: 14 }, // 中间漏采 6 次 → 空缺 = 7 倍 interval
+      { time: 480, A: 15 },
     ];
 
     const out = insertMetricGapSentinels(points, opts({ A: 60 }));
@@ -150,15 +150,18 @@ describe("insertMetricGapSentinels — three-state ping semantics", () => {
   });
 
   it("breaks only the gapped task on a long outage, sparing co-located anchors", () => {
-    // A 在 60..300 间中断，而 B 持续采样。A 的断点必须落到 B 的 anchor 上 (合并而非跳过)，
-    // 且不能破坏 B 的真实值。
+    // A 在 60..480 间中断（空缺 7×interval > 阈值），而 B 持续采样。A 的断点必须落到 B 的
+    // anchor 上 (合并而非跳过)，且不能破坏 B 的真实值。
     const points: TimedMetricPoint[] = [
       { time: 0, A: 10, B: 100 },
       { time: 60, A: 11, B: 101 },
       { time: 120, B: 102 },
       { time: 180, B: 103 },
       { time: 240, B: 104 },
-      { time: 300, A: 15, B: 105 },
+      { time: 300, B: 105 },
+      { time: 360, B: 106 },
+      { time: 420, B: 107 },
+      { time: 480, A: 15, B: 108 },
     ];
 
     const out = insertMetricGapSentinels(points, opts({ A: 60, B: 60 }));
@@ -169,12 +172,12 @@ describe("insertMetricGapSentinels — three-state ping semantics", () => {
   });
 
   it("merges sentinels when multiple tasks gap at the same time", () => {
-    // A 和 B 都在 60..300 间中断且其间没有 anchor，所以各自在相同的期望时间播下哨兵——
-    // 第二个必须合并而非覆盖。
+    // A 和 B 都在 60..480 间中断（空缺 7×interval）且其间没有 anchor，所以各自在相同的期望
+    // 时间播下哨兵——第二个必须合并而非覆盖。
     const points: TimedMetricPoint[] = [
       { time: 0, A: 10, B: 100 },
       { time: 60, A: 11, B: 101 },
-      { time: 300, A: 15, B: 105 },
+      { time: 480, A: 15, B: 105 },
     ];
 
     const out = insertMetricGapSentinels(points, opts({ A: 60, B: 60 }));
@@ -207,6 +210,22 @@ describe("downsampleAligned", () => {
     );
 
     expect(out.perTask[0][0]).toBeUndefined();
+    expect(out.perTask[0][1]).toBe(15);
+  });
+
+  it("averages by default but pushes through a real spike when preservePeaks=true", () => {
+    // 桶0 = {50, 500} 含尖峰；桶1 = {50, 52} 平坦。
+    const mean = downsampleAligned([0, 10, 20, 30], [[50, 500, 50, 52]], 2);
+    expect(mean.perTask[0][0]).toBe(275); // 默认均值把尖峰摊平
+
+    const peak = downsampleAligned([0, 10, 20, 30], [[50, 500, 50, 52]], 2, true);
+    expect(peak.perTask[0][0]).toBe(500); // 保峰：尖峰穿透
+    expect(peak.perTask[0][1]).toBe(51); // 平坦桶仍取均值，基线干净
+  });
+
+  it("still prioritizes null breaks over peaks in preservePeaks mode", () => {
+    const out = downsampleAligned([0, 10, 20, 30], [[50, null, 14, 16]], 2, true);
+    expect(out.perTask[0][0]).toBeNull(); // 桶内有丢包 → 断点优先，不被尖峰逻辑覆盖
     expect(out.perTask[0][1]).toBe(15);
   });
 });

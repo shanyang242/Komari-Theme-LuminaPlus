@@ -188,9 +188,6 @@
   line-height: 1;
   white-space: nowrap;
   vertical-align: middle;
-}
-
-.compact-node-tag {
   /* 整标签是从被裁剪的轨道里换行出去,而不是被挤压,因此尺寸保持一致(换行永不溢出一行,所以多标签
      行上 flex-shrink 永不触发)。保留收缩仅是为了让单个比轨道更宽的标签干净地省略号截断(受 max-width
      限制),而不是在词中被硬裁剪。 */
@@ -502,7 +499,6 @@
    无限循环的 `filter` keyframe 动画会在每张卡片(含屏幕外)上对最多 16 个圆点运行——这是持续的
    合成/绘制开销,拖累滚动。静态圆点能传达同样的信号。 */
 
-.compact-node-health,
 .compact-node-bottom {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

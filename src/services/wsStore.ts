@@ -155,17 +155,18 @@ function resolveTrafficTotals(previous: NodeMetrics, nextUp: number, nextDown: n
 }
 
 function mergeRealtime(
-  meta: NodeInfo,
   metrics: NodeMetrics,
   rt: NodeRealtime,
   online: boolean,
 ): NodeMetrics {
-  const ramUsed = rt.ram?.used ?? 0;
-  const ramTotal = rt.ram?.total ?? metrics.ramTotal ?? meta.mem_total;
-  const swapUsed = rt.swap?.used ?? 0;
-  const swapTotal = rt.swap?.total ?? metrics.swapTotal ?? meta.swap_total;
-  const diskUsed = rt.disk?.used ?? 0;
-  const diskTotal = rt.disk?.total ?? metrics.diskTotal ?? meta.disk_total;
+  // normalizeRealtime 已保证 ram/swap/disk 的 total（缺值时回退 metrics/meta 的总量）为数值，
+  // 故此处直接取用，无需再叠一层兜底。
+  const ramUsed = rt.ram.used;
+  const ramTotal = rt.ram.total;
+  const swapUsed = rt.swap.used;
+  const swapTotal = rt.swap.total;
+  const diskUsed = rt.disk.used;
+  const diskTotal = rt.disk.total;
   const updatedAt = toTimestamp(rt.updated_at);
   const trafficTotals = resolveTrafficTotals(
     metrics,
@@ -235,6 +236,8 @@ function shallowEqualNodeInfo(a: NodeInfo, b: NodeInfo) {
     a.group === b.group &&
     a.region === b.region &&
     a.hidden === b.hidden &&
+    a.ipv4 === b.ipv4 &&
+    a.ipv6 === b.ipv6 &&
     a.cpu_name === b.cpu_name &&
     a.cpu_cores === b.cpu_cores &&
     a.arch === b.arch &&
@@ -605,7 +608,7 @@ function applyLatestStatus(records: Record<string, unknown>) {
     const online = resolveOnline(rawRecord);
     const realtime = normalizeRealtime(rawRecord, meta, prev);
     const merged = realtime
-      ? mergeRealtime(meta, prev, realtime, online)
+      ? mergeRealtime(prev, realtime, online)
       : { ...prev, online };
 
     if (!shallowEqualMetrics(prev, merged)) {

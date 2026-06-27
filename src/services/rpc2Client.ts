@@ -400,7 +400,7 @@ export function getRpc2Client() {
   return rpc2Client;
 }
 
-export function disposeRpc2Client() {
+function disposeRpc2Client() {
   if (rpc2Client) {
     rpc2Client.close();
     rpc2Client = null;

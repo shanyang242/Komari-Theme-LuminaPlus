@@ -2,6 +2,11 @@ import type { NodeInfo } from "@/types/komari";
 import { classifyBillingCycleWord } from "@/utils/billing";
 import { fetchWithTimeout } from "@/utils/abort";
 import { resolveExpireTimestamp } from "@/utils/format";
+import {
+  buildNodeIdentitySet,
+  nodeMatchesIdentitySet,
+  normalizeNodeIdentityList,
+} from "@/utils/nodeIdentity";
 
 const COST_TARGET_CURRENCY = "CNY";
 export const DEFAULT_COST_RATE_API_URL = "https://api.frankfurter.dev/v2/rates?base=USD";
@@ -93,25 +98,8 @@ interface ExchangeRateData {
 
 type CostNode = NodeInfo & Record<string, unknown>;
 
-function normalizeComparable(value: unknown) {
-  return String(value == null ? "" : value).trim().toLowerCase();
-}
-
-export function normalizeCostIgnoredNodes(value: unknown): string[] {
-  const rawValues = Array.isArray(value)
-    ? value
-    : typeof value === "string"
-      ? value.split(/[\n,，;；]+/)
-      : [];
-
-  return Array.from(
-    new Set(
-      rawValues
-        .map((item) => (typeof item === "string" || typeof item === "number" ? String(item).trim() : ""))
-        .filter(Boolean),
-    ),
-  );
-}
+// 与「隐藏节点」共用同一套名称/UUID 解析(见 utils/nodeIdentity)。
+export const normalizeCostIgnoredNodes = normalizeNodeIdentityList;
 
 export function isCostRateApiUrlValid(value: string): boolean {
   try {
@@ -202,28 +190,6 @@ function remainingCycleValue(
   }
 
   return price;
-}
-
-function buildIgnoredSet(ignoredNodes: string[]): Set<string> {
-  return new Set(ignoredNodes.map(normalizeComparable).filter(Boolean));
-}
-
-function isIgnoredNode(node: CostNode, ignored: Set<string>) {
-  if (ignored.size === 0) return false;
-
-  const values = [
-    node.id,
-    node.uuid,
-    node.name,
-    node.display_name,
-    node.remark,
-    node.alias,
-    node.public_remark,
-  ]
-    .map(normalizeComparable)
-    .filter(Boolean);
-
-  return values.some((value) => ignored.has(value));
 }
 
 function readRateCache(cacheKey: string, allowExpired = false): ExchangeRateData | null {
@@ -343,7 +309,7 @@ export function calculateCostSummary(
   let ignoredCount = 0;
   let skippedCount = 0;
   const details: CostSummaryDetail[] = [];
-  const ignored = buildIgnoredSet(ignoredNodes);
+  const ignored = buildNodeIdentitySet(ignoredNodes);
 
   for (const node of nodes as CostNode[]) {
     const name = node.name || node.display_name || node.remark || node.uuid;
@@ -360,7 +326,7 @@ export function calculateCostSummary(
       billingCycleDays: cycleDays,
     };
 
-    if (isIgnoredNode(node, ignored)) {
+    if (nodeMatchesIdentitySet(node, ignored)) {
       ignoredCount += 1;
       details.push({
         ...baseDetail,

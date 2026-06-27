@@ -1,6 +1,7 @@
 import { useState } from "react";
-import { AlertTriangle, ChevronLeft, ChevronRight, LayoutGrid, Monitor, Rows3, Settings, SlidersHorizontal, Sun, Moon } from "lucide-react";
+import { AlertTriangle, ChevronLeft, ChevronRight, LayoutGrid, Monitor, Palette, Rows3, Settings, SlidersHorizontal, Sun, Moon } from "lucide-react";
 import { Link, useSearchParams } from "react-router-dom";
+import { MetricColorPicker } from "./MetricColorPicker";
 import { usePreferences } from "@/hooks/usePreferences";
 import { useViewMode } from "@/hooks/useViewMode";
 import { useNodeStoreStatus } from "@/hooks/useNode";
@@ -30,9 +31,13 @@ function FloatingControlsInner() {
   const themeSettings = useThemeSettings();
   const { failureStreak } = useNodeStoreStatus();
   const [collapsed, setCollapsed] = useState(true);
+  const [colorsOpen, setColorsOpen] = useState(false);
   const settingsReady = themeSettings.isReady;
   const showAdmin = settingsReady && themeSettings.enableAdminButton;
-  const showThemeManage = Boolean(me?.logged_in);
+  // 主题管理入口与配色取色器都仅对登录管理员开放（配色存后端、全局生效）。
+  const loggedIn = Boolean(me?.logged_in);
+  const showThemeManage = loggedIn;
+  const showColorPicker = loggedIn;
   const showSyncWarning = failureStreak >= 2;
   const hiddenTabIndex = collapsed ? -1 : undefined;
   const ToggleIcon = collapsed ? ChevronLeft : ChevronRight;
@@ -88,6 +93,22 @@ function FloatingControlsInner() {
                 >
                   <ViewIcon size={16} />
                 </button>
+                {showColorPicker && (
+                  <button
+                    type="button"
+                    onClick={() => setColorsOpen((value) => !value)}
+                    aria-label="卡片配色"
+                    aria-pressed={colorsOpen}
+                    title="卡片配色"
+                    tabIndex={hiddenTabIndex}
+                    className={clsx(
+                      "control-button grid h-9 w-9 place-items-center",
+                      colorsOpen && "control-toggle is-active",
+                    )}
+                  >
+                    <Palette size={16} />
+                  </button>
+                )}
               </>
             )}
             {showThemeManage && (
@@ -127,6 +148,7 @@ function FloatingControlsInner() {
             )}
           </button>
         </div>
+        {showColorPicker && !collapsed && colorsOpen && <MetricColorPicker />}
         {showSyncWarning && !collapsed && (
           <div className="pointer-events-none flex items-center gap-2 rounded-full border border-[color-mix(in_srgb,var(--status-offline)_32%,transparent)] bg-[color-mix(in_srgb,var(--surface-a)_90%,transparent)] px-3 py-1 text-[11px] font-medium text-[var(--status-offline)] shadow-[0_10px_25px_-18px_rgba(0,0,0,0.8)] backdrop-blur">
             <AlertTriangle size={12} />

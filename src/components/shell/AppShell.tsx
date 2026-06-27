@@ -3,10 +3,13 @@ import { BackgroundLayer } from "./BackgroundLayer";
 import { FloatingControls } from "./FloatingControls";
 import { useAppearance } from "@/hooks/useAppearance";
 import { useSiteMetadata } from "@/hooks/useSiteMetadata";
+import { useMetricColorsSync } from "@/hooks/useMetricColors";
 
 export function AppShell() {
   useAppearance();
   useSiteMetadata();
+  // 把后端保存的自定义指标配色应用到所有访客/设备。
+  useMetricColorsSync();
   return (
     <div className="relative flex min-h-screen flex-col">
       <BackgroundLayer />

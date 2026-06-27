@@ -248,7 +248,19 @@ export async function getNodesLatestStatus(
 }
 
 export async function getNodes(): Promise<NodeInfo[]> {
-  return (await apiGet("/api/nodes", z.array(NodeInfoSchema))) as NodeInfo[];
+  // 走 common:getNodes（RPC2）：它按 SendIpAddrToGuest 设置下发 ipv4/ipv6（管理员全量 /
+  // 访客打码），所以前端能显示 V4/V6；/api/nodes 则永远抹掉 IP，拿不到。
+  try {
+    const map = await rpcCall(
+      "common:getNodes",
+      {},
+      z.record(z.string(), NodeInfoSchema),
+    );
+    return Object.values(map) as NodeInfo[];
+  } catch {
+    // RPC 不可用时兜底回旧的 HTTP 接口（拿不到 IP，但节点列表照常加载）。
+    return (await apiGet("/api/nodes", z.array(NodeInfoSchema))) as NodeInfo[];
+  }
 }
 
 export async function getAdminClients(): Promise<AdminClient[]> {

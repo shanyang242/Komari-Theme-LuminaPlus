@@ -55,6 +55,8 @@ export const NodeInfoSchema = z
     public_remark: looseString.default(""),
     traffic_limit: looseNumber.default(0),
     traffic_limit_type: looseString.default(""),
+    ipv4: looseString.default(""),
+    ipv6: looseString.default(""),
     created_at: looseString.default(""),
     updated_at: looseString.default(""),
   })
@@ -86,6 +88,8 @@ export interface NodeInfo {
   public_remark: string;
   traffic_limit: number;
   traffic_limit_type: string;
+  ipv4: string;
+  ipv6: string;
   created_at: string;
   updated_at: string;
 }
@@ -140,7 +144,9 @@ export interface ThemeSettings {
   showHomeOverview?: boolean;
   showGroupTabs?: boolean;
   homeGroupOrder?: string[];
-  moveOfflineNodesBack?: boolean;
+  enableHomeSort?: boolean;
+  homeSortField?: "default" | "name" | "speed" | "traffic" | "price";
+  homeSortDirection?: "asc" | "desc";
   showCostSummary?: boolean;
   showCostSummaryFloatingButton?: boolean;
   showOverviewRatings?: boolean;
@@ -155,6 +161,7 @@ export interface ThemeSettings {
   compactShowBilling?: boolean;
   compactShowUptime?: boolean;
   showConnections?: boolean;
+  hiddenNodes?: string[];
   costIgnoredNodes?: string[];
   costRateApiUrl?: string;
   backgroundImage?: string;

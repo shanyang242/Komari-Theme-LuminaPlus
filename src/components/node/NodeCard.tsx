@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { useNodeCardModel } from "@/hooks/useNodeCardModel";
 import { usePreferences } from "@/hooks/usePreferences";
+import { useMetricColorsVersion } from "@/hooks/useMetricColors";
 import { useThemeSettings } from "@/hooks/useThemeSettings";
 import { formatBytes } from "@/utils/format";
 import {
@@ -33,6 +34,7 @@ import { MiniBars } from "./MiniBars";
 import { QualityBars } from "./QualityBars";
 import { CanvasStrip, mixSrgbTowardWhite, safeCanvasColor } from "./CanvasStrip";
 import { joinTagTitle, nodeDetailLinkLabels, pingEmptyLabels } from "./nodeCardShared";
+import { IpStackBadges } from "./IpStackBadges";
 import {
   formatLatencyBucketSummary,
   formatLossBucketSummary,
@@ -53,6 +55,9 @@ export const NodeCard = memo(function NodeCard({
   uuid: string;
 }) {
   const { resolvedAppearance } = usePreferences();
+  // 自定义配色改动时 version 自增，拼进 redrawKey 让 canvas 进度条即时重画（含离线静态卡）。
+  const colorsVersion = useMetricColorsVersion();
+  const redrawKey = `${resolvedAppearance}:${colorsVersion}`;
   const themeSettings = useThemeSettings();
   const model = useNodeCardModel(uuid);
   const [hoveredLatencyIndex, setHoveredLatencyIndex] = useState<number | null>(null);
@@ -114,7 +119,7 @@ export const NodeCard = memo(function NodeCard({
           <NodeMetricSection
             node={node}
             loadFraction={loadFraction}
-            redrawKey={resolvedAppearance}
+            redrawKey={redrawKey}
           />
 
           <NodeTrafficSection
@@ -123,7 +128,7 @@ export const NodeCard = memo(function NodeCard({
             downRate={downRate}
             trafficTrend={trafficTrend}
             isOnline={isOnline}
-            redrawKey={resolvedAppearance}
+            redrawKey={redrawKey}
           />
 
           <NodeTrafficQuota traffic={traffic} />
@@ -148,7 +153,7 @@ export const NodeCard = memo(function NodeCard({
           <NodeHealthSection
             ping={ping}
             pingBuckets={pingBuckets}
-            redrawKey={resolvedAppearance}
+            redrawKey={redrawKey}
             hasHomepagePingBinding={hasHomepagePingBinding}
             latencyColor={latencyColor}
             lossColor={lossColor}
@@ -198,10 +203,15 @@ function NodeCardHeader({
             {node.name}
           </Link>
         </div>
-        {subtitle && (
-          <p className="server-card-subtitle" title={subtitle}>
-            {subtitle}
-          </p>
+        {(subtitle || node.ipv4 || node.ipv6) && (
+          <div className="server-card-subtitle-row">
+            {subtitle && (
+              <span className="server-card-subtitle" title={subtitle}>
+                {subtitle}
+              </span>
+            )}
+            <IpStackBadges ipv4={node.ipv4} ipv6={node.ipv6} />
+          </div>
         )}
       </div>
       <Link
@@ -235,7 +245,7 @@ function NodeMetricSection({
         detailText={`${node.cpu_cores || 0} 核`}
         fraction={node.cpuPct / 100}
         redrawKey={redrawKey}
-        paint={{ kind: "solid", color: "var(--progress-cpu)" }}
+        paint="var(--progress-cpu)"
       />
       <MetricBar
         icon={<MemoryStick size={13} strokeWidth={2} />}
@@ -245,7 +255,7 @@ function NodeMetricSection({
         detailText={`${formatBytes(node.ramUsed)} / ${formatBytes(node.ramTotal)}`}
         fraction={node.ramPct / 100}
         redrawKey={redrawKey}
-        paint={{ kind: "solid", color: "var(--progress-memory)" }}
+        paint="var(--progress-memory)"
       />
       <MetricBar
         icon={<HardDrive size={13} strokeWidth={2} />}
@@ -255,7 +265,7 @@ function NodeMetricSection({
         detailText={`${formatBytes(node.diskUsed)} / ${formatBytes(node.diskTotal)}`}
         fraction={node.diskPct / 100}
         redrawKey={redrawKey}
-        paint={{ kind: "solid", color: "var(--progress-disk)" }}
+        paint="var(--progress-disk)"
       />
       <MetricBar
         icon={<Gauge size={13} strokeWidth={2} />}
@@ -263,11 +273,7 @@ function NodeMetricSection({
         valueText={node.load1.toFixed(2)}
         fraction={loadFraction}
         redrawKey={redrawKey}
-        paint={{
-          kind: "gradient",
-          from: "var(--progress-cpu)",
-          to: "var(--progress-memory)",
-        }}
+        paint="var(--progress-load)"
       />
     </div>
   );
@@ -299,7 +305,7 @@ function NodeTrafficSection({
         live={isOnline}
         active={node.netUp > 0}
         redrawKey={redrawKey}
-        color="var(--progress-cpu)"
+        color="var(--traffic-up)"
         icon={<ArrowUp size={15} strokeWidth={2.4} />}
       />
       <TrafficStat
@@ -311,7 +317,7 @@ function NodeTrafficSection({
         live={isOnline}
         active={node.netDown > 0}
         redrawKey={redrawKey}
-        color="var(--status-success)"
+        color="var(--traffic-down)"
         icon={<ArrowDown size={15} strokeWidth={2.4} />}
       />
     </div>

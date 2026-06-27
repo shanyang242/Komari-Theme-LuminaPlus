@@ -6,6 +6,7 @@ import {
   ChevronDown,
   ChevronUp,
   CircleDollarSign,
+  EyeOff,
   LayoutTemplate,
   LayoutGrid,
   ListFilter,
@@ -43,6 +44,7 @@ import {
   normalizeCostIgnoredNodes,
   normalizeCostRateApiUrl,
 } from "@/utils/cost";
+import { normalizeNodeIdentityList } from "@/utils/nodeIdentity";
 import {
   dedupeGroupLabels,
   normalizeHomeGroupOrder,
@@ -65,6 +67,12 @@ import {
   type OverviewRatingKind,
   type OverviewRatingStyle,
 } from "@/utils/overviewRating";
+import {
+  HOME_SORT_FIELDS,
+  HOME_SORT_FIELD_LABELS,
+  type HomeSortDirection,
+  type HomeSortField,
+} from "@/utils/homeSort";
 
 const APPEARANCE_OPTIONS = [
   { value: "light", label: "浅色", icon: Sun },
@@ -208,7 +216,9 @@ function pickManagedThemeSettings(settings: ResolvedThemeSettings): ThemeSetting
     showHomeOverview: settings.showHomeOverview,
     showGroupTabs: settings.showGroupTabs,
     homeGroupOrder: settings.homeGroupOrder,
-    moveOfflineNodesBack: settings.moveOfflineNodesBack,
+    enableHomeSort: settings.enableHomeSort,
+    homeSortField: settings.homeSortField,
+    homeSortDirection: settings.homeSortDirection,
     showCostSummary: settings.showCostSummary,
     showCostSummaryFloatingButton: settings.showCostSummaryFloatingButton,
     showOverviewRatings: settings.showOverviewRatings,
@@ -223,6 +233,7 @@ function pickManagedThemeSettings(settings: ResolvedThemeSettings): ThemeSetting
     compactShowBilling: settings.compactShowBilling,
     compactShowUptime: settings.compactShowUptime,
     showConnections: settings.showConnections,
+    hiddenNodes: settings.hiddenNodes,
     costIgnoredNodes: settings.costIgnoredNodes,
     costRateApiUrl: settings.costRateApiUrl,
     backgroundImage: settings.backgroundImage,
@@ -247,7 +258,9 @@ export function ThemeManage() {
   const [draftShowHomeOverview, setDraftShowHomeOverview] = useState(true);
   const [draftShowGroupTabs, setDraftShowGroupTabs] = useState(true);
   const [draftHomeGroupOrder, setDraftHomeGroupOrder] = useState<string[]>([]);
-  const [draftMoveOfflineNodesBack, setDraftMoveOfflineNodesBack] = useState(true);
+  const [draftEnableHomeSort, setDraftEnableHomeSort] = useState(true);
+  const [draftHomeSortField, setDraftHomeSortField] = useState<HomeSortField>("default");
+  const [draftHomeSortDirection, setDraftHomeSortDirection] = useState<HomeSortDirection>("asc");
   const [draftShowCostSummary, setDraftShowCostSummary] = useState(true);
   const [draftShowCostSummaryFloatingButton, setDraftShowCostSummaryFloatingButton] =
     useState(true);
@@ -266,6 +279,7 @@ export function ThemeManage() {
   const [draftCompactShowBilling, setDraftCompactShowBilling] = useState(true);
   const [draftCompactShowUptime, setDraftCompactShowUptime] = useState(true);
   const [draftShowConnections, setDraftShowConnections] = useState(false);
+  const [draftHiddenNodesText, setDraftHiddenNodesText] = useState("");
   const [draftCostIgnoredText, setDraftCostIgnoredText] = useState("");
   const [draftCostRateApiUrl, setDraftCostRateApiUrl] = useState(
     DEFAULT_THEME_SETTINGS.costRateApiUrl,
@@ -330,7 +344,9 @@ export function ThemeManage() {
     setDraftShowHomeOverview(next.showHomeOverview);
     setDraftShowGroupTabs(next.showGroupTabs);
     setDraftHomeGroupOrder(next.homeGroupOrder);
-    setDraftMoveOfflineNodesBack(next.moveOfflineNodesBack);
+    setDraftEnableHomeSort(next.enableHomeSort);
+    setDraftHomeSortField(next.homeSortField);
+    setDraftHomeSortDirection(next.homeSortDirection);
     setDraftShowCostSummary(next.showCostSummary);
     setDraftShowCostSummaryFloatingButton(next.showCostSummaryFloatingButton);
     setDraftShowOverviewRatings(next.showOverviewRatings);
@@ -347,6 +363,7 @@ export function ThemeManage() {
     setDraftCompactShowBilling(next.compactShowBilling);
     setDraftCompactShowUptime(next.compactShowUptime);
     setDraftShowConnections(next.showConnections);
+    setDraftHiddenNodesText(next.hiddenNodes.join("\n"));
     setDraftCostIgnoredText(next.costIgnoredNodes.join("\n"));
     setDraftCostRateApiUrl(next.costRateApiUrl);
     setDraftBackgroundImage(next.backgroundImage);
@@ -415,6 +432,10 @@ export function ThemeManage() {
     });
   }, [nodeSearch, sortedClients]);
 
+  const draftHiddenNodes = useMemo(
+    () => normalizeNodeIdentityList(draftHiddenNodesText),
+    [draftHiddenNodesText],
+  );
   const draftCostIgnoredNodes = useMemo(
     () => normalizeCostIgnoredNodes(draftCostIgnoredText),
     [draftCostIgnoredText],
@@ -434,7 +455,9 @@ export function ThemeManage() {
       showHomeOverview: draftShowHomeOverview,
       showGroupTabs: draftShowGroupTabs,
       homeGroupOrder: normalizeHomeGroupOrder(draftHomeGroupOrder),
-      moveOfflineNodesBack: draftMoveOfflineNodesBack,
+      enableHomeSort: draftEnableHomeSort,
+      homeSortField: draftHomeSortField,
+      homeSortDirection: draftHomeSortDirection,
       showCostSummary: draftShowCostSummary,
       showCostSummaryFloatingButton: draftShowCostSummaryFloatingButton,
       showOverviewRatings: draftShowOverviewRatings,
@@ -449,6 +472,7 @@ export function ThemeManage() {
       compactShowBilling: draftCompactShowBilling,
       compactShowUptime: draftCompactShowUptime,
       showConnections: draftShowConnections,
+      hiddenNodes: draftHiddenNodes,
       costIgnoredNodes: draftCostIgnoredNodes,
       costRateApiUrl: normalizedDraftCostRateApiUrl,
       backgroundImage: normalizeBackgroundUrl(draftBackgroundImage),
@@ -464,7 +488,9 @@ export function ThemeManage() {
       draftShowHomeOverview,
       draftShowGroupTabs,
       draftHomeGroupOrder,
-      draftMoveOfflineNodesBack,
+      draftEnableHomeSort,
+      draftHomeSortField,
+      draftHomeSortDirection,
       draftShowCostSummary,
       draftShowCostSummaryFloatingButton,
       draftShowOverviewRatings,
@@ -477,6 +503,7 @@ export function ThemeManage() {
       draftCompactShowBilling,
       draftCompactShowUptime,
       draftShowConnections,
+      draftHiddenNodes,
       draftCostIgnoredNodes,
       normalizedDraftCostRateApiUrl,
       draftBackgroundImage,
@@ -892,19 +919,67 @@ export function ThemeManage() {
           <label className="surface-inset flex items-center justify-between gap-3 px-4 py-3">
             <span className="min-w-0">
               <span className="block text-[13px] font-medium text-[var(--text-primary)]">
-                离线节点后移
+                启用排序切换
               </span>
               <span className="mt-1 block text-[11px] text-[var(--text-tertiary)]">
-                当前分组内在线优先，离线排到后方。
+                首页显示排序控件，访客可临时切换排序方式（离线节点恒定置底）。
               </span>
             </span>
             <input
               type="checkbox"
-              checked={draftMoveOfflineNodesBack}
-              onChange={(event) => setDraftMoveOfflineNodesBack(event.target.checked)}
+              checked={draftEnableHomeSort}
+              onChange={(event) => setDraftEnableHomeSort(event.target.checked)}
               className="h-4 w-4 shrink-0 accent-[var(--accent-500)]"
             />
           </label>
+        </div>
+
+        <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,0.6fr)]">
+          <div>
+            <div className="mb-2 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+              <span className="text-[13px] font-medium text-[var(--text-primary)]">默认排序维度</span>
+              <span className="text-[11px] text-[var(--text-tertiary)]">
+                首次访问时的初始排序；访客可临时切换。
+              </span>
+            </div>
+            <div className="instance-segmented is-scrollable">
+              {HOME_SORT_FIELDS.map((field) => (
+                <button
+                  key={field}
+                  type="button"
+                  data-active={draftHomeSortField === field ? "true" : "false"}
+                  aria-pressed={draftHomeSortField === field}
+                  disabled={!draftEnableHomeSort}
+                  onClick={() => setDraftHomeSortField(field)}
+                >
+                  {HOME_SORT_FIELD_LABELS[field]}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <div className="mb-2 text-[13px] font-medium text-[var(--text-primary)]">默认方向</div>
+            <div className="instance-segmented">
+              <button
+                type="button"
+                data-active={draftHomeSortDirection === "asc" ? "true" : "false"}
+                aria-pressed={draftHomeSortDirection === "asc"}
+                disabled={!draftEnableHomeSort}
+                onClick={() => setDraftHomeSortDirection("asc")}
+              >
+                升序
+              </button>
+              <button
+                type="button"
+                data-active={draftHomeSortDirection === "desc" ? "true" : "false"}
+                aria-pressed={draftHomeSortDirection === "desc"}
+                disabled={!draftEnableHomeSort}
+                onClick={() => setDraftHomeSortDirection("desc")}
+              >
+                降序
+              </button>
+            </div>
+          </div>
         </div>
 
         <div className="mt-4">
@@ -1039,29 +1114,53 @@ export function ThemeManage() {
             </div>
 
             <div className="grid gap-3 md:grid-cols-3">
-              {OVERVIEW_RATING_LABEL_FIELDS.map((field) => (
-                <label key={field.key} className="flex min-w-0 flex-col gap-2">
-                  <span className="text-[12px] font-medium text-[var(--text-secondary)]">
-                    {field.title}
-                  </span>
-                  <input
-                    value={draftRatingLabels[field.key]}
-                    disabled={!draftShowOverviewRatings}
-                    onChange={(event) => setRatingLabelDraft(field.key, event.target.value)}
-                    placeholder={getDefaultOverviewRatingLabelText(
-                      field.key,
-                      draftOverviewRatingStyle,
-                    )}
-                    className="surface-inset w-full px-3 py-2 text-[13px] outline-none disabled:opacity-60"
-                  />
-                  <span className="text-[11px] text-[var(--text-tertiary)]">
-                    例如: {getDefaultOverviewRatingLabelText(field.key, draftOverviewRatingStyle)}
-                  </span>
-                </label>
-              ))}
+              {OVERVIEW_RATING_LABEL_FIELDS.map((field) => {
+                const defaultLabel = getDefaultOverviewRatingLabelText(
+                  field.key,
+                  draftOverviewRatingStyle,
+                );
+                return (
+                  <label key={field.key} className="flex min-w-0 flex-col gap-2">
+                    <span className="text-[12px] font-medium text-[var(--text-secondary)]">
+                      {field.title}
+                    </span>
+                    <input
+                      value={draftRatingLabels[field.key]}
+                      disabled={!draftShowOverviewRatings}
+                      onChange={(event) => setRatingLabelDraft(field.key, event.target.value)}
+                      placeholder={defaultLabel}
+                      className="surface-inset w-full px-3 py-2 text-[13px] outline-none disabled:opacity-60"
+                    />
+                    <span className="text-[11px] text-[var(--text-tertiary)]">
+                      例如: {defaultLabel}
+                    </span>
+                  </label>
+                );
+              })}
             </div>
           </div>
         </div>
+      </InstancePanel>
+
+      <InstancePanel
+        title="隐藏节点"
+        description="在此填写的节点会从首页彻底移除：不显示卡片，也不计入在线数、累计流量、实时带宽与资产等所有统计。对所有访客生效，清空即可恢复。"
+        aside={<EyeOff size={16} />}
+      >
+        <label className="flex min-w-0 flex-col gap-2">
+          <span className="text-[12px] font-medium text-[var(--text-secondary)]">
+            隐藏列表
+          </span>
+          <textarea
+            value={draftHiddenNodesText}
+            onChange={(event) => setDraftHiddenNodesText(event.target.value)}
+            placeholder="每行一个节点名称 / UUID，也可以用逗号分隔"
+            className="surface-inset min-h-[112px] w-full resize-y px-3 py-2 text-[13px] outline-none"
+          />
+          <span className="text-[11px] text-[var(--text-tertiary)]">
+            已隐藏 {draftHiddenNodes.length} 个节点。按名称或 UUID 匹配，大小写不敏感。
+          </span>
+        </label>
       </InstancePanel>
 
       <InstancePanel
@@ -1272,6 +1371,7 @@ export function ThemeManage() {
             !noTasksYet &&
             filteredTasks.map((task) => {
               const assigned = draftBindings[String(task.id)] ?? [];
+              const assignedSummary = summarizeNodes(assigned, clientsById);
               const isExpanded = expandedTaskId === task.id;
               const selectableVisibleClients = visibleClients.filter((client) => {
                 const assignedTaskId = assignedTaskByClientUuid.get(client.uuid);
@@ -1309,9 +1409,9 @@ export function ThemeManage() {
                       </div>
                       <p
                         className="mt-2 text-[12px] text-[var(--text-tertiary)]"
-                        title={summarizeNodes(assigned, clientsById)}
+                        title={assignedSummary}
                       >
-                        {summarizeNodes(assigned, clientsById)}
+                        {assignedSummary}
                       </p>
                     </div>
 

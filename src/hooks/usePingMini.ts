@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useSyncExternalStore } from "react";
 import { useAuth } from "@/hooks/useAuth";
-import { useVisibleNodeUuids } from "@/hooks/useNode";
+import { useAllNodeMeta, useVisibleNodeUuids } from "@/hooks/useNode";
 import { useThemeSettings } from "@/hooks/useThemeSettings";
 import { getPingOverview } from "@/services/api";
 import type { PingOverviewBucket, PingOverviewItem } from "@/types/komari";
 import { signalWithTimeout } from "@/utils/abort";
+import { collectMatchingNodeUuids } from "@/utils/nodeIdentity";
 import {
   invertHomepagePingTaskBindings,
   type HomepagePingTaskBindings,
@@ -34,12 +35,6 @@ interface PingOverviewMapResult {
 }
 
 type Listener = () => void;
-interface PingOverviewStoreEntry {
-  item: PingOverviewItem;
-  missingRounds: number;
-}
-
-const PING_OVERVIEW_MISSING_GRACE_ROUNDS = 1;
 
 function toTimestamp(value: string | number) {
   if (typeof value === "number") {
@@ -125,7 +120,8 @@ function buildPingOverviewItems(
 
     const stats = lossStatsByClient.get(record.client) ?? { total: 0, lost: 0 };
     stats.total += 1;
-    if (record.value <= 0) {
+    // 只有 value<0（-1）才是丢包；0 表示往返 <1ms 的成功探测，不能算丢。
+    if (record.value < 0) {
       stats.lost += 1;
     }
     lossStatsByClient.set(record.client, stats);
@@ -158,7 +154,7 @@ function buildPingOverviewItems(
     result.set(client, {
       client,
       isAssigned: true,
-      lastValue: latestRecord && latestRecord.value > 0 ? latestRecord.value : null,
+      lastValue: latestRecord && latestRecord.value >= 0 ? latestRecord.value : null,
       values,
       samples,
       max,
@@ -285,7 +281,7 @@ async function buildOverviewMap(
 interface PingOverviewStoreState {
   assignmentKey: string;
   intervalMs: number;
-  items: Map<string, PingOverviewStoreEntry>;
+  items: Map<string, PingOverviewItem>;
 }
 
 let pingOverviewState: PingOverviewStoreState = {
@@ -336,49 +332,27 @@ function commitPingOverview(
   items: Map<string, PingOverviewItem>,
 ) {
   const prevItems = pingOverviewState.items;
-  const nextItems = new Map<string, PingOverviewStoreEntry>();
+  const nextItems = new Map<string, PingOverviewItem>();
   const touched = new Set<string>();
-  // 记账字段（missingRounds）变了但没有可见变化。仍然必须持久化新状态，
-  // 这样 grace 计数才能最终淘汰掉消失的 client；否则下面的提前 return 会丢掉这次
-  // 自增，该 item 就会被永远保留。
-  let bookkeepingChanged = false;
   const keys = new Set<string>([...prevItems.keys(), ...items.keys()]);
-  const preserveMissing = pingOverviewState.assignmentKey === assignmentKey;
 
   for (const key of keys) {
-    const prevEntry = prevItems.get(key);
-    const prev = prevEntry?.item;
+    const prev = prevItems.get(key);
     const next = items.get(key);
 
     if (!next) {
-      if (
-        preserveMissing &&
-        prevEntry &&
-        prevEntry.missingRounds < PING_OVERVIEW_MISSING_GRACE_ROUNDS
-      ) {
-        nextItems.set(key, {
-          ...prevEntry,
-          missingRounds: prevEntry.missingRounds + 1,
-        });
-        bookkeepingChanged = true;
-        continue;
-      }
-      if (prevEntry) touched.add(key);
+      // buildOverviewMap 对每个被选中的 client 都会产出占位项，所以一个 key 缺失只可能是该
+      // client 离开了选择集（assignmentKey 必然随之改变）。直接丢弃旧条目并通知订阅者。
+      if (prev) touched.add(key);
       continue;
     }
 
     if (equalPingItem(prev, next)) {
-      nextItems.set(key, {
-        item: prev ?? next,
-        missingRounds: 0,
-      });
+      nextItems.set(key, prev ?? next);
       continue;
     }
 
-    nextItems.set(key, {
-      item: next,
-      missingRounds: 0,
-    });
+    nextItems.set(key, next);
     touched.add(key);
   }
 
@@ -386,8 +360,7 @@ function commitPingOverview(
     pingOverviewState.assignmentKey === assignmentKey &&
     pingOverviewState.intervalMs === intervalMs &&
     touched.size === 0 &&
-    nextItems.size === prevItems.size &&
-    !bookkeepingChanged
+    nextItems.size === prevItems.size
   ) {
     return;
   }
@@ -511,18 +484,33 @@ function subscribeToPingItem(uuid: string, listener: Listener) {
 }
 
 function getPingSnapshot(uuid: string) {
-  return pingOverviewState.items.get(uuid)?.item ?? EMPTY_PING;
+  return pingOverviewState.items.get(uuid) ?? EMPTY_PING;
 }
 
 export function useHomepagePingOverview() {
   const { data: me } = useAuth();
   const visibleUuids = useVisibleNodeUuids(me?.logged_in === true);
+  const allMeta = useAllNodeMeta();
   const themeSettings = useThemeSettings();
+
+  // 主题级隐藏节点首页已不渲染,这里也从 overview 拉取里剔除——否则仍会为其绑定的
+  // ping 任务发请求、做聚合,纯属无效网络/计算开销。名称匹配需要完整 meta。
+  const hiddenUuids = useMemo(
+    () => collectMatchingNodeUuids(allMeta, themeSettings.hiddenNodes),
+    [allMeta, themeSettings.hiddenNodes],
+  );
+  const effectiveUuids = useMemo(
+    () =>
+      hiddenUuids.size > 0
+        ? visibleUuids.filter((uuid) => !hiddenUuids.has(uuid))
+        : visibleUuids,
+    [visibleUuids, hiddenUuids],
+  );
 
   useEffect(() => {
     if (!themeSettings.isReady) return;
     activeConsumers += 1;
-    ensurePingOverviewStarted(visibleUuids, themeSettings.homepagePingBindings);
+    ensurePingOverviewStarted(effectiveUuids, themeSettings.homepagePingBindings);
     return () => {
       activeConsumers -= 1;
       if (activeConsumers <= 0) {
@@ -530,7 +518,7 @@ export function useHomepagePingOverview() {
         stopPingPolling();
       }
     };
-  }, [themeSettings.homepagePingBindings, themeSettings.isReady, visibleUuids]);
+  }, [themeSettings.homepagePingBindings, themeSettings.isReady, effectiveUuids]);
 }
 
 export function usePingMini(uuid: string): PingOverviewItem {
@@ -568,7 +556,8 @@ export function usePingMiniBuckets(
       if (bucketIndex >= resolvedCount) bucketIndex = resolvedCount - 1;
 
       totals[bucketIndex] += 1;
-      if (sample.value > 0) {
+      // value>=0 为成功（含 0=亚毫秒）计入均值；只有 value<0（-1）才计为丢包。
+      if (sample.value >= 0) {
         positiveSums[bucketIndex] += sample.value;
         positiveCounts[bucketIndex] += 1;
       } else {

@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { useNodeMeta, useNodeMetrics } from "@/hooks/useNode";
+import { InstanceSwitcher } from "./InstanceSwitcher";
 import { formatBytes, formatUptimeDays } from "@/utils/format";
 import { resolveTrafficUsage } from "@/utils/traffic";
 import { InstancePanel } from "./InstancePanel";
@@ -55,6 +56,7 @@ export function InstanceDetails({
   return (
     <InstancePanel
       title={panelTitle}
+      titleAction={<InstanceSwitcher currentUuid={uuid} />}
       description={
         isOnline ? undefined : "节点当前离线，以下展示最近一次上报的缓存数据。"
       }

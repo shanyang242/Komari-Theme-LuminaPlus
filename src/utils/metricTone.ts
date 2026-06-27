@@ -1,33 +1,37 @@
 import { clamp, toHsl, toOklch } from "@/utils/hsl";
 import { formatByteRate } from "@/utils/format";
 
+// latency 与 loss 共用同一套 5 段 HSL 热力渐变(绿=健康 → 黄 → 橙 → 红=危险),只是分档阈值不同。
+// 每段把输入归一到 [0,1] 再在固定的色相/饱和/亮度斜坡上取值。
+const HEAT_RAMP_SEGMENTS = [
+  (t: number) => toHsl(145 - 18 * t, 62 + 8 * t, 48 + 3 * t),
+  (t: number) => toHsl(127 - 47 * t, 70 + 6 * t, 51 + 1 * t),
+  (t: number) => toHsl(80 - 30 * t, 76 + 6 * t, 52 + 1 * t),
+  (t: number) => toHsl(50 - 20 * t, 82 + 4 * t, 53 - 1 * t),
+  (t: number) => toHsl(30 - 24 * t, 86 - 2 * t, 52 - 8 * t),
+];
+
+// `bounds` 为前 4 段的上界(升序),`tailSpan` 是末段(最后上界往上)的归一化跨度。
+function heatRamp(
+  value: number,
+  bounds: [number, number, number, number],
+  tailSpan: number,
+): string {
+  const [b0, b1, b2, b3] = bounds;
+  if (value <= b0) return HEAT_RAMP_SEGMENTS[0](clamp(value / b0, 0, 1));
+  if (value <= b1) return HEAT_RAMP_SEGMENTS[1](clamp((value - b0) / (b1 - b0), 0, 1));
+  if (value <= b2) return HEAT_RAMP_SEGMENTS[2](clamp((value - b1) / (b2 - b1), 0, 1));
+  if (value <= b3) return HEAT_RAMP_SEGMENTS[3](clamp((value - b2) / (b3 - b2), 0, 1));
+  return HEAT_RAMP_SEGMENTS[4](clamp((value - b3) / tailSpan, 0, 1));
+}
+
 export function latencyHeatColor(ms: number | null | undefined): string {
-  if (ms == null || !Number.isFinite(ms) || ms <= 0) {
+  // 0ms 是亚毫秒成功探测(后端把往返 <1ms 取整成 0),属最优延迟、取最绿端;只有 null/负数/
+  // 非有限值(无样本/丢包)才回退中性色。
+  if (ms == null || !Number.isFinite(ms) || ms < 0) {
     return "var(--text-tertiary)";
   }
-
-  if (ms <= 100) {
-    const t = clamp(ms / 100, 0, 1);
-    return toHsl(145 - 18 * t, 62 + 8 * t, 48 + 3 * t);
-  }
-
-  if (ms <= 150) {
-    const t = clamp((ms - 100) / 50, 0, 1);
-    return toHsl(127 - 47 * t, 70 + 6 * t, 51 + 1 * t);
-  }
-
-  if (ms <= 200) {
-    const t = clamp((ms - 150) / 50, 0, 1);
-    return toHsl(80 - 30 * t, 76 + 6 * t, 52 + 1 * t);
-  }
-
-  if (ms <= 300) {
-    const t = clamp((ms - 200) / 100, 0, 1);
-    return toHsl(50 - 20 * t, 82 + 4 * t, 53 - 1 * t);
-  }
-
-  const t = clamp((ms - 300) / 300, 0, 1);
-  return toHsl(30 - 24 * t, 86 - 2 * t, 52 - 8 * t);
+  return heatRamp(ms, [100, 150, 200, 300], 300);
 }
 
 // 流量配额条的用量热力色,按 used/limit 取值,但调成读作"还剩多少":剩 ≥50% 时纯绿,随着耗尽
@@ -89,15 +93,16 @@ export function trafficQuotaSegmentColor(pos: number): string {
   return toOklch(0.6, 0.22, 27);
 }
 
-// 上下行速率按单位档着色:速度量级越大越"热"(B/s·KB/s 绿 → MB琥珀 → GB橙 → TB红)。
-// 挂机(B/s)归到最低档绿色而非灰色——保持有色、随量级变化,而不是恒为方向色。只有未知单位才回退中性色。
+// 速率按"现实可见的四档"着色,量级越大越"热"。单机网卡基本到不了 TB/s·PB/s,不再为它们各留一档,
+// 而是把日常常见区间拆开:B/s 超低速(绿) → KB/s 低速(琥珀) → MB/s 高速(橙) → GB/s 及以上 急速(红)。
+// GB/TB/PB 全并入急速顶档。挂机(B/s)归最低档保持有色,只有未知单位才回退中性色。
 const SPEED_RATE_COLOR: Record<string, string> = {
-  "B/s": "var(--speed-kb)",
-  "KB/s": "var(--speed-kb)",
-  "MB/s": "var(--speed-mb)",
-  "GB/s": "var(--speed-gb)",
-  "TB/s": "var(--speed-tb)",
-  "PB/s": "var(--speed-tb)",
+  "B/s": "var(--speed-idle)",
+  "KB/s": "var(--speed-low)",
+  "MB/s": "var(--speed-high)",
+  "GB/s": "var(--speed-max)",
+  "TB/s": "var(--speed-max)",
+  "PB/s": "var(--speed-max)",
 };
 
 export function speedRateColor(unit: string): string {
@@ -113,27 +118,5 @@ export function lossHeatColor(pct: number | null | undefined): string {
   if (pct == null || !Number.isFinite(pct) || pct < 0) {
     return "var(--text-tertiary)";
   }
-
-  if (pct <= 1) {
-    const t = clamp(pct / 1, 0, 1);
-    return toHsl(145 - 18 * t, 62 + 8 * t, 48 + 3 * t);
-  }
-
-  if (pct <= 3) {
-    const t = clamp((pct - 1) / 2, 0, 1);
-    return toHsl(127 - 47 * t, 70 + 6 * t, 51 + 1 * t);
-  }
-
-  if (pct <= 5) {
-    const t = clamp((pct - 3) / 2, 0, 1);
-    return toHsl(80 - 30 * t, 76 + 6 * t, 52 + 1 * t);
-  }
-
-  if (pct <= 10) {
-    const t = clamp((pct - 5) / 5, 0, 1);
-    return toHsl(50 - 20 * t, 82 + 4 * t, 53 - 1 * t);
-  }
-
-  const t = clamp((pct - 10) / 20, 0, 1);
-  return toHsl(30 - 24 * t, 86 - 2 * t, 52 - 8 * t);
+  return heatRamp(pct, [1, 3, 5, 10], 20);
 }

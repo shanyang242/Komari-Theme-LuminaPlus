@@ -19,6 +19,8 @@ export function MiniBars({ buckets, max, redrawKey, onHoverIndex }: MiniBarsProp
     () =>
       buckets.map((bucket) => ({
         value: bucket.value ?? 0,
+        // value 非 null(含 0=亚毫秒成功)即有有效延迟;null 表示无样本或全丢包,画成空槽。
+        has: bucket.value != null,
         index: bucket.index,
         // 在这里(按桶、数据变化时)归一化成 canvas 安全色,而不是每次重绘对每根柱子算。
         tone: safeCanvasColor(latencyHeatColor(bucket.value)),
@@ -42,8 +44,7 @@ export function MiniBars({ buckets, max, redrawKey, onHoverIndex }: MiniBarsProp
       const { gap, barWidth } = getBarGeometry(width, bars.length);
       const safeMax = max > 0 ? max : 1;
 
-      bars.forEach(({ value, tone }, index) => {
-        const has = value > 0;
+      bars.forEach(({ value, has, tone }, index) => {
         const barHeight = height * (has ? Math.max(0.2, Math.min(1, value / safeMax)) : 0.25);
         const x = index * (barWidth + gap);
         const y = height - barHeight;

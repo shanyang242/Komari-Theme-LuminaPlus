@@ -1,6 +1,6 @@
 # Komari-Theme-LuminaPlus
 
-### 由于项目更名 请大家**重新在komari添加一下新的主题仓库地址** 可能需要重新配置一下 带来不便请谅解，不好意思了铁铁们
+### 由于项目在1.1.10版本更名 请大家**重新在komari添加一下新的主题仓库地址** 需要重新配置一下 带来不便请谅解，不好意思了铁铁们
 
 基于 [komari-theme-Lumina](https://github.com/stqfdyr/komari-theme-Lumina) 的增强分支。感谢原作者 [stqfdyr](https://github.com/stqfdyr) 开源 Lumina 主题。
 

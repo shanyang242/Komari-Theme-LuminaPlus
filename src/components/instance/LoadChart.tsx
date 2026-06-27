@@ -15,6 +15,7 @@ import {
   useResponsiveChartSize,
   type ChartTooltipState,
 } from "./chartShared";
+import { ChartTooltip, SwitchToggle } from "./ChartParts";
 import {
   fillMissingMetricPoints,
   interpolateMetricGaps,
@@ -45,7 +46,6 @@ const SERIES_LABELS: Record<string, string> = {
   ram: "内存",
   swap: "Swap",
   disk: "磁盘",
-  diskBytes: "磁盘",
   netIn: "下行",
   netOut: "上行",
   connections: "TCP",
@@ -58,7 +58,6 @@ const LOAD_INTERPOLATE_KEYS = [
   "ram",
   "swap",
   "disk",
-  "diskBytes",
   "netIn",
   "netOut",
   "connections",
@@ -118,7 +117,6 @@ function pointFromNode(node: NodeMetrics): ChartPoint {
     ram: node.ramTotal > 0 ? (node.ramUsed / node.ramTotal) * 100 : 0,
     swap: node.swapTotal > 0 ? (node.swapUsed / node.swapTotal) * 100 : 0,
     disk: node.diskTotal > 0 ? (node.diskUsed / node.diskTotal) * 100 : 0,
-    diskBytes: node.diskUsed,
     netIn: node.netDown,
     netOut: node.netUp,
     connections: node.connectionsTcp,
@@ -352,21 +350,7 @@ const ChartCard = memo(function ChartCard({
           data={data}
           resetScales={false}
         />
-        {tooltip.show && (
-          <div
-            className="instance-chart-tooltip"
-            style={{ left: tooltip.left, top: tooltip.top }}
-          >
-            <div className="instance-chart-tooltip-time">{tooltip.time}</div>
-            {tooltip.rows.map((row) => (
-              <div key={row.label} className="instance-chart-tooltip-row">
-                <span className="instance-chart-tooltip-dot" style={{ background: row.color }} />
-                <span>{row.label}</span>
-                <strong>{row.value}</strong>
-              </div>
-            ))}
-          </div>
-        )}
+        <ChartTooltip tooltip={tooltip} />
       </div>
     </div>
   );
@@ -413,7 +397,6 @@ export function LoadChart({
         ram: record.ram_total > 0 ? (record.ram / record.ram_total) * 100 : 0,
         swap: record.swap_total > 0 ? (record.swap / record.swap_total) * 100 : 0,
         disk: record.disk_total > 0 ? (record.disk / record.disk_total) * 100 : 0,
-        diskBytes: record.disk,
         netIn: record.net_in,
         netOut: record.net_out,
         connections: record.connections,
@@ -480,21 +463,11 @@ export function LoadChart({
               采样 <strong>{sampleSummary}</strong>
             </span>
           </div>
-          <button
-            type="button"
-            className="instance-toggle-button instance-switch-button"
-            data-active={connectNulls ? "true" : "false"}
-            onClick={() => setConnectNulls((value) => !value)}
-            aria-pressed={connectNulls}
-          >
-            <span className="instance-switch-copy">断点连线</span>
-            <span className="instance-switch-track" aria-hidden>
-              <span className="instance-switch-thumb" />
-            </span>
-            <span className="instance-switch-state">
-              {connectNulls ? "开启" : "关闭"}
-            </span>
-          </button>
+          <SwitchToggle
+            label="断点连线"
+            active={connectNulls}
+            onToggle={() => setConnectNulls((value) => !value)}
+          />
           <button type="button" className="instance-toggle-button" onClick={() => void refetch()}>
             <RefreshCw size={14} />
             刷新

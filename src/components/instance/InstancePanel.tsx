@@ -4,12 +4,15 @@ import { Spinner } from "@/components/ui/Spinner";
 
 export function InstancePanel({
   title,
+  titleAction,
   description,
   aside,
   children,
   className,
 }: {
   title: string;
+  /** 紧贴标题文字之后的内联控件（如详情页的服务器切换器）。 */
+  titleAction?: ReactNode;
   description?: ReactNode;
   aside?: ReactNode;
   children: ReactNode;
@@ -19,7 +22,10 @@ export function InstancePanel({
     <section className={clsx("instance-panel", className)}>
       <header className="instance-panel-header">
         <div className="instance-panel-headings">
-          <h2 className="instance-panel-title">{title}</h2>
+          <div className="instance-panel-title-row">
+            <h2 className="instance-panel-title">{title}</h2>
+            {titleAction}
+          </div>
           {description && <p className="instance-panel-description">{description}</p>}
         </div>
         {aside && <div className="instance-panel-aside">{aside}</div>}

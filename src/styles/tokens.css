@@ -1,18 +1,15 @@
 /* LuminaPlus 配色 tokens。dark 模式调色板逐像素取自参考卡片图
    (2026-04-21_01-07-38.png),这里每个 hex 都对应参考图中真实的像素颜色。 */
 
+/* token 只声明在根元素上：用 :root 限定，避免卡片等带 data-appearance 的元素
+   重新声明 token、把写在 <html> 上的自定义配色覆盖给“盖住”（大卡文字/图标曾因此不生效）。 */
 :root,
-[data-appearance="light"] {
+:root[data-appearance="light"] {
   --bg-0: #f4f4f5;
-  --bg-1: #ffffff;
 
   --surface: #ffffff;
   --surface-elev: #ffffff;
   --surface-sunken: #f4f4f5;
-  --shell-bg: #0f0f10;
-  --shell-top: #111112;
-  --shell-title-bg: #0a0a0b;
-  --shell-divider: rgba(255, 255, 255, 0.05);
 
   --border: rgba(24, 24, 27, 0.08);
   --border-subtle: rgba(24, 24, 27, 0.06);
@@ -24,7 +21,6 @@
   --text-tertiary: #71717a;
   --text-on-strong: #ffffff;
 
-  --fill-primary: #18181b;
   --fill-secondary: rgba(24, 24, 27, 0.1);
   --fill-tertiary: rgba(24, 24, 27, 0.05);
 
@@ -36,8 +32,7 @@
   --progress-swap: #6366f1;
   --progress-disk: #e97b35;
   --progress-network: #10b981;
-  --progress-traffic-from: #3b82f6;
-  --progress-traffic-to: #8b5cf6;
+  --progress-load: #ec4899;
   /* compact 卡分段流量条的 heat 曲线 —— 与大卡 OKLCH trafficQuotaSegmentColor()
      的色标一致(metricTone.ts),`in oklch` 插值使各档感知均匀、相邻色不互相污浊。
      色相 green→chartreuse→yellow→orange→red,亮度在 yellow 处最高,绿色只占约 10%。
@@ -61,11 +56,14 @@
   --status-info: #3b82f6;
   /* 品牌强调色,Spinner 转动弧、ThemeManage 复选框等引用。 */
   --accent-500: #3b82f6;
-  /* 上下行速率按单位档的热力色:量级越大越"热"(KB绿→MB琥珀→GB橙→TB红)。 */
-  --speed-kb: #3aa76a;
-  --speed-mb: #d9992b;
-  --speed-gb: #e07a35;
-  --speed-tb: #d6463d;
+  /* 速率热力四档(现实可见区间):B/s 超低速绿 → KB/s 低速琥珀 → MB/s 高速橙 → GB/s 及以上 急速红。 */
+  --speed-idle: #3aa76a;
+  --speed-low: #d9992b;
+  --speed-high: #e07a35;
+  --speed-max: #d6463d;
+  /* 流量上/下行方向色（图标、出站/入站箭头） */
+  --traffic-up: #3b82f6;
+  --traffic-down: #2f9e65;
   --status-online: #2f9e65;
   --status-offline: #dc2626;
 
@@ -82,17 +80,12 @@
   --ring: rgba(59, 130, 246, 0.35);
 }
 
-[data-appearance="dark"] {
+:root[data-appearance="dark"] {
   --bg-0: #090909;
-  --bg-1: #0d0d0e;
 
   --surface: #0f0f10;
   --surface-elev: #121214;
   --surface-sunken: #0b0b0c;
-  --shell-bg: #0d0d0e;
-  --shell-top: #111112;
-  --shell-title-bg: #0a0a0b;
-  --shell-divider: rgba(255, 255, 255, 0.05);
 
   --border: rgba(255, 255, 255, 0.055);
   --border-subtle: rgba(255, 255, 255, 0.04);
@@ -104,7 +97,6 @@
   --text-tertiary: #76767c;
   --text-on-strong: #0f0f0f;
 
-  --fill-primary: #e6e6e6;
   --fill-secondary: rgba(230, 230, 230, 0.075);
   --fill-tertiary: rgba(230, 230, 230, 0.045);
 
@@ -116,8 +108,7 @@
   --progress-swap: #818cf8;
   --progress-disk: #f1873d;
   --progress-network: #5bbb8a;
-  --progress-traffic-from: #5d88ff;
-  --progress-traffic-to: #a35cf5;
+  --progress-load: #f472b6;
   /* 与 light 模式相同的 OKLCH heat 曲线(在 dark 的 #26262a 轨道上也清晰)。
      与 trafficQuotaSegmentColor() 一致,详见上方说明。 */
   --traffic-heat-spectrum: linear-gradient(
@@ -137,10 +128,13 @@
   --status-error: #d84e45;
   --status-info: #5d88ff;
   --accent-500: #5d88ff;
-  --speed-kb: #61c08f;
-  --speed-mb: #e0b34f;
-  --speed-gb: #ef8f55;
-  --speed-tb: #ec6a5e;
+  --speed-idle: #61c08f;
+  --speed-low: #e0b34f;
+  --speed-high: #ef8f55;
+  --speed-max: #ec6a5e;
+  /* 流量上/下行方向色（图标、出站/入站箭头） */
+  --traffic-up: #5d88ff;
+  --traffic-down: #61c08f;
   --status-online: #61c08f;
   --status-offline: #d84e45;
 
@@ -163,40 +157,30 @@
 [data-tag="tomato"],
 [data-tag="crimson"] {
   --tag-bg: var(--tag-red-bg);
-  --tag-fg: var(--tag-red-fg);
-  --tag-border: transparent;
-}
+  --tag-fg: var(--tag-red-fg);}
 [data-tag="gold"],
 [data-tag="amber"],
 [data-tag="yellow"] {
   --tag-bg: rgba(233, 162, 59, 0.16);
-  --tag-fg: #e9a23b;
-  --tag-border: transparent;
-}
+  --tag-fg: #e9a23b;}
 [data-tag="orange"],
 [data-tag="bronze"],
 [data-tag="brown"] {
   --tag-bg: rgba(233, 123, 53, 0.16);
-  --tag-fg: #e97b35;
-  --tag-border: transparent;
-}
+  --tag-fg: #e97b35;}
 [data-tag="green"],
 [data-tag="grass"],
 [data-tag="mint"],
 [data-tag="jade"],
 [data-tag="lime"] {
   --tag-bg: rgba(84, 180, 132, 0.16);
-  --tag-fg: #54b484;
-  --tag-border: transparent;
-}
+  --tag-fg: #54b484;}
 [data-tag="blue"],
 [data-tag="sky"],
 [data-tag="cyan"],
 [data-tag="teal"] {
   --tag-bg: rgba(78, 129, 238, 0.16);
-  --tag-fg: #4e81ee;
-  --tag-border: transparent;
-}
+  --tag-fg: #4e81ee;}
 [data-tag="violet"],
 [data-tag="purple"],
 [data-tag="plum"],
@@ -204,17 +188,11 @@
 [data-tag="indigo"],
 [data-tag="pink"] {
   --tag-bg: rgba(157, 90, 239, 0.16);
-  --tag-fg: #9d5aef;
-  --tag-border: transparent;
-}
+  --tag-fg: #9d5aef;}
 [data-tag="slate"] {
   --tag-bg: rgba(100, 116, 139, 0.16);
-  --tag-fg: #64748b;
-  --tag-border: transparent;
-}
+  --tag-fg: #64748b;}
 [data-tag="gray"],
 [data-tag=""] {
   --tag-bg: var(--tag-gray-bg);
-  --tag-fg: var(--tag-gray-fg);
-  --tag-border: transparent;
-}
+  --tag-fg: var(--tag-gray-fg);}

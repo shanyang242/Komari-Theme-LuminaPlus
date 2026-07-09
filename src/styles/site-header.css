@@ -1,0 +1,106 @@
+/* 顶部品牌标题栏。sticky 固定在视口顶部,默认透明融入背景;向下滚动后(is-scrolled)
+   叠加半透明表面 + 毛玻璃 + 底部分隔线,与悬浮球/卡片的磨砂语言一致。 */
+.site-header {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  border-bottom: 1px solid transparent;
+  background: transparent;
+  transition:
+    background 200ms ease,
+    border-color 200ms ease,
+    backdrop-filter 200ms ease;
+}
+
+.site-header.is-scrolled {
+  background: color-mix(in srgb, var(--surface-a) 78%, transparent);
+  border-bottom-color: color-mix(in srgb, var(--border) 90%, transparent);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+
+.site-header-inner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  max-width: 1720px;
+  margin: 0 auto;
+  min-height: 56px;
+  padding: 8px 12px;
+  /* 右上角悬浮球固定在 top/right ≈1rem,收起态约 40px 宽。给右侧留出安全间距,
+     避免品牌区在窄屏与悬浮球重叠(悬浮球 z-index 40 > 本栏 30,重叠时会压住)。 */
+  padding-right: max(56px, env(safe-area-inset-right));
+}
+
+@media (min-width: 640px) {
+  .site-header-inner {
+    padding-left: 20px;
+    padding-right: max(64px, env(safe-area-inset-right));
+  }
+}
+
+@media (min-width: 1024px) {
+  .site-header-inner {
+    padding-left: 32px;
+    padding-right: 32px;
+  }
+}
+
+.site-header-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  border-radius: 10px;
+  padding: 4px 8px 4px 4px;
+  margin-left: -4px;
+  color: var(--text-primary);
+  transition:
+    background 160ms ease,
+    transform 160ms ease;
+}
+
+.site-header-brand:hover {
+  background: color-mix(in srgb, var(--hover-bg-a) 60%, transparent);
+}
+
+.site-header-brand:active {
+  transform: scale(0.99);
+}
+
+.site-header-logo {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--surface-elev-a);
+  border: 1px solid var(--border-subtle);
+}
+
+.site-header-logo img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.site-header-logo-fallback {
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+}
+
+.site-header-name {
+  min-width: 0;
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

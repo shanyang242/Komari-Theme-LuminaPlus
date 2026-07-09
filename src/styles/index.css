@@ -8,6 +8,7 @@
 @import "./mini-node-card.css";
 @import "./node-list.css";
 @import "./os-logo.css";
+@import "./site-header.css";
 
 @theme {
   --font-sans:

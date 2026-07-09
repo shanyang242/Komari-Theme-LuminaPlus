@@ -13,6 +13,7 @@ import {
   List,
   ListFilter,
   Moon,
+  PanelTop,
   RefreshCw,
   Rows3,
   Save,
@@ -257,6 +258,8 @@ function pickManagedThemeSettings(settings: ResolvedThemeSettings) {
     backgroundImageMobile: settings.backgroundImageMobile,
     backgroundAlignment: settings.backgroundAlignment,
     surfaceOpacity: settings.surfaceOpacity,
+    showSiteHeader: settings.showSiteHeader,
+    siteHeaderLogo: settings.siteHeaderLogo,
   };
 }
 
@@ -536,6 +539,7 @@ export function ThemeManage() {
       backgroundImage: normalizeBackgroundUrl(rest.backgroundImage),
       backgroundImageMobile: normalizeBackgroundUrl(rest.backgroundImageMobile),
       backgroundAlignment: normalizeBackgroundAlignment(rest.backgroundAlignment),
+      siteHeaderLogo: normalizeBackgroundUrl(rest.siteHeaderLogo),
     };
   }, [draft]);
 
@@ -926,6 +930,45 @@ export function ThemeManage() {
                 : " 需先在上方设置背景图后才会生效。"}
             </span>
           </div>
+        </div>
+      </InstancePanel>
+
+      <InstancePanel
+        title="顶部标题栏"
+        description="在页面顶部展示站点 Logo 与名称，向下滚动时背景自动毛玻璃虚化。Logo 默认使用后台上传的站点图标；站点名称取自后台「站点名称」设置。"
+        aside={<PanelTop size={16} />}
+      >
+        <div className="flex flex-col gap-4">
+          <label className="surface-inset flex items-center justify-between gap-3 px-4 py-3">
+            <span className="min-w-0">
+              <span className="block text-[13px] font-medium text-[var(--text-primary)]">
+                显示标题栏
+              </span>
+              <span className="mt-1 block text-[11px] text-[var(--text-tertiary)]">
+                关闭后页面顶部不显示标题栏，站点回到无品牌栏的布局；再次开启即恢复。
+              </span>
+            </span>
+            <input
+              type="checkbox"
+              checked={draft.showSiteHeader}
+              onChange={(event) => patch("showSiteHeader", event.target.checked)}
+              className="h-4 w-4 shrink-0 accent-[var(--accent-500)]"
+            />
+          </label>
+          <label className="flex min-w-0 flex-col gap-2">
+            <span className="text-[12px] font-medium text-[var(--text-secondary)]">
+              自定义 Logo URL
+            </span>
+            <input
+              value={draft.siteHeaderLogo}
+              onChange={(event) => patch("siteHeaderLogo", event.target.value)}
+              placeholder="留空则使用后台上传的站点图标"
+              className="surface-inset w-full px-3 py-2 text-[13px] outline-none"
+            />
+            <span className="text-[11px] text-[var(--text-tertiary)]">
+              填写图片地址可覆盖默认站点图标。图片加载失败时会回退显示站点名称首字。
+            </span>
+          </label>
         </div>
       </InstancePanel>
 

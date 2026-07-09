@@ -69,6 +69,8 @@ export interface ResolvedThemeSettings {
   backgroundImageMobile: string;
   backgroundAlignment: string;
   surfaceOpacity: number;
+  showSiteHeader: boolean;
+  siteHeaderLogo: string;
 }
 
 export const DEFAULT_THEME_SETTINGS: ResolvedThemeSettings = {
@@ -110,6 +112,9 @@ export const DEFAULT_THEME_SETTINGS: ResolvedThemeSettings = {
   backgroundImageMobile: "",
   backgroundAlignment: DEFAULT_BACKGROUND_ALIGNMENT,
   surfaceOpacity: DEFAULT_SURFACE_OPACITY,
+  // 默认开:站长上传的站点图标(favicon)本就期望被展示;需要时可在管理页关闭。
+  showSiteHeader: true,
+  siteHeaderLogo: "",
 };
 
 export function isAppearance(value: unknown): value is Appearance {
@@ -218,5 +223,9 @@ export function normalizeThemeSettings(
     backgroundImageMobile: normalizeBackgroundUrl(settings?.backgroundImageMobile),
     backgroundAlignment: normalizeBackgroundAlignment(settings?.backgroundAlignment),
     surfaceOpacity: normalizeSurfaceOpacity(settings?.surfaceOpacity),
+    // 顶部标题栏默认开;自定义 Logo 复用背景图的 URL 归一化(含防注入 sanitize)。
+    // 留空时 SiteHeader 回退到站点 favicon(/favicon.ico)。
+    showSiteHeader: enabledUnlessFalse(settings?.showSiteHeader),
+    siteHeaderLogo: normalizeBackgroundUrl(settings?.siteHeaderLogo),
   };
 }

@@ -34,4 +34,20 @@ describe("normalizeThemeSettings", () => {
       normalizeThemeSettings({ hiddenNodes: "节点A, 节点A\nuuid-1；节点B" } as never).hiddenNodes,
     ).toEqual(["节点A", "uuid-1", "节点B"]);
   });
+
+  it("defaults site header on unless explicitly disabled", () => {
+    expect(normalizeThemeSettings({}).showSiteHeader).toBe(true);
+    expect(normalizeThemeSettings({ showSiteHeader: false }).showSiteHeader).toBe(false);
+    // 非布尔假值不算关闭(只有严格 false 才关)。
+    expect(normalizeThemeSettings({ showSiteHeader: "no" } as never).showSiteHeader).toBe(true);
+  });
+
+  it("normalizes the site header logo url: defaults empty, trims, ignores non-strings", () => {
+    expect(normalizeThemeSettings({}).siteHeaderLogo).toBe("");
+    expect(
+      normalizeThemeSettings({ siteHeaderLogo: "  https://a.com/logo.png  " } as never)
+        .siteHeaderLogo,
+    ).toBe("https://a.com/logo.png");
+    expect(normalizeThemeSettings({ siteHeaderLogo: 123 } as never).siteHeaderLogo).toBe("");
+  });
 });

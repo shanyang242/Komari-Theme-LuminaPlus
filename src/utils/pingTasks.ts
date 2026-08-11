@@ -1,5 +1,10 @@
+import type { HomepageMultiPingGroup } from "@/types/komari";
+export type { HomepageMultiPingGroup };
+
 export type HomepagePingTaskBindings = Record<string, string[]>;
 export const HOMEPAGE_MULTI_PING_TASK_COUNT = 3;
+/** 管理页支持的「三网线路组」数量(第二套起可选配置)。 */
+export const HOMEPAGE_MULTI_PING_GROUP_COUNT = 2;
 
 const invertedBindingsCache = new WeakMap<HomepagePingTaskBindings, Map<string, number>>();
 
@@ -25,6 +30,48 @@ export function normalizeHomepageMultiPingTaskIds(value: unknown): number[] {
     if (normalized.length === HOMEPAGE_MULTI_PING_TASK_COUNT) break;
   }
   return normalized;
+}
+
+/**
+ * 归一化一组三网线路。taskIds 最多取 3 个;clientUuids 去重保留字符串。
+ * 返回 null 表示该组未配置任何任务(应被过滤)。
+ */
+export function normalizeHomepageMultiPingGroup(
+  value: unknown,
+): HomepageMultiPingGroup | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  const taskIds = normalizeHomepageMultiPingTaskIds(record.taskIds);
+  if (taskIds.length === 0) return null;
+
+  const rawClients = Array.isArray(record.clientUuids) ? record.clientUuids : [];
+  const clientUuids = Array.from(
+    new Set(rawClients.filter((client): client is string => typeof client === "string" && client.trim() !== "")),
+  );
+  return { taskIds, clientUuids };
+}
+
+/**
+ * 归一化多套三网线路配置。
+ * - 新字段 homepageMultiPingGroups 有效时以其为准(空 clientUuids = 兜底组);
+ * - 否则回落到旧字段 homepageMultiPingTaskIds(单组、全部节点),保证存量配置升级后行为不变。
+ */
+export function normalizeHomepageMultiPingGroups(
+  groupsValue: unknown,
+  legacyTaskIdsValue: unknown,
+): HomepageMultiPingGroup[] {
+  if (Array.isArray(groupsValue)) {
+    const groups = groupsValue
+      .map((group) => normalizeHomepageMultiPingGroup(group))
+      .filter((group): group is HomepageMultiPingGroup => group !== null);
+    if (groups.length > 0) return groups;
+  }
+
+  const legacyTaskIds = normalizeHomepageMultiPingTaskIds(legacyTaskIdsValue);
+  if (legacyTaskIds.length === HOMEPAGE_MULTI_PING_TASK_COUNT) {
+    return [{ taskIds: legacyTaskIds, clientUuids: [] }];
+  }
+  return [];
 }
 
 export function normalizeHomepagePingTaskBindings(
@@ -91,11 +138,57 @@ export function hasHomepagePingTaskBinding(
   return Boolean(clientUuid) && invertHomepagePingTaskBindings(bindings).has(clientUuid);
 }
 
+export function hasUsableHomepageMultiPingGroups(
+  groups: HomepageMultiPingGroup[] | undefined,
+): boolean {
+  return Array.isArray(groups) && groups.some(
+    (group) => normalizeHomepageMultiPingTaskIds(group.taskIds).length === HOMEPAGE_MULTI_PING_TASK_COUNT,
+  );
+}
+
+/**
+ * 按多套三网线路把节点分配到各自的任务组。
+ * - 组按顺序优先:一个节点命中第一个含它的组后不再参与后续组;
+ * - clientUuids 为空的组是「兜底组」:吸收所有尚未分配的节点;
+ * - 未命中任何组的节点不进入结果(调用方回落单线路绑定)。
+ */
+export function resolveHomepagePingTaskIdsByGroups(
+  clientUuids: string[],
+  groups: HomepageMultiPingGroup[],
+): Map<string, number[]> {
+  const selectedTaskIdsByClient = new Map<string, number[]>();
+  const usableGroups = (groups ?? [])
+    .map((group) => ({
+      taskIds: normalizeHomepageMultiPingTaskIds(group.taskIds),
+      clientUuids: Array.from(new Set((group.clientUuids ?? []).filter(Boolean))),
+    }))
+    .filter((group) => group.taskIds.length === HOMEPAGE_MULTI_PING_TASK_COUNT);
+  if (usableGroups.length === 0) return selectedTaskIdsByClient;
+
+  const remaining = new Set(clientUuids.filter(Boolean));
+  for (const group of usableGroups) {
+    const members =
+      group.clientUuids.length === 0
+        ? remaining
+        : new Set(group.clientUuids.filter((uuid) => remaining.has(uuid)));
+    for (const uuid of members) {
+      selectedTaskIdsByClient.set(uuid, group.taskIds);
+      remaining.delete(uuid);
+    }
+    if (remaining.size === 0) break;
+  }
+  return selectedTaskIdsByClient;
+}
+
 export function resolveHomepagePingTaskIdsByClient(
   clientUuids: string[],
   bindings: HomepagePingTaskBindings,
   multiTaskIds: number[] = [],
+  multiGroups: HomepageMultiPingGroup[] = [],
 ): Map<string, number[]> {
+  const groupAssignments = resolveHomepagePingTaskIdsByGroups(clientUuids, multiGroups);
+  if (groupAssignments.size > 0) return groupAssignments;
+
   const selectedTaskIds = normalizeHomepageMultiPingTaskIds(multiTaskIds);
   const selectedTaskIdsByClient = new Map<string, number[]>();
 
@@ -118,20 +211,23 @@ export function resolveHomepagePingSelections(
   clientUuids: string[],
   bindings: HomepagePingTaskBindings,
   multiTaskIds: number[] = [],
+  multiGroups: HomepageMultiPingGroup[] = [],
 ) {
-  const normalizedMultiTaskIds =
-    normalizeHomepageMultiPingTaskIds(multiTaskIds);
+  const groupAssignments = resolveHomepagePingTaskIdsByGroups(clientUuids, multiGroups);
   const useMultiPing =
-    normalizedMultiTaskIds.length === HOMEPAGE_MULTI_PING_TASK_COUNT;
+    groupAssignments.size > 0 ||
+    normalizeHomepageMultiPingTaskIds(multiTaskIds).length === HOMEPAGE_MULTI_PING_TASK_COUNT;
   const singleTaskIdsByClient = useMultiPing
     ? new Map<string, number[]>()
     : resolveHomepagePingTaskIdsByClient(clientUuids, bindings);
   const multiTaskIdsByClient = useMultiPing
-    ? resolveHomepagePingTaskIdsByClient(
-        clientUuids,
-        {},
-        normalizedMultiTaskIds,
-      )
+    ? groupAssignments.size > 0
+      ? groupAssignments
+      : resolveHomepagePingTaskIdsByClient(
+          clientUuids,
+          {},
+          multiTaskIds,
+        )
     : new Map<string, number[]>();
 
   return {

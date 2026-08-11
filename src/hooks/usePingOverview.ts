@@ -20,8 +20,10 @@ import type {
 import { withTimeoutSignal } from "@/utils/abort";
 import { resolvePingSampleCounts } from "@/utils/pingMetrics";
 import {
+  hasUsableHomepageMultiPingGroups,
   HOMEPAGE_MULTI_PING_TASK_COUNT,
   resolveHomepagePingSelections,
+  type HomepageMultiPingGroup,
   type HomepagePingTaskBindings,
 } from "@/utils/pingTasks";
 import type { NodeViewMode } from "@/utils/themeSettings";
@@ -46,6 +48,7 @@ const EMPTY_PING_LINES: HomepagePingLine[] = [];
 const EMPTY_PING_BUCKETS: PingOverviewBucket[] = [];
 const EMPTY_TASK_IDS: number[] = [];
 const EMPTY_BINDINGS: HomepagePingTaskBindings = {};
+const EMPTY_MULTI_PING_GROUPS: HomepageMultiPingGroup[] = [];
 
 type HomepagePingRequestMode = "single" | "multi";
 
@@ -53,10 +56,12 @@ export function resolveHomepagePingRequestMode(
   viewMode: NodeViewMode,
   multiPingEnabled: boolean,
   multiTaskIds: number[],
+  multiGroups: HomepageMultiPingGroup[] = [],
 ): HomepagePingRequestMode {
   return (viewMode === "large" || viewMode === "compact") &&
     multiPingEnabled &&
-    multiTaskIds.length === HOMEPAGE_MULTI_PING_TASK_COUNT
+    (multiTaskIds.length === HOMEPAGE_MULTI_PING_TASK_COUNT ||
+      hasUsableHomepageMultiPingGroups(multiGroups))
     ? "multi"
     : "single";
 }
@@ -252,17 +257,28 @@ function buildAssignmentKey(selectedTaskIdsByClient: Map<string, number[]>) {
     .join("|");
 }
 
+function stringifyMultiPingGroups(groups: HomepageMultiPingGroup[]) {
+  return groups
+    .map((group) => {
+      const taskIds = (group.taskIds ?? []).join(",");
+      const clientUuids = (group.clientUuids ?? []).join(",");
+      return `${taskIds}>${clientUuids}`;
+    })
+    .join("/");
+}
+
 function resolvePingAssignmentKey(
   clientUuids: string[],
   bindings: HomepagePingTaskBindings,
   multiTaskIds: number[],
+  multiGroups: HomepageMultiPingGroup[] = [],
 ) {
   const normalizedUuids = normalizeVisibleUuids(clientUuids);
   const {
     singleTaskIdsByClient,
     multiTaskIdsByClient,
     requestedTaskIdsByClient,
-  } = resolveHomepagePingSelections(normalizedUuids, bindings, multiTaskIds);
+  } = resolveHomepagePingSelections(normalizedUuids, bindings, multiTaskIds, multiGroups);
   const selectedTaskIds = new Set(
     Array.from(requestedTaskIdsByClient.values()).flat(),
   );
@@ -270,16 +286,17 @@ function resolvePingAssignmentKey(
   return [
     `single:${buildAssignmentKey(singleTaskIdsByClient)}`,
     `multi:${buildAssignmentKey(multiTaskIdsByClient)}`,
+    `groups:${stringifyMultiPingGroups(multiGroups)}`,
   ].join("|");
 }
 
 // 限制 RPC 与兼容接口组成的整条回退链，避免一次刷新长期占住轮询。
 const PING_REQUEST_TIMEOUT_MS = 35_000;
-const PING_CACHE_STORAGE_KEY = "komari:lumina-plus:homepage-ping:v1";
+const PING_CACHE_STORAGE_KEY = "komari:lumina-plus:homepage-ping:v2";
 const PING_CACHE_TTL_MS = 5 * 60_000;
 
 interface PingOverviewCachePayload {
-  version: 1;
+  version: 2;
   savedAt: number;
   assignmentKey: string;
   intervalMs: number;
@@ -358,6 +375,7 @@ export async function buildPingOverviewMap(
   loadOverview: typeof getPingOverview = getPingOverview,
   loadStats?: typeof getPingOverviewStats,
   onProgress?: (result: PingOverviewMapResult) => void,
+  multiGroups: HomepageMultiPingGroup[] = [],
 ): Promise<PingOverviewMapResult> {
   const normalizedUuids = normalizeVisibleUuids(clientUuids);
   if (normalizedUuids.length === 0) {
@@ -380,6 +398,7 @@ export async function buildPingOverviewMap(
     normalizedUuids,
     bindings,
     multiTaskIds,
+    multiGroups,
   );
   const selectedTaskIds = Array.from(
     new Set(Array.from(requestedTaskIdsByClient.values()).flat()),
@@ -656,6 +675,7 @@ let scheduledVisibleUuids: string[] = [];
 let scheduledVisibleKey = "";
 let scheduledBindings: HomepagePingTaskBindings = {};
 let scheduledMultiTaskIds: number[] = [];
+let scheduledMultiPingGroups: HomepageMultiPingGroup[] = [];
 let scheduledSelectionKey = `${stringifyBindings({})}|multi:`;
 let pingRefreshInFlight = false;
 let pingRefreshTimer: number | null = null;
@@ -842,7 +862,7 @@ function persistPingOverviewCache(result: PingOverviewMapResult) {
     const persistable = selectPersistablePingOverview(result);
     if (!persistable) return;
     const payload: PingOverviewCachePayload = {
-      version: 1,
+      version: 2,
       savedAt: Date.now(),
       assignmentKey: result.assignmentKey,
       intervalMs: result.intervalMs,
@@ -1057,6 +1077,7 @@ async function refreshPingOverview() {
           },
         );
       },
+      scheduledMultiPingGroups,
     );
     if (isCurrent()) {
       const hasRequestedTasks = next.assignmentKey.length > 0;
@@ -1111,10 +1132,11 @@ function ensurePingOverviewStarted(
   visibleUuids: string[],
   bindings: HomepagePingTaskBindings,
   multiTaskIds: number[],
+  multiGroups: HomepageMultiPingGroup[] = [],
 ) {
   const normalizedVisibleUuids = normalizeVisibleUuids(visibleUuids);
   const visibleKey = normalizedVisibleUuids.join("|");
-  const selectionKey = `${stringifyBindings(bindings)}|multi:${multiTaskIds.join(",")}`;
+  const selectionKey = `${stringifyBindings(bindings)}|multi:${multiTaskIds.join(",")}|groups:${stringifyMultiPingGroups(multiGroups)}`;
 
   if (
     scheduledVisibleKey !== visibleKey ||
@@ -1124,6 +1146,7 @@ function ensurePingOverviewStarted(
     scheduledVisibleKey = visibleKey;
     scheduledBindings = bindings;
     scheduledMultiTaskIds = multiTaskIds;
+    scheduledMultiPingGroups = multiGroups;
     scheduledSelectionKey = selectionKey;
 
     pingAbortController?.abort();
@@ -1136,6 +1159,7 @@ function ensurePingOverviewStarted(
       normalizedVisibleUuids,
       bindings,
       multiTaskIds,
+      multiGroups,
     );
     const cached = readPingOverviewCache(assignmentKey);
     commitPingOverview(
@@ -1206,6 +1230,7 @@ export function useHomepagePingOverview(viewMode: NodeViewMode) {
     viewMode,
     themeSettings.enableHomepageMultiPing,
     themeSettings.homepageMultiPingTaskIds,
+    themeSettings.homepageMultiPingGroups,
   );
   const requestedBindings =
     requestMode === "single"
@@ -1215,11 +1240,16 @@ export function useHomepagePingOverview(viewMode: NodeViewMode) {
     requestMode === "multi"
       ? themeSettings.homepageMultiPingTaskIds
       : EMPTY_TASK_IDS;
+  const requestedMultiGroups =
+    requestMode === "multi"
+      ? themeSettings.homepageMultiPingGroups
+      : EMPTY_MULTI_PING_GROUPS;
   const hasRequestedVisiblePing =
     resolvePingAssignmentKey(
       effectiveUuids,
       requestedBindings,
       requestedMultiTaskIds,
+      requestedMultiGroups,
     ).length > 0;
 
   useLayoutEffect(() => {
@@ -1233,6 +1263,7 @@ export function useHomepagePingOverview(viewMode: NodeViewMode) {
       effectiveUuids,
       requestedBindings,
       requestedMultiTaskIds,
+      requestedMultiGroups,
     );
     return () => {
       activeConsumers -= 1;
@@ -1246,6 +1277,7 @@ export function useHomepagePingOverview(viewMode: NodeViewMode) {
     requestMode,
     requestedBindings,
     requestedMultiTaskIds,
+    requestedMultiGroups,
     hasRequestedVisiblePing,
     themeSettings.isReady,
   ]);

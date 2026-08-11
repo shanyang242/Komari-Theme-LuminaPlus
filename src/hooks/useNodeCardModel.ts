@@ -29,7 +29,8 @@ import { resolveTrafficUsage, trafficTypeLabel, type TrafficDisplay } from "@/ut
 import { resolveOsInfo } from "@/components/ui/OsLogo";
 import {
   hasHomepagePingTaskBinding,
-  HOMEPAGE_MULTI_PING_TASK_COUNT,
+  hasUsableHomepageMultiPingGroups,
+  resolveHomepagePingTaskIdsByGroups,
 } from "@/utils/pingTasks";
 
 interface NodeCardModelOptions {
@@ -58,11 +59,12 @@ export function useNodeCardModel(
     homepagePingBindings,
     enableHomepageMultiPing,
     homepageMultiPingTaskIds,
+    homepageMultiPingGroups,
   } = useThemeSettings();
   const multiPingActive =
     includeMultiPing &&
     enableHomepageMultiPing &&
-    homepageMultiPingTaskIds.length === HOMEPAGE_MULTI_PING_TASK_COUNT;
+    hasUsableHomepageMultiPingGroups(homepageMultiPingGroups);
   const realPing = useNodePingOverview(uuid, !multiPingActive);
   const realPingLines = useNodePingOverviewLines(uuid, multiPingActive);
   const hasRealHomepagePingBinding = useMemo(
@@ -101,7 +103,12 @@ export function useNodeCardModel(
     ) {
       return [];
     }
-    return homepageMultiPingTaskIds.map((taskId) => {
+    // 多套三网线路:按节点所属组解析(互斥,组顺序优先;兜底组吸收未分配节点)。
+    // 每个节点只属于一套线路,行数恒为 3,展示组件无需感知组的存在。
+    const taskIds =
+      resolveHomepagePingTaskIdsByGroups([uuid], homepageMultiPingGroups).get(uuid) ??
+      homepageMultiPingTaskIds;
+    return taskIds.map((taskId) => {
       const loaded = realPingLines.find((line) => line.taskId === taskId);
       const line: HomepagePingLine =
         loaded ?? {
@@ -122,6 +129,7 @@ export function useNodeCardModel(
     });
   }, [
     bucketNow,
+    homepageMultiPingGroups,
     homepageMultiPingTaskIds,
     multiPingActive,
     pingBucketCount,

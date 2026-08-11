@@ -109,6 +109,15 @@ export interface NodeMetrics {
   updatedAt: number;
 }
 
+/**
+ * 一套三网线路:恰好 3 个 Ping 任务 + 命中的节点。
+ * clientUuids 为空数组表示「兜底组」——所有未被其他组选中的节点使用该组。
+ */
+export interface HomepageMultiPingGroup {
+  taskIds?: number[];
+  clientUuids?: string[];
+}
+
 export interface ThemeSettings {
   defaultAppearance?: "system" | "light" | "dark";
   desktopNodeViewMode?: "large" | "compact" | "mini" | "list";
@@ -118,6 +127,8 @@ export interface ThemeSettings {
   homepagePingBindings?: Record<string, string[]>;
   enableHomepageMultiPing?: boolean;
   homepageMultiPingTaskIds?: number[];
+  /** 多套三网线路(每套 3 任务 + 各自选节点)。缺省时回落到 homepageMultiPingTaskIds 单组全局。 */
+  homepageMultiPingGroups?: HomepageMultiPingGroup[];
   fakePingForUnbound?: boolean;
   showHomeOverview?: boolean;
   showGroupTabs?: boolean;

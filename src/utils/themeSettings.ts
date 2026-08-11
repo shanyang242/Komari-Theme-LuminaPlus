@@ -23,8 +23,10 @@ import {
   type HomeSortField,
 } from "@/utils/homeSort";
 import {
+  normalizeHomepageMultiPingGroups,
   normalizeHomepageMultiPingTaskIds,
   normalizeHomepagePingTaskBindings,
+  type HomepageMultiPingGroup,
   type HomepagePingTaskBindings,
 } from "@/utils/pingTasks";
 
@@ -40,6 +42,8 @@ export interface ResolvedThemeSettings {
   homepagePingBindings: HomepagePingTaskBindings;
   enableHomepageMultiPing: boolean;
   homepageMultiPingTaskIds: number[];
+  /** 多套三网线路(每套 3 任务 + 各自选节点);空数组 = 未配置组,回落单线路。 */
+  homepageMultiPingGroups: HomepageMultiPingGroup[];
   fakePingForUnbound: boolean;
   showHomeOverview: boolean;
   showGroupTabs: boolean;
@@ -83,6 +87,7 @@ export const DEFAULT_THEME_SETTINGS: ResolvedThemeSettings = {
   homepagePingBindings: {},
   enableHomepageMultiPing: false,
   homepageMultiPingTaskIds: [],
+  homepageMultiPingGroups: [],
   fakePingForUnbound: false,
   showHomeOverview: true,
   showGroupTabs: true,
@@ -179,6 +184,10 @@ export function normalizeThemeSettings(
   const homepageMultiPingTaskIds = normalizeHomepageMultiPingTaskIds(
     settings?.homepageMultiPingTaskIds,
   );
+  const homepageMultiPingGroups = normalizeHomepageMultiPingGroups(
+    settings?.homepageMultiPingGroups,
+    settings?.homepageMultiPingTaskIds,
+  );
   return {
     defaultAppearance: normalizeAppearance(settings?.defaultAppearance),
     desktopNodeViewMode: normalizeNodeViewMode(
@@ -195,6 +204,7 @@ export function normalizeThemeSettings(
     // 保留开关原值，让管理页能呈现并修复不完整配置；首页消费方仅在任务恰好为三项时启用。
     enableHomepageMultiPing: settings?.enableHomepageMultiPing === true,
     homepageMultiPingTaskIds,
+    homepageMultiPingGroups,
     // 默认关闭(需手动开启):给访客展示的是模拟数据,必须由站长显式决定。
     fakePingForUnbound: settings?.fakePingForUnbound === true,
     showHomeOverview: enabledUnlessFalse(settings?.showHomeOverview),

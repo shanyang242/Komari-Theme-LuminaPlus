@@ -63,9 +63,12 @@ import {
   sortHomeGroupOptions,
 } from "@/utils/homeNodes";
 import {
+  HOMEPAGE_MULTI_PING_GROUP_COUNT,
   HOMEPAGE_MULTI_PING_TASK_COUNT,
+  normalizeHomepageMultiPingGroup,
   normalizeHomepageMultiPingTaskIds,
   normalizeHomepagePingTaskBindings,
+  type HomepageMultiPingGroup,
   type HomepagePingTaskBindings,
 } from "@/utils/pingTasks";
 import {
@@ -263,6 +266,7 @@ function pickManagedThemeSettings(settings: ResolvedThemeSettings) {
     homepagePingBindings: settings.homepagePingBindings,
     enableHomepageMultiPing: settings.enableHomepageMultiPing,
     homepageMultiPingTaskIds: settings.homepageMultiPingTaskIds,
+    homepageMultiPingGroups: settings.homepageMultiPingGroups,
     fakePingForUnbound: settings.fakePingForUnbound,
     showHomeOverview: settings.showHomeOverview,
     showGroupTabs: settings.showGroupTabs,
@@ -383,6 +387,10 @@ const ToggleRow = memo(function ToggleRow({
 });
 
 const EMPTY_ASSIGNED_CLIENTS: string[] = [];
+const EMPTY_MULTI_PING_GROUP: HomepageMultiPingGroup = {
+  taskIds: [],
+  clientUuids: [],
+};
 const EMPTY_ADMIN_CLIENTS: AdminClient[] = [];
 
 // 单个 Ping 任务的绑定卡片。memo:编辑无关设置的击键不再重渲任务列表;展开态的
@@ -559,6 +567,221 @@ const TaskBindingSection = memo(function TaskBindingSection({
 
 type PremiumDetail = ReturnType<typeof calculateCostSummary>["details"][number];
 
+// 一套三网线路的编辑器:3 个任务下拉 + 节点选择(互斥,节点只属于一套;空节点 = 兜底全部)。
+const MultiPingGroupEditor = memo(function MultiPingGroupEditor({
+  groupIndex,
+  group,
+  tasks,
+  clientsById,
+  visibleClients,
+  assignedGroupByClientUuid,
+  expanded,
+  nodeSearch,
+  onNodeSearch,
+  onToggleExpand,
+  onPatchTask,
+  onPatchClients,
+}: {
+  groupIndex: number;
+  group: HomepageMultiPingGroup;
+  tasks: PingTask[];
+  clientsById: Map<string, AdminClient>;
+  visibleClients: AdminClient[];
+  assignedGroupByClientUuid: Map<string, number>;
+  expanded: boolean;
+  nodeSearch: string;
+  onNodeSearch: (value: string) => void;
+  onToggleExpand: (groupIndex: number) => void;
+  onPatchTask: (groupIndex: number, slot: number, rawValue: string) => void;
+  onPatchClients: (groupIndex: number, updater: (prev: string[]) => string[]) => void;
+}) {
+  const taskIds = group.taskIds ?? [];
+  const clientUuids = group.clientUuids ?? [];
+  const isCatchAll = clientUuids.length === 0;
+  const assignedSummary = summarizeNodes(clientUuids, clientsById);
+  // 过滤只对展开的组做;已归属其他组的节点在本组不可选,保证互斥语义。
+  const selectableClients = expanded
+    ? visibleClients.filter((client) => {
+        const assignedGroup = assignedGroupByClientUuid.get(client.uuid);
+        return assignedGroup == null || assignedGroup === groupIndex;
+      })
+    : EMPTY_ADMIN_CLIENTS;
+  const allVisibleSelectableAssigned =
+    selectableClients.length > 0 &&
+    selectableClients.every((client) => clientUuids.includes(client.uuid));
+
+  return (
+    <section className="surface-inset px-4 py-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <h3 className="text-[15px] font-semibold text-[var(--text-primary)]">
+              第 {groupIndex + 1} 套三网线路
+            </h3>
+            {isCatchAll && taskIds.length === HOMEPAGE_MULTI_PING_TASK_COUNT && (
+              <span className="rounded-full border border-[var(--hairline)] px-2 py-0.5 text-[10px] font-medium uppercase tracking-[0.08em] text-[var(--text-tertiary)]">
+                兜底 · 全部节点
+              </span>
+            )}
+          </div>
+          <div className="mt-2 text-[12px] text-[var(--text-secondary)]">
+            <span className="font-medium text-[var(--text-primary)]">
+              {isCatchAll ? "适用全部节点" : `已选 ${clientUuids.length} 个节点`}
+            </span>
+            {!isCatchAll && clientUuids.length > 0 && (
+              <span className="mx-2 text-[var(--text-tertiary)]">·</span>
+            )}
+            {!isCatchAll && clientUuids.length > 0 && (
+              <span className="text-[var(--text-tertiary)]" title={assignedSummary}>
+                {assignedSummary}
+              </span>
+            )}
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          {expanded && (
+            <button
+              type="button"
+              disabled={selectableClients.length === 0 || allVisibleSelectableAssigned}
+              onClick={() =>
+                onPatchClients(groupIndex, (prev) =>
+                  Array.from(
+                    new Set([
+                      ...prev,
+                      ...selectableClients.map((client) => client.uuid),
+                    ]),
+                  ),
+                )
+              }
+              className="theme-manage-button is-compact"
+            >
+              {allVisibleSelectableAssigned ? "已全选可用" : "全选可用"}
+            </button>
+          )}
+          {clientUuids.length > 0 && (
+            <button
+              type="button"
+              onClick={() => onPatchClients(groupIndex, () => [])}
+              className="theme-manage-button is-compact is-danger"
+            >
+              清空节点
+            </button>
+          )}
+          <button
+            type="button"
+            aria-expanded={expanded}
+            onClick={() => onToggleExpand(groupIndex)}
+            className="theme-manage-button is-compact"
+          >
+            {expanded ? "收起节点" : "编辑节点"}
+          </button>
+        </div>
+      </div>
+
+      <div className="mt-4 grid gap-3 md:grid-cols-3">
+        {Array.from({ length: HOMEPAGE_MULTI_PING_TASK_COUNT }, (_, slot) => {
+          const selectedTaskId = taskIds[slot];
+          return (
+            <label key={slot} className="min-w-0">
+              <span className="mb-1.5 block text-[11px] font-medium text-[var(--text-secondary)]">
+                线路 {slot + 1}
+              </span>
+              <select
+                value={selectedTaskId ?? ""}
+                onChange={(event) => onPatchTask(groupIndex, slot, event.target.value)}
+                aria-label={`第 ${groupIndex + 1} 套三网线路 ${slot + 1}`}
+                className="surface-inset w-full px-3 py-2 text-[13px] text-[var(--text-primary)] outline-none"
+              >
+                <option value="">选择 Ping 任务</option>
+                {selectedTaskId != null &&
+                  !tasks.some((task) => task.id === selectedTaskId) && (
+                    <option value={selectedTaskId}>
+                      任务 #{selectedTaskId}（当前不可用）
+                    </option>
+                  )}
+                {tasks.map((task) => (
+                  <option
+                    key={task.id}
+                    value={task.id}
+                    disabled={task.id !== selectedTaskId && taskIds.includes(task.id)}
+                  >
+                    {task.name || `任务 #${task.id}`}
+                  </option>
+                ))}
+              </select>
+            </label>
+          );
+        })}
+      </div>
+
+      {expanded && (
+        <div className="mt-4 border-t border-[var(--hairline)] pt-4">
+          <label className="surface-inset flex items-center gap-2 px-3 py-2">
+            <Search size={14} className="text-[var(--text-tertiary)]" />
+            <input
+              value={nodeSearch}
+              onChange={(event) => onNodeSearch(event.target.value)}
+              placeholder="搜索节点名称 / UUID / 分组 / 地区"
+              aria-label="搜索节点"
+              className="min-w-0 flex-1 bg-transparent text-[13px] outline-none placeholder:text-[var(--text-tertiary)]"
+            />
+          </label>
+
+          <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+            {visibleClients.map((client) => {
+              const checked = clientUuids.includes(client.uuid);
+              const assignedGroup = assignedGroupByClientUuid.get(client.uuid);
+              const ownedByOther = assignedGroup != null && assignedGroup !== groupIndex;
+              const subtitle = [client.group, client.uuid].filter(Boolean).join(" · ");
+              return (
+                <label
+                  key={client.uuid}
+                  className={clsx(
+                    "flex cursor-pointer items-start gap-3 rounded-[12px] border px-3 py-3 transition-colors",
+                    checked
+                      ? "border-[var(--border-strong)] bg-[color-mix(in_srgb,var(--hover-bg)_72%,transparent)]"
+                      : "border-[var(--hairline)] bg-transparent hover:bg-[var(--hover-bg)]",
+                    ownedByOther && "opacity-40",
+                  )}
+                >
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    disabled={ownedByOther}
+                    onChange={(event) => {
+                      const nextChecked = event.target.checked;
+                      onPatchClients(groupIndex, (prev) =>
+                        nextChecked
+                          ? Array.from(new Set([...prev, client.uuid]))
+                          : prev.filter((uuid) => uuid !== client.uuid),
+                      );
+                    }}
+                    className="mt-1 h-4 w-4 shrink-0 accent-[var(--accent-500)]"
+                  />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <Flag region={client.region} size={14} />
+                      <span className="truncate text-[13px] font-medium text-[var(--text-primary)]">
+                        {client.name}
+                      </span>
+                    </div>
+                    <div className="mt-1 text-[11px] text-[var(--text-tertiary)]">
+                      {ownedByOther
+                        ? `已归属第 ${(assignedGroup ?? 0) + 1} 套`
+                        : subtitle || client.region || "未设置分组"}
+                    </div>
+                  </div>
+                </label>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </section>
+  );
+});
+
 // 溢价录入列表。memo:编辑其他设置的击键不重渲整表——引用变化只来自
 // costPremiums 切片、搜索结果与汇率加载态。
 const PremiumList = memo(function PremiumList({
@@ -725,22 +948,59 @@ export function ThemeManage() {
     setExpandedTaskId((current) => (current === taskId ? null : taskId));
     setNodeSearch("");
   }, []);
-  const patchMultiPingTask = useCallback((slot: number, rawValue: string) => {
-    editVersionRef.current += 1;
-    setDraft((prev) => {
-      const nextIds = [...prev.homepageMultiPingTaskIds];
-      if (rawValue === "") {
-        nextIds.splice(slot, 1);
-      } else {
-        nextIds[slot] = Number(rawValue);
-      }
-      const homepageMultiPingTaskIds = normalizeHomepageMultiPingTaskIds(nextIds);
-      return JSON.stringify(homepageMultiPingTaskIds) ===
-        JSON.stringify(prev.homepageMultiPingTaskIds)
-        ? prev
-        : { ...prev, homepageMultiPingTaskIds };
-    });
+  const [expandedMultiPingGroup, setExpandedMultiPingGroup] = useState<number | null>(null);
+  const toggleMultiPingGroupExpanded = useCallback((groupIndex: number) => {
+    setExpandedMultiPingGroup((current) => (current === groupIndex ? null : groupIndex));
+    setNodeSearch("");
   }, []);
+  const patchMultiPingGroupTask = useCallback(
+    (groupIndex: number, slot: number, rawValue: string) => {
+      editVersionRef.current += 1;
+      setDraft((prev) => {
+        const nextGroups = [...prev.homepageMultiPingGroups];
+        // 旧配置(或新装)可能只有一组:编辑未初始化的组时先补空组占位。
+        while (nextGroups.length <= groupIndex) {
+          nextGroups.push({ taskIds: [], clientUuids: [] });
+        }
+        const nextGroup = { ...nextGroups[groupIndex], taskIds: [...(nextGroups[groupIndex].taskIds ?? [])] };
+        const nextIds = [...(nextGroup.taskIds ?? [])];
+        if (rawValue === "") {
+          nextIds.splice(slot, 1);
+        } else {
+          nextIds[slot] = Number(rawValue);
+        }
+        nextGroup.taskIds = normalizeHomepageMultiPingTaskIds(nextIds);
+        nextGroups[groupIndex] = nextGroup;
+        return JSON.stringify(nextGroups) ===
+          JSON.stringify(prev.homepageMultiPingGroups)
+          ? prev
+          : { ...prev, homepageMultiPingGroups: nextGroups };
+      });
+    },
+    [],
+  );
+  // 三网线路组的节点选择入口(勾选/全选/清空都基于前值函数式更新)。
+  const patchMultiPingGroupClients = useCallback(
+    (groupIndex: number, updater: (prev: string[]) => string[]) => {
+      editVersionRef.current += 1;
+      setDraft((prev) => {
+        const nextGroups = [...prev.homepageMultiPingGroups];
+        while (nextGroups.length <= groupIndex) {
+          nextGroups.push({ taskIds: [], clientUuids: [] });
+        }
+        const nextGroup = {
+          ...nextGroups[groupIndex],
+          clientUuids: updater(nextGroups[groupIndex].clientUuids ?? []),
+        };
+        nextGroups[groupIndex] = nextGroup;
+        return JSON.stringify(nextGroups) ===
+          JSON.stringify(prev.homepageMultiPingGroups)
+          ? prev
+          : { ...prev, homepageMultiPingGroups: nextGroups };
+      });
+    },
+    [],
+  );
 
   const {
     data: pingTasks,
@@ -953,18 +1213,34 @@ export function ThemeManage() {
   );
   const draftCostRateApiUrlInvalid =
     draft.costRateApiUrl.trim() !== "" && !isCostRateApiUrlValid(draft.costRateApiUrl.trim());
+  // 启用三网时:至少一组配满 3 条线路,且任何「已开始配置」的组都必须恰好 3 条。
   const draftMultiPingInvalid =
     draft.enableHomepageMultiPing &&
-    draft.homepageMultiPingTaskIds.length !== HOMEPAGE_MULTI_PING_TASK_COUNT;
+    (draft.homepageMultiPingGroups.length === 0 ||
+      draft.homepageMultiPingGroups.some(
+        (group) =>
+          (group.taskIds ?? []).length !== 0 &&
+          (group.taskIds ?? []).length !== HOMEPAGE_MULTI_PING_TASK_COUNT,
+      ) ||
+      !draft.homepageMultiPingGroups.some(
+        (group) => (group.taskIds ?? []).length === HOMEPAGE_MULTI_PING_TASK_COUNT,
+      ));
 
   // 由当前草稿拼出的设置 payload,保存请求和 dirty 判断都用它。草稿字段与设置同名,这里只做
   // 「编辑态 → 存储态」的换形与归一化;文本域(hiddenNodesText/costIgnoredText)和 ratingLabels
   // 解构出来换回存储字段,其余原样透传。
   const draftThemeSettings = useMemo<ThemeSettings>(() => {
     const { ratingLabels, hiddenNodesText, costIgnoredText, ...rest } = draft;
+    const homepageMultiPingGroups = rest.homepageMultiPingGroups
+      .map((group) => normalizeHomepageMultiPingGroup(group))
+      .filter((group): group is HomepageMultiPingGroup => group !== null);
     return {
       ...rest,
       homepagePingBindings: pruneBindings(rest.homepagePingBindings),
+      // 兼容旧字段:首页消费方归一化时会把旧字段回落为「第一套 + 全部节点」,
+      // 因此保存时始终用第一套(若有)同步旧字段,保证降级路径一致。
+      homepageMultiPingTaskIds: homepageMultiPingGroups[0]?.taskIds ?? [],
+      homepageMultiPingGroups,
       homeGroupOrder: normalizeHomeGroupOrder(rest.homeGroupOrder),
       trafficRatingLabels: ratingLabels.traffic,
       bandwidthRatingLabels: ratingLabels.bandwidth,
@@ -1023,6 +1299,16 @@ export function ThemeManage() {
     () => invertBindings(draft.homepagePingBindings),
     [draft.homepagePingBindings],
   );
+  // 三网线路组间互斥:每个节点只归属第一个含它的组(顺序优先),供组编辑器禁用跨组勾选。
+  const assignedMultiPingGroupByClientUuid = useMemo(() => {
+    const map = new Map<string, number>();
+    draft.homepageMultiPingGroups.forEach((group, index) => {
+      for (const uuid of group.clientUuids ?? []) {
+        if (uuid && !map.has(uuid)) map.set(uuid, index);
+      }
+    });
+    return map;
+  }, [draft.homepageMultiPingGroups]);
 
   const handleSave = async () => {
     if (!config?.theme || savingDraftRef.current || draftMultiPingInvalid) return;
@@ -1843,7 +2129,7 @@ export function ThemeManage() {
             {tasksLoading || clientsLoading
               ? "载入中"
               : draft.enableHomepageMultiPing
-                ? `三网 ${draft.homepageMultiPingTaskIds.length} / 3`
+                ? `三网 ${draft.homepageMultiPingGroups[0]?.taskIds?.length ?? 0} / 3`
                 : `${sortedTasks.length} 个任务`}
           </div>
         }
@@ -1882,54 +2168,29 @@ export function ThemeManage() {
             </label>
 
             {draft.enableHomepageMultiPing && (
-              <div className="mt-4 border-t border-[var(--hairline)] pt-4">
-                <div className="grid gap-3 md:grid-cols-3">
-                  {Array.from(
-                    { length: HOMEPAGE_MULTI_PING_TASK_COUNT },
-                    (_, slot) => {
-                      const selectedTaskId =
-                        draft.homepageMultiPingTaskIds[slot];
-                      return (
-                        <label key={slot} className="min-w-0">
-                          <span className="mb-1.5 block text-[11px] font-medium text-[var(--text-secondary)]">
-                            线路 {slot + 1}
-                          </span>
-                          <select
-                            value={selectedTaskId ?? ""}
-                            onChange={(event) =>
-                              patchMultiPingTask(slot, event.target.value)
-                            }
-                            aria-label={`三网线路 ${slot + 1}`}
-                            className="surface-inset w-full px-3 py-2 text-[13px] text-[var(--text-primary)] outline-none"
-                          >
-                            <option value="">选择 Ping 任务</option>
-                            {selectedTaskId != null &&
-                              !sortedTasks.some((task) => task.id === selectedTaskId) && (
-                                <option value={selectedTaskId}>
-                                  任务 #{selectedTaskId}（当前不可用）
-                                </option>
-                              )}
-                            {sortedTasks.map((task) => (
-                              <option
-                                key={task.id}
-                                value={task.id}
-                                disabled={
-                                  task.id !== selectedTaskId &&
-                                  draft.homepageMultiPingTaskIds.includes(task.id)
-                                }
-                              >
-                                {task.name || `任务 #${task.id}`}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-                      );
-                    },
-                  )}
-                </div>
+              <div className="mt-4 flex flex-col gap-4 border-t border-[var(--hairline)] pt-4">
+                {Array.from({ length: HOMEPAGE_MULTI_PING_GROUP_COUNT }, (_, groupIndex) => (
+                  <MultiPingGroupEditor
+                    key={groupIndex}
+                    groupIndex={groupIndex}
+                    group={
+                      draft.homepageMultiPingGroups[groupIndex] ?? EMPTY_MULTI_PING_GROUP
+                    }
+                    tasks={sortedTasks}
+                    clientsById={clientsById}
+                    visibleClients={visibleClients}
+                    assignedGroupByClientUuid={assignedMultiPingGroupByClientUuid}
+                    expanded={expandedMultiPingGroup === groupIndex}
+                    nodeSearch={nodeSearch}
+                    onNodeSearch={setNodeSearch}
+                    onToggleExpand={toggleMultiPingGroupExpanded}
+                    onPatchTask={patchMultiPingGroupTask}
+                    onPatchClients={patchMultiPingGroupClients}
+                  />
+                ))}
                 <p
                   className={clsx(
-                    "mt-3 text-[11px] leading-relaxed",
+                    "text-[11px] leading-relaxed",
                     draftMultiPingInvalid
                       ? "text-[var(--status-error)]"
                       : "text-[var(--text-tertiary)]",
@@ -1937,8 +2198,8 @@ export function ThemeManage() {
                   role={draftMultiPingInvalid ? "alert" : undefined}
                 >
                   {draftMultiPingInvalid
-                    ? "请选满 3 个不同的 Ping 任务后再保存。"
-                    : "三项任务按这里的顺序显示；某项任务没有节点样本时保留该行并显示“无样本”。"}
+                    ? "请为每套已开始配置的线路选满 3 个不同的 Ping 任务后再保存。"
+                    : "每套线路按这里的顺序显示三项任务；节点只归属一套（第 1 套优先），未选节点的套适用于全部剩余节点；迷你卡片与列表仍使用单线路绑定。"}
                 </p>
               </div>
             )}
@@ -1959,7 +2220,11 @@ export function ThemeManage() {
               <span>首页绑定总数</span>
               <strong className="text-[var(--text-primary)]">
                 {draft.enableHomepageMultiPing
-                  ? `${draft.homepageMultiPingTaskIds.length} / 3 条线路`
+                  ? `${
+                      draft.homepageMultiPingGroups.filter(
+                        (group) => (group.taskIds ?? []).length === HOMEPAGE_MULTI_PING_TASK_COUNT,
+                      ).length
+                    } 套三网线路`
                   : `${assignedNodeCount} / ${sortedClients.length}`}
               </strong>
             </div>

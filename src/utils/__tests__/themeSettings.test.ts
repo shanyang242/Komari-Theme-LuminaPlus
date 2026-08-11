@@ -39,6 +39,30 @@ describe("normalizeThemeSettings", () => {
     });
     expect(resolved.enableHomepageMultiPing).toBe(true);
     expect(resolved.homepageMultiPingTaskIds).toEqual([3, 1, 2]);
+    // 旧字段回落为「第一套 + 全部节点」,保证升级后行为不变。
+    expect(resolved.homepageMultiPingGroups).toEqual([
+      { taskIds: [3, 1, 2], clientUuids: [] },
+    ]);
+  });
+
+  it("normalizes homepage multi-ping groups with per-group node selections", () => {
+    const resolved = normalizeThemeSettings({
+      enableHomepageMultiPing: true,
+      homepageMultiPingTaskIds: [7, 8, 9],
+      homepageMultiPingGroups: [
+        { taskIds: [1, 2, 3], clientUuids: ["node-a", "node-a", "node-b"] },
+        { taskIds: [4, 5, 6], clientUuids: ["node-c"] },
+        { taskIds: [] },
+      ],
+    } as never);
+    expect(resolved.homepageMultiPingGroups).toEqual([
+      { taskIds: [1, 2, 3], clientUuids: ["node-a", "node-b"] },
+      { taskIds: [4, 5, 6], clientUuids: ["node-c"] },
+    ]);
+  });
+
+  it("defaults homepage multi-ping groups to empty", () => {
+    expect(normalizeThemeSettings({}).homepageMultiPingGroups).toEqual([]);
   });
 
   it("defaults home sort to weight ascending and falls back to a field's natural direction", () => {

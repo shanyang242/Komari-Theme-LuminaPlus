@@ -3,8 +3,6 @@ export type { HomepageMultiPingGroup };
 
 export type HomepagePingTaskBindings = Record<string, string[]>;
 export const HOMEPAGE_MULTI_PING_TASK_COUNT = 3;
-/** 管理页支持的「三网线路组」数量(第二套起可选配置)。 */
-export const HOMEPAGE_MULTI_PING_GROUP_COUNT = 2;
 
 const invertedBindingsCache = new WeakMap<HomepagePingTaskBindings, Map<string, number>>();
 

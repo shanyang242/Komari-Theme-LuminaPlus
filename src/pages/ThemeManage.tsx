@@ -63,7 +63,6 @@ import {
   sortHomeGroupOptions,
 } from "@/utils/homeNodes";
 import {
-  HOMEPAGE_MULTI_PING_GROUP_COUNT,
   HOMEPAGE_MULTI_PING_TASK_COUNT,
   normalizeHomepageMultiPingGroup,
   normalizeHomepageMultiPingTaskIds,
@@ -581,6 +580,8 @@ const MultiPingGroupEditor = memo(function MultiPingGroupEditor({
   onToggleExpand,
   onPatchTask,
   onPatchClients,
+  onRemove,
+  canRemove,
 }: {
   groupIndex: number;
   group: HomepageMultiPingGroup;
@@ -594,6 +595,8 @@ const MultiPingGroupEditor = memo(function MultiPingGroupEditor({
   onToggleExpand: (groupIndex: number) => void;
   onPatchTask: (groupIndex: number, slot: number, rawValue: string) => void;
   onPatchClients: (groupIndex: number, updater: (prev: string[]) => string[]) => void;
+  onRemove?: (groupIndex: number) => void;
+  canRemove?: boolean;
 }) {
   const taskIds = group.taskIds ?? [];
   const clientUuids = group.clientUuids ?? [];
@@ -666,6 +669,15 @@ const MultiPingGroupEditor = memo(function MultiPingGroupEditor({
               className="theme-manage-button is-compact is-danger"
             >
               清空节点
+            </button>
+          )}
+          {onRemove && canRemove && (
+            <button
+              type="button"
+              onClick={() => onRemove(groupIndex)}
+              className="theme-manage-button is-compact is-danger"
+            >
+              删除本套
             </button>
           )}
           <button
@@ -1001,6 +1013,28 @@ export function ThemeManage() {
     },
     [],
   );
+  // 套数可配置:添加一套(空组,配置任务后生效)或删除一套。
+  const addMultiPingGroup = useCallback(() => {
+    editVersionRef.current += 1;
+    setDraft((prev) => ({
+      ...prev,
+      homepageMultiPingGroups: [...prev.homepageMultiPingGroups, { taskIds: [], clientUuids: [] }],
+    }));
+  }, []);
+  const removeMultiPingGroup = useCallback((groupIndex: number) => {
+    editVersionRef.current += 1;
+    setExpandedMultiPingGroup((current) =>
+      current === groupIndex ? null : current,
+    );
+    setDraft((prev) => {
+      const nextGroups = prev.homepageMultiPingGroups.filter(
+        (_, index) => index !== groupIndex,
+      );
+      return nextGroups.length === prev.homepageMultiPingGroups.length
+        ? prev
+        : { ...prev, homepageMultiPingGroups: nextGroups };
+    });
+  }, []);
 
   const {
     data: pingTasks,
@@ -2169,13 +2203,14 @@ export function ThemeManage() {
 
             {draft.enableHomepageMultiPing && (
               <div className="mt-4 flex flex-col gap-4 border-t border-[var(--hairline)] pt-4">
-                {Array.from({ length: HOMEPAGE_MULTI_PING_GROUP_COUNT }, (_, groupIndex) => (
+                {(draft.homepageMultiPingGroups.length > 0
+                  ? draft.homepageMultiPingGroups
+                  : [EMPTY_MULTI_PING_GROUP]
+                ).map((group, groupIndex) => (
                   <MultiPingGroupEditor
                     key={groupIndex}
                     groupIndex={groupIndex}
-                    group={
-                      draft.homepageMultiPingGroups[groupIndex] ?? EMPTY_MULTI_PING_GROUP
-                    }
+                    group={group}
                     tasks={sortedTasks}
                     clientsById={clientsById}
                     visibleClients={visibleClients}
@@ -2186,8 +2221,20 @@ export function ThemeManage() {
                     onToggleExpand={toggleMultiPingGroupExpanded}
                     onPatchTask={patchMultiPingGroupTask}
                     onPatchClients={patchMultiPingGroupClients}
+                    onRemove={removeMultiPingGroup}
+                    canRemove={
+                      groupIndex < draft.homepageMultiPingGroups.length &&
+                      draft.homepageMultiPingGroups.length > 1
+                    }
                   />
                 ))}
+                <button
+                  type="button"
+                  onClick={addMultiPingGroup}
+                  className="theme-manage-button is-compact self-start"
+                >
+                  + 添加一套三网线路
+                </button>
                 <p
                   className={clsx(
                     "text-[11px] leading-relaxed",
@@ -2199,7 +2246,7 @@ export function ThemeManage() {
                 >
                   {draftMultiPingInvalid
                     ? "请为每套已开始配置的线路选满 3 个不同的 Ping 任务后再保存。"
-                    : "每套线路按这里的顺序显示三项任务；节点只归属一套（第 1 套优先），未选节点的套适用于全部剩余节点；迷你卡片与列表仍使用单线路绑定。"}
+                    : "套数可自由增减；每套线路按这里的顺序显示三项任务，节点只归属一套（靠前的套优先），未选节点的套适用于全部剩余节点；迷你卡片与列表仍使用单线路绑定。"}
                 </p>
               </div>
             )}

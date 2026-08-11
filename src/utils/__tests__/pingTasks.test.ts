@@ -185,6 +185,30 @@ describe("homepage multi-ping groups (两套三网线路)", () => {
     );
   });
 
+  it("supports more than two groups with catch-all in the middle", () => {
+    const groups = [
+      { taskIds: [1, 2, 3], clientUuids: ["node-a"] },
+      { taskIds: [4, 5, 6], clientUuids: [] },
+      { taskIds: [7, 8, 9], clientUuids: ["node-b", "node-c"] },
+      { taskIds: [10, 11, 12], clientUuids: ["node-d"] },
+    ];
+    expect(
+      resolveHomepagePingTaskIdsByGroups(
+        ["node-a", "node-b", "node-c", "node-d", "node-e"],
+        groups,
+      ),
+    ).toEqual(
+      new Map([
+        ["node-a", [1, 2, 3]],
+        // 兜底组(第 2 套)按顺序吸收全部剩余节点,其后的组不再获得任何节点
+        ["node-b", [4, 5, 6]],
+        ["node-c", [4, 5, 6]],
+        ["node-d", [4, 5, 6]],
+        ["node-e", [4, 5, 6]],
+      ]),
+    );
+  });
+
   it("treats incomplete groups as unusable and falls back to legacy/single", () => {
     const groups = [{ taskIds: [1, 2], clientUuids: ["node-a"] }];
     expect(resolveHomepagePingTaskIdsByGroups(["node-a"], groups)).toEqual(new Map());

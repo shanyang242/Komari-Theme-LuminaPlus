@@ -1604,9 +1604,8 @@ body::after {
 .instance-ping-task {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
   min-width: 0;
-  padding: 5px 11px;
+  padding: 0 4px 0 0;
   border: 1px solid var(--border-subtle);
   border-radius: 999px;
   background: color-mix(in srgb, var(--surface-elev) 92%, transparent);
@@ -1616,6 +1615,47 @@ body::after {
   text-align: left;
   white-space: nowrap;
   transition: opacity 160ms ease, background 160ms ease, border-color 160ms ease;
+}
+
+/* chip 主体负责切换线路显隐；统计入口是它旁边的独立按钮，
+   两者必须是兄弟节点——button 不能嵌套 button。 */
+.instance-ping-task-main {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  padding: 5px 6px 5px 11px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+
+.instance-ping-task-main:focus-visible,
+.instance-ping-task-info:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 1px;
+}
+
+.instance-ping-task-info {
+  display: inline-grid;
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  place-items: center;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-tertiary);
+  transition: color 160ms ease, background 160ms ease;
+}
+
+.instance-ping-task-info:hover,
+.instance-ping-task-info[aria-expanded="true"] {
+  background: var(--fill-tertiary);
+  color: var(--text-primary);
 }
 
 .instance-ping-task-dot {
@@ -1647,6 +1687,182 @@ body::after {
 
 .instance-ping-task[data-visible="false"] {
   opacity: 0.4;
+}
+
+/* 线路统计浮层：原先这些数字塞在原生 title 里，触屏完全看不到。 */
+.instance-ping-stats-popover {
+  position: fixed;
+  z-index: 90;
+  width: 208px;
+  padding: 11px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--surface-elev-a) 96%, transparent);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.18);
+  color: var(--text-primary);
+  font-size: 12px;
+  line-height: 1.45;
+  animation: instance-ping-stats-in 120ms ease;
+}
+
+@keyframes instance-ping-stats-in {
+  from {
+    opacity: 0;
+    transform: translateY(-3px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .instance-ping-stats-popover {
+    animation: none;
+  }
+}
+
+.instance-ping-stats-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.instance-ping-stats-name {
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 680;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.instance-ping-stats-meta {
+  flex: 0 0 auto;
+  color: var(--text-tertiary);
+  font-size: 10.5px;
+  font-weight: 600;
+}
+
+.instance-ping-stats-target {
+  margin-bottom: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--hairline);
+  overflow: hidden;
+  color: var(--text-tertiary);
+  font-size: 10.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.instance-ping-stats-rows {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 2px 12px;
+  margin: 0;
+}
+
+.instance-ping-stats-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.instance-ping-stats-row dt {
+  color: var(--text-tertiary);
+  font-size: 11px;
+}
+
+.instance-ping-stats-row dd {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 11.5px;
+  font-weight: 650;
+}
+
+/* 横向缩放条：缩略曲线打底，窗口色块和两个把手浮在上面。 */
+.instance-range-slider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.instance-range-slider-track {
+  position: relative;
+  flex: 1 1 auto;
+  height: 40px;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--surface-elev) 82%, transparent);
+  touch-action: none;
+}
+
+.instance-range-slider-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.instance-range-slider-window {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-left: 1px solid var(--border-strong);
+  border-right: 1px solid var(--border-strong);
+  background: color-mix(in srgb, var(--ring) 14%, transparent);
+  cursor: grab;
+}
+
+.instance-range-slider-window:active {
+  cursor: grabbing;
+}
+
+.instance-range-slider-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 12px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: ew-resize;
+}
+
+.instance-range-slider-handle::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 3px;
+  height: 16px;
+  border-radius: 999px;
+  background: var(--text-tertiary);
+  transform: translate(-50%, -50%);
+}
+
+/* 把手贴在窗口内侧而非跨在边界上：track 会裁掉溢出部分，
+   窗口拖到两端时把手仍然完整可见、可点。 */
+.instance-range-slider-handle.is-start {
+  left: 0;
+}
+
+.instance-range-slider-handle.is-end {
+  right: 0;
+}
+
+.instance-range-slider-reset {
+  flex: 0 0 auto;
+}
+
+@media (max-width: 720px) {
+  .instance-range-slider-track {
+    height: 32px;
+  }
 }
 
 .instance-empty {

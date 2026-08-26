@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import UplotReact from "uplot-react";
 import type uPlot from "uplot";
 import { Eye, EyeOff, RefreshCw } from "lucide-react";
@@ -14,6 +14,8 @@ import {
   type ChartTooltipState,
 } from "./chartShared";
 import { ChartTooltip, SwitchToggle } from "./ChartParts";
+import { ChartRangeSlider, type ChartRangePreviewSeries } from "./ChartRangeSlider";
+import { PingTaskStatsPopover } from "./PingTaskStatsPopover";
 import {
   cutPeakValues,
   detectTypicalIntervalSeconds,
@@ -21,6 +23,19 @@ import {
   insertMetricGapSentinels,
   smoothByCount,
 } from "./chartData";
+import {
+  buildPingSeriesOverlay,
+  drawPingOverlay,
+  type PingSeriesOverlay,
+} from "./pingChartOverlay";
+import {
+  clampZoomWindow,
+  FULL_ZOOM_WINDOW,
+  rangeToZoomWindow,
+  zoomWindowIndexRange,
+  zoomWindowToRange,
+  type ChartZoomWindow,
+} from "./chartZoom";
 import { latencyHeatColor, lossHeatColor } from "@/utils/metricTone";
 import { historyChartRangeSeconds, historyCoverageLabel } from "@/utils/historyRange";
 import { resolvePingChartInterval, resolvePingSampleCounts } from "@/utils/pingMetrics";
@@ -123,7 +138,20 @@ export function PingChart({
   const [hiddenTasks, setHiddenTasks] = useState<Set<number>>(new Set());
   const [connectNulls, setConnectNulls] = useState(false);
   const [cutPeak, setCutPeak] = useState(false);
+  const [showLossLines, setShowLossLines] = useState(true);
+  const [showExtremePins, setShowExtremePins] = useState(true);
+  const [zoomWindow, setZoomWindow] = useState<ChartZoomWindow>(FULL_ZOOM_WINDOW);
   const chartRef = useRef<uPlot.AlignedData>([[]]);
+  // 缩放、覆盖层和丢包率都通过 ref 喂给 uPlot，让 options 对象保持稳定引用——
+  // 否则每拖一下滑块 uplot-react 就会销毁重建图表，入场动画会反复重放。
+  const plotRef = useRef<uPlot | null>(null);
+  const xRangeRef = useRef<[number, number]>([0, 1]);
+  const fullXRangeRef = useRef<[number, number] | null>(null);
+  const yRangeRef = useRef<[number, number]>([0, 100]);
+  const overlaysRef = useRef<PingSeriesOverlay[]>([]);
+  const lossByTaskRef = useRef<Map<number, number>>(new Map());
+  const overlayFlagsRef = useRef({ showLossLines, showExtremePins });
+  const applyZoomRef = useRef<(next: ChartZoomWindow) => void>(() => {});
   const [tooltip, setTooltip] = useState<ChartTooltipState>({
     show: false,
     left: 0,
@@ -274,15 +302,59 @@ export function PingChart({
     return historyCoverageLabel(coverageMeta, times[0], times[times.length - 1]);
   }, [chart, coverageMeta]);
 
-  const yRange = useMemo<[number | null, number | null]>(() => {
-    if (!chart) return [null, null];
+  // 时间轴的完整跨度：优先用后端声明的请求区间，缺失时退回实际数据首尾。
+  // 缩放窗口是它的比例切片，主图 x scale 只由这里派生。
+  const fullXRange = useMemo<[number, number] | null>(() => {
+    if (requestedXRange) return requestedXRange;
+    const times = chart?.[0];
+    if (!times?.length) return null;
+    const start = times[0];
+    const end = times[times.length - 1];
+    return end > start ? [start, end] : null;
+  }, [chart, requestedXRange]);
+
+  const zoomedXRange = useMemo<[number, number] | null>(
+    () => (fullXRange ? zoomWindowToRange(fullXRange, zoomWindow) : null),
+    [fullXRange, zoomWindow],
+  );
+
+  // 可见区间内一个点都没有时退回 null，让下游按「整段」处理而不是按空区间处理。
+  const visibleIndexRange = useMemo(() => {
+    const times = chart?.[0];
+    if (!times?.length || !zoomedXRange) return null;
+    const range = zoomWindowIndexRange(times as ReadonlyArray<number>, zoomedXRange);
+    return range.toIndex >= 0 ? range : null;
+  }, [chart, zoomedXRange]);
+
+  const overlays = useMemo<PingSeriesOverlay[]>(() => {
+    if (!chart) return [];
+    return tasks
+      .filter((task) => visibleTaskIds.has(task.id))
+      .map((task) => {
+        const seriesIndex = (taskIndexById.get(task.id) ?? 0) + 1;
+        const values = (chart[seriesIndex] ?? []) as ReadonlyArray<number | null | undefined>;
+        return buildPingSeriesOverlay(
+          values,
+          taskColors.get(task.id) ?? colorForSeries(seriesIndex - 1, tasks.length),
+          visibleIndexRange ?? undefined,
+        );
+      });
+  }, [chart, taskColors, taskIndexById, tasks, visibleIndexRange, visibleTaskIds]);
+
+  // y 轴跟随可见区间重算：放大到某一小段后，纵向也应该铺满这段的量级，
+  // 否则缩放只是横向拉伸，看不清细节。
+  const yRange = useMemo<[number, number]>(() => {
+    if (!chart) return [0, 100];
+    const fromIndex = visibleIndexRange?.fromIndex ?? 0;
+    const toIndex = visibleIndexRange?.toIndex ?? (chart[0]?.length ?? 1) - 1;
     let min = Number.POSITIVE_INFINITY;
     let max = Number.NEGATIVE_INFINITY;
     for (let index = 0; index < tasks.length; index += 1) {
       if (!visibleTaskIds.has(tasks[index].id)) continue;
       const series = chart[index + 1] as Array<number | null | undefined> | undefined;
       if (!series) continue;
-      for (const value of series) {
+      for (let cursor = fromIndex; cursor <= toIndex; cursor += 1) {
+        const value = series[cursor];
         if (typeof value === "number" && Number.isFinite(value) && value >= 0) {
           if (value < min) min = value;
           if (value > max) max = value;
@@ -296,7 +368,40 @@ export function PingChart({
     }
     const pad = Math.max(5, (max - min) * 0.12);
     return [Math.max(0, min - pad), max + pad];
-  }, [chart, tasks, visibleTaskIds]);
+  }, [chart, tasks, visibleIndexRange, visibleTaskIds]);
+
+  // 这些 ref 必须在 render 期间对齐：uPlot 挂载那一帧就会调用 scales 的 range() 和 draw hook，
+  // 放到 effect 里赋值会晚一帧，首帧会用上一轮(甚至初始占位)的区间和覆盖层画一次。
+  overlaysRef.current = overlays;
+  overlayFlagsRef.current = { showLossLines, showExtremePins };
+  fullXRangeRef.current = fullXRange;
+  if (zoomedXRange) xRangeRef.current = zoomedXRange;
+  yRangeRef.current = yRange;
+
+  useEffect(() => {
+    plotRef.current?.redraw();
+  }, [overlays, showExtremePins, showLossLines]);
+
+  useEffect(() => {
+    const plot = plotRef.current;
+    if (!plot) return;
+    // scales 的 range 函数会读上面的 ref 覆盖这里传入的值；传当前值只是为了触发一次重算。
+    if (zoomedXRange) plot.setScale("x", { min: zoomedXRange[0], max: zoomedXRange[1] });
+    plot.setScale("y", { min: yRange[0], max: yRange[1] });
+  }, [yRange, zoomedXRange]);
+
+  // 换节点或换时间范围后旧的缩放窗口不再有意义，回到全量。
+  useEffect(() => {
+    setZoomWindow(FULL_ZOOM_WINDOW);
+  }, [hours, uuid]);
+
+  const applyZoomWindow = useCallback((next: ChartZoomWindow) => {
+    setZoomWindow(clampZoomWindow(next));
+  }, []);
+
+  const resetZoomWindow = useCallback(() => setZoomWindow(FULL_ZOOM_WINDOW), []);
+
+  applyZoomRef.current = applyZoomWindow;
 
   const baseOptions = useMemo<Omit<uPlot.Options, "width" | "height"> | null>(() => {
     if (!chart) return null;
@@ -312,6 +417,7 @@ export function PingChart({
             const taskIndex = taskIndexById.get(task.id) ?? 0;
             const raw = chartRef.current[taskIndex + 1]?.[idx] as number | null | undefined;
             return {
+              taskId: task.id,
               label: taskLabels.get(task.id) ?? `任务 #${task.id}`,
               raw: typeof raw === "number" && Number.isFinite(raw) ? raw : null,
               color: taskColors.get(task.id) ?? colorForSeries(taskIndex, tasks.length),
@@ -322,21 +428,27 @@ export function PingChart({
             if (b.raw == null) return -1;
             return b.raw - a.raw;
           })
-          .map(({ label, raw, color }) => ({
-            label,
-            value: raw == null ? "—" : `${raw.toFixed(1)} ms`,
-            color,
-          })),
+          .map(({ label, raw, color, taskId }) => {
+            // 对标哪吒服务监控图的图例格式「名称 丢包%: 延迟 ms」，
+            // 悬停时不用回头去看图例就知道这条线当前的健康度。
+            const loss = lossByTaskRef.current.get(taskId);
+            return {
+              label: loss == null ? label : `${label} ${loss.toFixed(1)}%`,
+              value: raw == null ? "—" : `${raw.toFixed(1)} ms`,
+              color,
+            };
+          }),
     });
     return {
       padding: [10, 14, 12, 2],
-      cursor: { drag: { x: true, y: false } },
+      // setScale: false —— 拖拽出的选区交给 setSelect hook 换算成缩放窗口，
+      // 由窗口统一驱动 x scale，避免 uPlot 自缩放与滑块两套状态打架。
+      // dist 要求先拖够 8px 才算选区，否则想点一下图表却抖了两像素就会意外缩放。
+      cursor: { drag: { x: true, y: false, setScale: false, dist: 8 } },
       legend: { show: false },
       scales: {
-        x: requestedXRange
-          ? { time: true, auto: false, range: () => requestedXRange }
-          : { time: true },
-        y: { auto: false, range: yRange },
+        x: { time: true, auto: false, range: () => xRangeRef.current },
+        y: { auto: false, range: () => yRangeRef.current },
       },
       axes: [
         {
@@ -375,9 +487,25 @@ export function PingChart({
         ],
         destroy: [tooltipHooks.onDestroy],
         setCursor: [tooltipHooks.onSetCursor],
+        draw: [
+          (u) => {
+            drawPingOverlay(u, overlaysRef.current, overlayFlagsRef.current);
+          },
+        ],
+        setSelect: [
+          (u) => {
+            if (u.select.width <= 0) return;
+            const full = fullXRangeRef.current;
+            const from = u.posToVal(u.select.left, "x");
+            const to = u.posToVal(u.select.left + u.select.width, "x");
+            u.setSelect({ left: 0, top: 0, width: 0, height: 0 }, false);
+            if (!full) return;
+            applyZoomRef.current(rangeToZoomWindow(full, [from, to]));
+          },
+        ],
       },
     };
-  }, [chart, connectNulls, hiddenTasks, hours, isDark, requestedXRange, taskColors, taskIndexById, taskLabels, tasks, visibleTasks, yRange]);
+  }, [chart, connectNulls, hiddenTasks, hours, isDark, taskColors, taskIndexById, taskLabels, tasks, visibleTasks]);
 
   const options = useMemo<uPlot.Options | null>(
     () => (baseOptions ? { ...baseOptions, width: w, height: h } : null),
@@ -439,6 +567,26 @@ export function PingChart({
       };
     });
   }, [pingStats, sortedRecords, taskColors, tasks, uuid]);
+
+  const lossByTask = useMemo(
+    () => new Map(taskStats.map((task) => [task.id, task.loss])),
+    [taskStats],
+  );
+  // 同上：tooltip 的行是在 uPlot 的 hook 里现算的，走 ref 才能读到最新丢包率
+  // 而不必让整个 options 依赖 taskStats。
+  lossByTaskRef.current = lossByTask;
+
+  // 缩放条的缩略曲线直接复用主图已降采样的数据，两者不会出现形状对不上的情况。
+  const previewSeries = useMemo<ChartRangePreviewSeries[]>(() => {
+    if (!chart) return [];
+    return visibleTasks.map((task) => {
+      const seriesIndex = (taskIndexById.get(task.id) ?? 0) + 1;
+      return {
+        values: (chart[seriesIndex] ?? []) as ReadonlyArray<number | null | undefined>,
+        color: taskColors.get(task.id) ?? colorForSeries(seriesIndex - 1, tasks.length),
+      };
+    });
+  }, [chart, taskColors, taskIndexById, tasks.length, visibleTasks]);
 
   const refetchAll = () => {
     void refetchRecords();
@@ -503,6 +651,18 @@ export function PingChart({
           onToggle={() => setConnectNulls((value) => !value)}
           title="关闭：如实显示中断/丢包断点；开启：跨过所有空缺连成完整曲线（更好看，但看不出掉线）。注：偶尔漏一两次采样的小空缺始终自动桥接，不受此开关影响。"
         />
+        <SwitchToggle
+          label="丢包竖线"
+          active={showLossLines}
+          onToggle={() => setShowLossLines((value) => !value)}
+          title="在每次探测失败的时刻立一条同色竖线，一眼看出丢包集中在哪些时段"
+        />
+        <SwitchToggle
+          label="极值标记"
+          active={showExtremePins}
+          onToggle={() => setShowExtremePins((value) => !value)}
+          title="在每条线当前可见区间的最高/最低点标出数值气泡"
+        />
         <button type="button" className="instance-toggle-button" onClick={toggleAll}>
           {hiddenTasks.size === 0 ? <EyeOff size={14} aria-hidden /> : <Eye size={14} aria-hidden />}
           {hiddenTasks.size === 0 ? "隐藏全部" : "显示全部"}
@@ -522,42 +682,59 @@ export function PingChart({
       <div className="instance-ping-tasks">
         {taskStats.map((task) => {
           const visible = !hiddenTasks.has(task.id);
+          const label = taskLabels.get(task.id) ?? `任务 #${task.id}`;
           return (
-            <button
+            <div
               key={task.id}
-              type="button"
               className="instance-ping-task"
               data-visible={visible ? "true" : "false"}
-              aria-pressed={visible}
-              onClick={() => toggleTask(task.id)}
               style={{ borderColor: visible ? task.color : "var(--border-subtle)" }}
-              title={[
-                taskLabels.get(task.id) ?? `任务 #${task.id}`,
-                `当前 ${task.latest != null ? `${task.latest.toFixed(1)} ms` : "—"} | 均值 ${task.avg != null ? `${task.avg.toFixed(1)} ms` : "—"} | 丢包 ${task.loss.toFixed(1)}%`,
-                `p99 ${task.p99 != null ? `${task.p99.toFixed(0)} ms` : "—"} | 抖动 ${task.volatility != null ? task.volatility.toFixed(2) : "—"}`,
-                `min ${task.min != null ? `${task.min.toFixed(0)} ms` : "—"} | max ${task.max != null ? `${task.max.toFixed(0)} ms` : "—"} | 样本 ${task.total ?? 0} | 间隔 ${task.interval}s`,
-              ].join("\n")}
             >
-              <span className="instance-ping-task-dot" style={{ background: task.color }} aria-hidden />
-              <span className="instance-ping-task-name">{taskLabels.get(task.id) ?? `任务 #${task.id}`}</span>
-              <span
-                className="instance-ping-task-primary"
-                style={{
-                  color:
-                    task.latest != null
-                      ? latencyHeatColor(task.latest)
-                      : "var(--text-tertiary)",
+              <button
+                type="button"
+                className="instance-ping-task-main"
+                aria-pressed={visible}
+                onClick={() => toggleTask(task.id)}
+              >
+                <span className="instance-ping-task-dot" style={{ background: task.color }} aria-hidden />
+                <span className="instance-ping-task-name">{label}</span>
+                <span
+                  className="instance-ping-task-primary"
+                  style={{
+                    color:
+                      task.latest != null
+                        ? latencyHeatColor(task.latest)
+                        : "var(--text-tertiary)",
+                  }}
+                >
+                  {task.latest != null ? `${task.latest.toFixed(1)} ms` : "—"}
+                </span>
+                <span
+                  className="instance-ping-task-loss"
+                  style={{ color: lossHeatColor(task.loss) }}
+                >
+                  {task.loss.toFixed(1)}%
+                </span>
+              </button>
+              <PingTaskStatsPopover
+                stat={{
+                  name: label,
+                  type: task.type,
+                  target: task.target,
+                  interval: task.interval,
+                  latest: task.latest,
+                  avg: task.avg,
+                  min: task.min,
+                  max: task.max,
+                  p50: task.p50,
+                  p99: task.p99,
+                  volatility: task.volatility,
+                  total: task.total,
+                  lost: task.lost,
+                  loss: task.loss,
                 }}
-              >
-                {task.latest != null ? `${task.latest.toFixed(1)} ms` : "—"}
-              </span>
-              <span
-                className="instance-ping-task-loss"
-                style={{ color: lossHeatColor(task.loss) }}
-              >
-                {task.loss.toFixed(1)}%
-              </span>
-            </button>
+              />
+            </div>
           );
         })}
       </div>
@@ -569,6 +746,12 @@ export function PingChart({
               key={`${uuid}-${hours}-${cutPeak ? "smooth" : "raw"}-${connectNulls ? "span" : "gap"}`}
               options={options}
               data={chart}
+              onCreate={(plot) => {
+                plotRef.current = plot;
+              }}
+              onDelete={() => {
+                plotRef.current = null;
+              }}
             />
             <ChartTooltip tooltip={tooltip} />
           </>
@@ -576,6 +759,15 @@ export function PingChart({
           <div className="instance-empty">当前已隐藏全部线路，点击上方按钮可恢复显示</div>
         )}
       </div>
+
+      {chart && options && visibleTasks.length > 0 && fullXRange && (
+        <ChartRangeSlider
+          window={zoomWindow}
+          series={previewSeries}
+          onChange={applyZoomWindow}
+          onReset={resetZoomWindow}
+        />
+      )}
     </InstancePanel>
   );
 }

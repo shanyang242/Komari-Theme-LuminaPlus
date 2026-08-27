@@ -29,6 +29,21 @@
   white-space: nowrap;
 }
 
+.home-dashboard .floating-controls {
+  transition:
+    opacity 160ms ease,
+    transform 180ms ease,
+    visibility 160ms ease;
+}
+
+.home-dashboard.is-home-header-hidden .home-brand,
+.home-dashboard.is-home-header-hidden .floating-controls {
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-6px);
+}
+
 @media (max-width: 720px) {
   .home-brand {
     max-width: calc(100vw - 8.5rem);
@@ -875,6 +890,11 @@
    iOS PWA 的状态栏安全区由 app-main 统一叠加。 */
 .home-dashboard {
   padding-top: 28px;
+  transition: padding-top 180ms ease;
+}
+
+.home-dashboard.is-home-header-hidden {
+  padding-top: 0;
 }
 
 /* 首页控件条复用卡片网格列定义：分组标签落在第一列，排序控件钉在最后一列。 */

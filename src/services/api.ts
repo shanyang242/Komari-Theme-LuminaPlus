@@ -141,6 +141,8 @@ interface RpcRecordsPayload {
 interface PingOverviewResponse {
   records: PingRecordsResponse["records"];
   tasks: PingTask[];
+  /** tasks 是否来自包含 clients 的公开任务列表；兼容 records 接口不提供该信息。 */
+  taskAssignmentsKnown?: boolean;
   rangeStartMs?: number;
   rangeEndMs?: number;
   intervalSeconds?: number;
@@ -742,7 +744,7 @@ async function getPingMetricData({
   repairBoundary?: boolean;
   signal?: AbortSignal;
   timeout?: number;
-}): Promise<PingRecordsResponse> {
+}): Promise<PingRecordsResponse & { taskAssignmentsKnown: boolean }> {
   const deadline = requestDeadline(timeout);
   const metricQueryAvailable = await waitForMetricQueryCapability({
     signal,
@@ -828,7 +830,9 @@ async function getPingMetricData({
   ]);
   const statByTask = new Map(stats.map((stat) => [stat.taskId, stat] as const));
   const tasks = publicTasks
-    ?.filter((task) => observedTaskIds.has(task.id))
+    ?.filter((task) =>
+      taskId != null ? task.id === taskId : observedTaskIds.has(task.id),
+    )
     .map((task) => ({
       ...task,
       loss: statByTask.get(task.id)?.loss ?? task.loss,
@@ -839,6 +843,7 @@ async function getPingMetricData({
     records,
     ...getMetricPayloadRange(metricPayload, requestRange),
     intervalSeconds: intervalSeconds > 0 ? intervalSeconds : undefined,
+    taskAssignmentsKnown: publicTasks !== null,
     tasks:
       tasks && tasks.length > 0
         ? tasks

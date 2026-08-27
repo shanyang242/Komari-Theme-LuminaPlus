@@ -462,6 +462,13 @@
   justify-content: flex-end;
 }
 
+.multi-ping-name-wrap {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 4px;
+}
+
 .multi-ping-name {
   display: block;
   min-width: 0;
@@ -473,11 +480,22 @@
   white-space: nowrap;
 }
 
+.multi-ping-unassigned {
+  flex: 0 0 auto;
+  padding: 1px 3px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--status-warning) 14%, transparent);
+  color: color-mix(in srgb, var(--status-warning) 84%, var(--text-primary));
+  font-size: 8px;
+  font-weight: 680;
+  line-height: 1.25;
+}
+
 .multi-ping-value {
   flex: 0 0 auto;
   font-size: 11.5px;
   font-weight: 720;
-  letter-spacing: -0.02em;
+  letter-spacing: 0;
   white-space: nowrap;
 }
 

@@ -93,6 +93,20 @@ describe("normalizeThemeSettings", () => {
     expect(resolved.homepageMultiPingTaskIds).toEqual([3, 1, 2]);
   });
 
+  it("normalizes complete per-node multi-ping overrides and drops malformed entries", () => {
+    const resolved = normalizeThemeSettings({
+      homepageMultiPingNodeTaskIds: {
+        "node-a": [4, 2, 3],
+        "node-b": [1, 1, 2],
+      },
+    });
+
+    expect(resolved.homepageMultiPingNodeTaskIds).toEqual({
+      "node-a": [4, 2, 3],
+    });
+    expect(normalizeThemeSettings({}).homepageMultiPingNodeTaskIds).toEqual({});
+  });
+
   it("defaults home sort to weight ascending and falls back to a field's natural direction", () => {
     const base = normalizeThemeSettings({});
     expect(base.enableHomeSort).toBe(true);
@@ -112,6 +126,26 @@ describe("normalizeThemeSettings", () => {
     expect(
       normalizeThemeSettings({ fakePingForUnbound: "yes" } as never).fakePingForUnbound,
     ).toBe(false);
+  });
+
+  it("keeps timed home header hiding opt-in and normalizes its duration", () => {
+    const defaults = normalizeThemeSettings({});
+    expect(defaults.enableHomeHeaderAutoHide).toBe(false);
+    expect(defaults.homeHeaderVisibleSeconds).toBe(10);
+
+    expect(
+      normalizeThemeSettings({
+        enableHomeHeaderAutoHide: true,
+        homeHeaderVisibleSeconds: 12.6,
+      }),
+    ).toMatchObject({
+      enableHomeHeaderAutoHide: true,
+      homeHeaderVisibleSeconds: 13,
+    });
+    expect(normalizeThemeSettings({ homeHeaderVisibleSeconds: 0 }).homeHeaderVisibleSeconds).toBe(1);
+    expect(
+      normalizeThemeSettings({ homeHeaderVisibleSeconds: 9999 }).homeHeaderVisibleSeconds,
+    ).toBe(3600);
   });
 
   it("parses hiddenNodes from a delimited string and dedupes", () => {

@@ -29,6 +29,13 @@ describe("home responsive layout contracts", () => {
     expect(homeSource).toContain("onExpandedChange={setControlsExpanded}");
   });
 
+  it("reclaims the reserved header space after timed hiding", () => {
+    expect(homeSource).toContain('is-home-header-hidden');
+    expect(homeCss).toMatch(
+      /\.home-dashboard\.is-home-header-hidden\s*\{[^}]*padding-top:\s*0/,
+    );
+  });
+
   it("keeps both horizontal edges inside viewport safe areas", () => {
     expect(surfaceCss).toContain("env(safe-area-inset-left, 0px)");
     expect(surfaceCss).toContain("env(safe-area-inset-right, 0px)");

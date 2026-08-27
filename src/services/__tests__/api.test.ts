@@ -158,6 +158,36 @@ describe("metric boundary repair in the API adapter", () => {
     expect(metricCalls).toHaveLength(1);
   });
 
+  it("keeps explicit task metadata when the selected client has no samples", async () => {
+    rpcCallMock.mockImplementation((method: string) => {
+      if (method === "public:getPingMetricStats") {
+        return Promise.resolve({ stats: [] });
+      }
+      if (method === "public:getPublicPingTasks") {
+        return Promise.resolve([
+          {
+            id: 7,
+            interval: 60,
+            name: "广州探测",
+            clients: ["node-a"],
+          },
+        ]);
+      }
+      if (method === "public:queryMetrics") {
+        return Promise.resolve({ start: START, end: END, series: [] });
+      }
+      return Promise.reject(new Error(`Unexpected RPC method: ${method}`));
+    });
+
+    const result = await getPingOverview(1, 7, { entityIds: ["node-b"] });
+
+    expect(result.records).toEqual([]);
+    expect(result.tasks).toEqual([
+      expect.objectContaining({ id: 7, name: "广州探测", clients: ["node-a"] }),
+    ]);
+    expect(result.taskAssignmentsKnown).toBe(true);
+  });
+
   it("requests only the bounded raw window and fills the empty bucket", async () => {
     installRpcResponses({ hasGap: true });
     const result = await getPingOverview(1, 7, { entityIds: ["node-a"] });

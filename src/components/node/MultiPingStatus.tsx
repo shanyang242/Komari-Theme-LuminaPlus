@@ -28,9 +28,12 @@ const MultiPingMetricRow = memo(function MultiPingMetricRow({
   const lossColor = lossHeatColor(line.loss);
   const isLoading = line.loadState === "pending";
   const isError = line.loadState === "error";
+  const isUnassigned = line.isAssigned === false;
   const staleError = isError && (line.lastValue != null || line.loss != null);
   const latencyLabel =
-    isLoading && line.lastValue == null
+    isUnassigned
+      ? "后台未绑定"
+      : isLoading && line.lastValue == null
       ? "加载中"
       : isError && line.lastValue == null
         ? "加载失败"
@@ -38,7 +41,9 @@ const MultiPingMetricRow = memo(function MultiPingMetricRow({
           ? "无样本"
           : `${Math.round(line.lastValue)}ms`;
   const lossLabel =
-    isLoading && line.loss == null
+    isUnassigned
+      ? "后台未绑定"
+      : isLoading && line.loss == null
       ? "加载中"
       : isError && line.loss == null
         ? "加载失败"
@@ -69,9 +74,14 @@ const MultiPingMetricRow = memo(function MultiPingMetricRow({
     <div
       className="multi-ping-metric-row"
       data-load-state={line.loadState ?? "ready"}
-      title={`${line.taskName} · 延迟 ${latencyLabel} · 丢包 ${lossLabel}${
-        staleError ? " · 刷新失败，显示上次数据" : ""
-      }`}
+      data-assigned={line.isAssigned ? "true" : "false"}
+      title={
+        isUnassigned
+          ? `${line.taskName} · 后台未绑定该服务器`
+          : `${line.taskName} · 延迟 ${latencyLabel} · 丢包 ${lossLabel}${
+              staleError ? " · 刷新失败，显示上次数据" : ""
+            }`
+      }
     >
       <div
         className={clsx(
@@ -80,7 +90,10 @@ const MultiPingMetricRow = memo(function MultiPingMetricRow({
         )}
       >
         {metric === "latency" && (
-          <span className="multi-ping-name">{line.taskName}</span>
+          <span className="multi-ping-name-wrap">
+            <span className="multi-ping-name">{line.taskName}</span>
+            {isUnassigned && <span className="multi-ping-unassigned">未绑定</span>}
+          </span>
         )}
         <strong
           className="multi-ping-value tabular"

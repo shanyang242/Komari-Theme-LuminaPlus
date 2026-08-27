@@ -145,15 +145,15 @@ describe("homepage ping polling selection", () => {
       [],
       undefined,
       undefined,
-      async (_hours, taskId) => ({
-        ...pingOverviewResponse(taskId ?? 0, taskId ?? 0),
-        records: [
-          {
-            ...pingOverviewResponse(taskId ?? 0, taskId ?? 0).records[0],
-            client: taskId === 1 ? "node-a" : "node-b",
-          },
-        ],
-      }),
+      async (_hours, taskId) => {
+        const response = pingOverviewResponse(taskId ?? 0, taskId ?? 0);
+        const client = taskId === 1 ? "node-a" : "node-b";
+        return {
+          ...response,
+          records: response.records.map((record) => ({ ...record, client })),
+          tasks: response.tasks.map((task) => ({ ...task, clients: [client] })),
+        };
+      },
       undefined,
       (next) => progress.push(next.changedUuids),
     );
@@ -172,6 +172,118 @@ describe("homepage ping polling selection", () => {
     expect(resolveHomepagePingRequestMode("list", true, [1, 2, 3])).toBe("single");
     expect(resolveHomepagePingRequestMode("large", false, [1, 2, 3])).toBe("single");
     expect(resolveHomepagePingRequestMode("large", true, [1, 2])).toBe("single");
+    expect(
+      resolveHomepagePingRequestMode("large", true, [], { "node-a": [1, 2, 3] }),
+    ).toBe("multi");
+  });
+
+  it("dedupes per-node multi-ping tasks and filters each request to affected nodes", async () => {
+    const loadOverview = vi.fn(
+      async (
+        _hours?: number,
+        taskId?: number,
+        options?: { entityIds?: string[] },
+      ) => ({
+        ...pingOverviewResponse(taskId ?? 0, taskId ?? 0),
+        records: (options?.entityIds ?? []).map((client) => ({
+          task_id: taskId ?? 0,
+          time: NOW,
+          value: taskId ?? 0,
+          client,
+          count: 1,
+          loss: 0,
+        })),
+      }),
+    );
+
+    const result = await buildPingOverviewMap(
+      1,
+      ["node-a", "node-b"],
+      {},
+      [1, 2, 3],
+      undefined,
+      undefined,
+      loadOverview as never,
+      undefined,
+      undefined,
+      { "node-b": [2, 3, 4] },
+    );
+
+    expect(loadOverview).toHaveBeenCalledTimes(4);
+    const callsByTask = new Map(
+      loadOverview.mock.calls.map((call) => [call[1], call[2]?.entityIds]),
+    );
+    expect(callsByTask.get(1)).toEqual(["node-a"]);
+    expect(callsByTask.get(2)).toEqual(["node-a", "node-b"]);
+    expect(callsByTask.get(3)).toEqual(["node-a", "node-b"]);
+    expect(callsByTask.get(4)).toEqual(["node-b"]);
+    expect(result.multiLines.get("node-a")?.map((line) => line.taskId)).toEqual([1, 2, 3]);
+    expect(result.multiLines.get("node-b")?.map((line) => line.taskId)).toEqual([2, 3, 4]);
+  });
+
+  it("distinguishes an unbound task from a bound task with no displayed sample", async () => {
+    const result = await buildPingOverviewMap(
+      1,
+      ["node-a", "node-b"],
+      {},
+      [1, 2, 3],
+      undefined,
+      undefined,
+      async (_hours, taskId) => pingOverviewResponse(taskId ?? 0, taskId ?? 0),
+    );
+
+    expect(result.multiLines.get("node-a")?.map((line) => line.isAssigned)).toEqual([
+      true,
+      true,
+      true,
+    ]);
+    expect(result.multiLines.get("node-b")?.map((line) => line.isAssigned)).toEqual([
+      false,
+      false,
+      false,
+    ]);
+    expect(result.multiLines.get("node-b")?.map((line) => line.taskName)).toEqual([
+      "Task 1",
+      "Task 2",
+      "Task 3",
+    ]);
+  });
+
+  it("lets an authoritative client list override retained historical samples", async () => {
+    const result = await buildPingOverviewMap(
+      1,
+      ["node-a"],
+      {},
+      [1, 2, 3],
+      undefined,
+      undefined,
+      async (_hours, taskId) => ({
+        ...pingOverviewResponse(taskId ?? 0, taskId ?? 0),
+        tasks: [
+          {
+            ...pingOverviewResponse(taskId ?? 0, taskId ?? 0).tasks[0],
+            clients: [],
+          },
+        ],
+        taskAssignmentsKnown: true,
+      }),
+    );
+
+    expect(result.multiLines.get("node-a")?.map((line) => line.isAssigned)).toEqual([
+      false,
+      false,
+      false,
+    ]);
+    expect(result.multiLines.get("node-a")?.map((line) => line.lastValue)).toEqual([
+      null,
+      null,
+      null,
+    ]);
+    expect(result.multiLines.get("node-a")?.map((line) => line.samples)).toEqual([
+      [],
+      [],
+      [],
+    ]);
   });
 
   it("retains the previous line when one multi-ping task fails", async () => {

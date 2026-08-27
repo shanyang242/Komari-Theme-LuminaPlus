@@ -26,7 +26,9 @@ import {
 } from "@/utils/homeSort";
 import {
   normalizeHomepageMultiPingTaskIds,
+  normalizeHomepageMultiPingNodeTaskIds,
   normalizeHomepagePingTaskBindings,
+  type HomepageMultiPingNodeTaskIds,
   type HomepagePingTaskBindings,
 } from "@/utils/pingTasks";
 
@@ -43,7 +45,10 @@ export interface ResolvedThemeSettings {
   homepagePingBindings: HomepagePingTaskBindings;
   enableHomepageMultiPing: boolean;
   homepageMultiPingTaskIds: number[];
+  homepageMultiPingNodeTaskIds: HomepageMultiPingNodeTaskIds;
   fakePingForUnbound: boolean;
+  enableHomeHeaderAutoHide: boolean;
+  homeHeaderVisibleSeconds: number;
   showHomeOverview: boolean;
   showGroupTabs: boolean;
   showRegionBar: boolean;
@@ -89,7 +94,10 @@ export const DEFAULT_THEME_SETTINGS: ResolvedThemeSettings = {
   homepagePingBindings: {},
   enableHomepageMultiPing: false,
   homepageMultiPingTaskIds: [],
+  homepageMultiPingNodeTaskIds: {},
   fakePingForUnbound: false,
+  enableHomeHeaderAutoHide: false,
+  homeHeaderVisibleSeconds: 10,
   showHomeOverview: true,
   showGroupTabs: true,
   showRegionBar: true,
@@ -164,6 +172,17 @@ function enabledUnlessFalse(value: unknown) {
   return value !== false;
 }
 
+export function normalizeHomeHeaderVisibleSeconds(value: unknown) {
+  const seconds =
+    typeof value === "number"
+      ? value
+      : typeof value === "string"
+        ? Number.parseFloat(value)
+        : Number.NaN;
+  if (!Number.isFinite(seconds)) return DEFAULT_THEME_SETTINGS.homeHeaderVisibleSeconds;
+  return Math.min(3600, Math.max(1, Math.round(seconds)));
+}
+
 function normalizePlainText(value: unknown) {
   return typeof value === "string" ? value : "";
 }
@@ -208,8 +227,15 @@ export function normalizeThemeSettings(
     // 保留开关原值，让管理页能呈现并修复不完整配置；首页消费方仅在任务恰好为三项时启用。
     enableHomepageMultiPing: settings?.enableHomepageMultiPing === true,
     homepageMultiPingTaskIds,
+    homepageMultiPingNodeTaskIds: normalizeHomepageMultiPingNodeTaskIds(
+      settings?.homepageMultiPingNodeTaskIds,
+    ),
     // 默认关闭(需手动开启):给访客展示的是模拟数据,必须由站长显式决定。
     fakePingForUnbound: settings?.fakePingForUnbound === true,
+    enableHomeHeaderAutoHide: settings?.enableHomeHeaderAutoHide === true,
+    homeHeaderVisibleSeconds: normalizeHomeHeaderVisibleSeconds(
+      settings?.homeHeaderVisibleSeconds,
+    ),
     showHomeOverview: enabledUnlessFalse(settings?.showHomeOverview),
     showGroupTabs: enabledUnlessFalse(settings?.showGroupTabs),
     showRegionBar: enabledUnlessFalse(settings?.showRegionBar),

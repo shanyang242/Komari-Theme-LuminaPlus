@@ -18,6 +18,7 @@ import {
   Rows3,
   Save,
   Search,
+  SlidersHorizontal,
   Sun,
   SunMoon,
   Video,
@@ -25,6 +26,7 @@ import {
 } from "lucide-react";
 import { clsx } from "clsx";
 import { InstancePanel } from "@/components/instance/InstancePanel";
+import { MultiPingNodeConfigPanel } from "@/components/theme/MultiPingNodeConfigPanel";
 import { Spinner } from "@/components/ui/Spinner";
 import { Flag } from "@/components/ui/Flag";
 import { usePublicConfig } from "@/hooks/usePublicConfig";
@@ -68,12 +70,15 @@ import {
 } from "@/utils/homeNodes";
 import {
   HOMEPAGE_MULTI_PING_TASK_COUNT,
+  normalizeHomepageMultiPingNodeTaskIds,
   normalizeHomepageMultiPingTaskIds,
   normalizeHomepagePingTaskBindings,
+  type HomepageMultiPingNodeTaskIds,
   type HomepagePingTaskBindings,
 } from "@/utils/pingTasks";
 import {
   DEFAULT_THEME_SETTINGS,
+  normalizeHomeHeaderVisibleSeconds,
   normalizeThemeSettings,
   type BackgroundMediaType,
   type ResolvedThemeSettings,
@@ -276,7 +281,10 @@ function pickManagedThemeSettings(settings: ResolvedThemeSettings) {
     homepagePingBindings: settings.homepagePingBindings,
     enableHomepageMultiPing: settings.enableHomepageMultiPing,
     homepageMultiPingTaskIds: settings.homepageMultiPingTaskIds,
+    homepageMultiPingNodeTaskIds: settings.homepageMultiPingNodeTaskIds,
     fakePingForUnbound: settings.fakePingForUnbound,
+    enableHomeHeaderAutoHide: settings.enableHomeHeaderAutoHide,
+    homeHeaderVisibleSeconds: settings.homeHeaderVisibleSeconds,
     showHomeOverview: settings.showHomeOverview,
     showGroupTabs: settings.showGroupTabs,
     showRegionBar: settings.showRegionBar,
@@ -693,6 +701,77 @@ const PremiumList = memo(function PremiumList({
   );
 });
 
+// 弹窗开关留在这个小组件内，打开面板时不再让整个设置页跟着重渲染。
+const MultiPingNodeConfigControl = memo(function MultiPingNodeConfigControl({
+  clients,
+  tasks,
+  globalTaskIds,
+  nodeTaskIds,
+  configuredNodeCount,
+  disabled,
+  saving,
+  saveDisabled,
+  saveError,
+  onChange,
+  onSave,
+}: {
+  clients: AdminClient[];
+  tasks: PingTask[];
+  globalTaskIds: number[];
+  nodeTaskIds: HomepageMultiPingNodeTaskIds;
+  configuredNodeCount: number;
+  disabled: boolean;
+  saving: boolean;
+  saveDisabled: boolean;
+  saveError: string | null;
+  onChange: (next: HomepageMultiPingNodeTaskIds) => void;
+  onSave: () => Promise<boolean>;
+}) {
+  const [open, setOpen] = useState(false);
+  const close = useCallback(() => setOpen(false), []);
+
+  return (
+    <>
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-[var(--hairline)] pt-4">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2 text-[12px] font-medium text-[var(--text-primary)]">
+            <SlidersHorizontal size={14} />
+            按服务器覆盖
+          </div>
+          <p className="mt-1 text-[11px] text-[var(--text-tertiary)]">
+            已单独配置 {configuredNodeCount} / {clients.length} 台服务器
+          </p>
+        </div>
+        <button
+          type="button"
+          disabled={disabled}
+          onClick={() => setOpen(true)}
+          className="theme-manage-button is-compact"
+        >
+          <SlidersHorizontal size={13} />
+          配置服务器探测点
+        </button>
+      </div>
+
+      {open && (
+        <MultiPingNodeConfigPanel
+          open
+          clients={clients}
+          tasks={tasks}
+          globalTaskIds={globalTaskIds}
+          nodeTaskIds={nodeTaskIds}
+          saving={saving}
+          saveDisabled={saveDisabled}
+          saveError={saveError}
+          onChange={onChange}
+          onClose={close}
+          onSave={onSave}
+        />
+      )}
+    </>
+  );
+});
+
 export function ThemeManage() {
   const now = useHourlyClock();
   const {
@@ -757,6 +836,18 @@ export function ThemeManage() {
         : { ...prev, homepageMultiPingTaskIds };
     });
   }, []);
+  const patchNodeMultiPingTaskIds = useCallback(
+    (next: HomepageMultiPingNodeTaskIds) => {
+      editVersionRef.current += 1;
+      const normalized = normalizeHomepageMultiPingNodeTaskIds(next);
+      setDraft((prev) =>
+        JSON.stringify(prev.homepageMultiPingNodeTaskIds) === JSON.stringify(normalized)
+          ? prev
+          : { ...prev, homepageMultiPingNodeTaskIds: normalized },
+      );
+    },
+    [],
+  );
 
   const {
     data: pingTasks,
@@ -998,6 +1089,9 @@ export function ThemeManage() {
     return {
       ...rest,
       homepagePingBindings: pruneBindings(rest.homepagePingBindings),
+      homepageMultiPingNodeTaskIds: normalizeHomepageMultiPingNodeTaskIds(
+        rest.homepageMultiPingNodeTaskIds,
+      ),
       homeGroupOrder: normalizeHomeGroupOrder(rest.homeGroupOrder),
       trafficRatingLabels: ratingLabels.traffic,
       bandwidthRatingLabels: ratingLabels.bandwidth,
@@ -1065,6 +1159,12 @@ export function ThemeManage() {
       ),
     [draft.homepagePingBindings],
   );
+  const multiPingConfiguredNodeCount = useMemo(
+    () =>
+      sortedClients.filter((client) => draft.homepageMultiPingNodeTaskIds[client.uuid])
+        .length,
+    [draft.homepageMultiPingNodeTaskIds, sortedClients],
+  );
 
   // 每个 client 归属哪个 task 的反查,只在绑定草稿变化时重建。与「全选可用」reducer
   // 共用 invertBindings() 避免推导漂移,并把可选节点过滤保持在 O(tasks × clients),
@@ -1074,7 +1174,7 @@ export function ThemeManage() {
     [draft.homepagePingBindings],
   );
 
-  const handleSave = async () => {
+  const handleSave = async (): Promise<boolean> => {
     if (
       !config?.theme ||
       savingDraftRef.current ||
@@ -1082,7 +1182,7 @@ export function ThemeManage() {
       videoInputInvalid ||
       draftMultiPingInvalid
     ) {
-      return;
+      return false;
     }
     const submittedEditVersion = editVersionRef.current;
     savingDraftRef.current = draft;
@@ -1099,16 +1199,19 @@ export function ThemeManage() {
       await queryClient.invalidateQueries({ queryKey: ["public"] });
       if (editVersionRef.current === submittedEditVersion) {
         setMessage("主题设置已保存");
+        return true;
       }
+      return false;
     } catch (saveError) {
       if (
         saveError instanceof ApiRequestError &&
         (saveError.status === 401 || saveError.status === 403)
       ) {
         setAccessRevoked(true);
-        return;
+        return false;
       }
       setError(saveError instanceof Error ? saveError.message : "保存失败");
+      return false;
     } finally {
       savingDraftRef.current = null;
       setSaving(false);
@@ -1249,7 +1352,7 @@ export function ThemeManage() {
               <dt>已绑定 Ping</dt>
               <dd>
                 {draft.enableHomepageMultiPing
-                  ? `三网 ${draft.homepageMultiPingTaskIds.length} / 3`
+                  ? `三网覆盖 ${multiPingConfiguredNodeCount} 台`
                   : `${assignedNodeCount} / ${sortedClients.length}`}
               </dd>
             </div>
@@ -1553,6 +1656,47 @@ export function ThemeManage() {
         description="控制首页顶部总览、分组筛选和节点排序方式；适合节点较多时快速查看状态。"
         aside={<ListFilter size={16} />}
       >
+        <div className="mb-4 grid gap-3 md:grid-cols-2">
+          <ToggleRow
+            field="enableHomeHeaderAutoHide"
+            title="定时隐藏顶部信息"
+            desc="首页加载完成后，同时隐藏站点名称与右上角快捷设置；刷新页面后重新显示。"
+            checked={draft.enableHomeHeaderAutoHide}
+            onPatch={patch}
+          />
+          <div className="surface-inset flex items-center justify-between gap-3 px-4 py-3">
+            <span className="min-w-0">
+              <span className="block text-[13px] font-medium text-[var(--text-primary)]">
+                显示时长
+              </span>
+              <span className="mt-1 block text-[11px] text-[var(--text-tertiary)]">
+                可设置 1–3600 秒，默认 10 秒。
+              </span>
+            </span>
+            <span className="inline-flex shrink-0 items-center gap-1.5">
+              <input
+                type="number"
+                min={1}
+                max={3600}
+                step={1}
+                inputMode="numeric"
+                value={draft.homeHeaderVisibleSeconds}
+                disabled={!draft.enableHomeHeaderAutoHide}
+                onChange={(event) => {
+                  if (event.target.value.trim() === "") return;
+                  patch(
+                    "homeHeaderVisibleSeconds",
+                    normalizeHomeHeaderVisibleSeconds(event.target.value),
+                  );
+                }}
+                aria-label="顶部信息显示时长（秒）"
+                className="surface-inset w-20 px-3 py-2 text-right text-[13px] tabular outline-none disabled:opacity-45"
+              />
+              <span className="text-[13px] font-medium text-[var(--text-tertiary)]">秒</span>
+            </span>
+          </div>
+        </div>
+
         <div className="grid gap-3 md:grid-cols-3">
           <ToggleRow
             field="showHomeOverview"
@@ -1948,7 +2092,7 @@ export function ThemeManage() {
         title="主页延迟检测"
         description={
           <>
-            单线路模式为每个节点绑定一项 Ping 任务；开启三网模式后，大卡片和小卡片统一展示指定的三项任务，迷你卡片与列表仍显示节点的单线路绑定。
+            单线路模式为每个节点绑定一项 Ping 任务；开启三网模式后，大卡片和小卡片默认展示三项全局任务，也可以为每台服务器单独覆盖探测点。迷你卡片与列表仍显示节点的单线路绑定。
             {" "}
             如果当前还没有可用任务，请先前往
             {" "}
@@ -1964,7 +2108,7 @@ export function ThemeManage() {
             {tasksLoading || clientsLoading
               ? "载入中"
               : draft.enableHomepageMultiPing
-                ? `三网 ${draft.homepageMultiPingTaskIds.length} / 3`
+                ? `已覆盖 ${multiPingConfiguredNodeCount} 台`
                 : `${sortedTasks.length} 个任务`}
           </div>
         }
@@ -1983,8 +2127,7 @@ export function ThemeManage() {
                   开启三网模式
                 </span>
                 <span className="mt-1 block text-[11px] leading-relaxed text-[var(--text-tertiary)]">
-                  默认关闭。开启后大卡片和小卡片统一显示下面三项 Ping
-                  任务；迷你卡片与列表继续使用原有单线路绑定。
+                  大卡片和小卡片使用三网延迟；未单独配置的服务器继承下面的全局默认线路。
                 </span>
               </span>
               <input
@@ -2004,6 +2147,14 @@ export function ThemeManage() {
 
             {draft.enableHomepageMultiPing && (
               <div className="mt-4 border-t border-[var(--hairline)] pt-4">
+                <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+                  <span className="text-[12px] font-medium text-[var(--text-primary)]">
+                    全局默认线路
+                  </span>
+                  <span className="text-[11px] text-[var(--text-tertiary)]">
+                    按顺序显示在节点卡片中
+                  </span>
+                </div>
                 <div className="grid gap-3 md:grid-cols-3">
                   {Array.from(
                     { length: HOMEPAGE_MULTI_PING_TASK_COUNT },
@@ -2059,8 +2210,27 @@ export function ThemeManage() {
                 >
                   {draftMultiPingInvalid
                     ? "请选满 3 个不同的 Ping 任务后再保存。"
-                    : "三项任务按这里的顺序显示；某项任务没有节点样本时保留该行并显示“无样本”。"}
+                    : "未设置单独覆盖的服务器都会使用这三项任务。"}
                 </p>
+
+                <MultiPingNodeConfigControl
+                  clients={sortedClients}
+                  tasks={sortedTasks}
+                  globalTaskIds={draft.homepageMultiPingTaskIds}
+                  nodeTaskIds={draft.homepageMultiPingNodeTaskIds}
+                  configuredNodeCount={multiPingConfiguredNodeCount}
+                  disabled={draftMultiPingInvalid || clientsLoading || tasksLoading}
+                  saving={saving}
+                  saveError={error}
+                  saveDisabled={
+                    !isDirty ||
+                    draftCostRateApiUrlInvalid ||
+                    videoInputInvalid ||
+                    draftMultiPingInvalid
+                  }
+                  onChange={patchNodeMultiPingTaskIds}
+                  onSave={handleSave}
+                />
               </div>
             )}
           </div>
@@ -2080,7 +2250,7 @@ export function ThemeManage() {
               <span>首页绑定总数</span>
               <strong className="text-[var(--text-primary)]">
                 {draft.enableHomepageMultiPing
-                  ? `${draft.homepageMultiPingTaskIds.length} / 3 条线路`
+                  ? `${multiPingConfiguredNodeCount} 台单独覆盖`
                   : `${assignedNodeCount} / ${sortedClients.length}`}
               </strong>
             </div>
@@ -2147,6 +2317,7 @@ export function ThemeManage() {
             })}
         </div>
       </InstancePanel>
+
     </div>
   );
 }

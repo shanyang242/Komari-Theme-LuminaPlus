@@ -30,6 +30,7 @@ import { resolveOsInfo } from "@/components/ui/OsLogo";
 import {
   hasHomepagePingTaskBinding,
   HOMEPAGE_MULTI_PING_TASK_COUNT,
+  resolveHomepageMultiPingTaskIds,
 } from "@/utils/pingTasks";
 
 interface NodeCardModelOptions {
@@ -58,11 +59,21 @@ export function useNodeCardModel(
     homepagePingBindings,
     enableHomepageMultiPing,
     homepageMultiPingTaskIds,
+    homepageMultiPingNodeTaskIds,
   } = useThemeSettings();
+  const effectiveMultiPingTaskIds = useMemo(
+    () =>
+      resolveHomepageMultiPingTaskIds(
+        uuid,
+        homepageMultiPingTaskIds,
+        homepageMultiPingNodeTaskIds,
+      ),
+    [homepageMultiPingNodeTaskIds, homepageMultiPingTaskIds, uuid],
+  );
   const multiPingActive =
     includeMultiPing &&
     enableHomepageMultiPing &&
-    homepageMultiPingTaskIds.length === HOMEPAGE_MULTI_PING_TASK_COUNT;
+    effectiveMultiPingTaskIds.length === HOMEPAGE_MULTI_PING_TASK_COUNT;
   const realPing = useNodePingOverview(uuid, !multiPingActive);
   const realPingLines = useNodePingOverviewLines(uuid, multiPingActive);
   const hasRealHomepagePingBinding = useMemo(
@@ -101,7 +112,7 @@ export function useNodeCardModel(
     ) {
       return [];
     }
-    return homepageMultiPingTaskIds.map((taskId) => {
+    return effectiveMultiPingTaskIds.map((taskId) => {
       const loaded = realPingLines.find((line) => line.taskId === taskId);
       const line: HomepagePingLine =
         loaded ?? {
@@ -122,7 +133,7 @@ export function useNodeCardModel(
     });
   }, [
     bucketNow,
-    homepageMultiPingTaskIds,
+    effectiveMultiPingTaskIds,
     multiPingActive,
     pingBucketCount,
     realPingLines,

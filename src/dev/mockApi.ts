@@ -345,7 +345,7 @@ function pingMetricPayload(params: {
   const series = entityIds.flatMap((uuid) => {
     const index = nodes.findIndex((node) => node.uuid === uuid);
     if (index < 0) return [];
-    return tasks.flatMap((task) =>
+    return tasks.filter((task) => task.clients.includes(uuid)).flatMap((task) =>
       metricKeys.map((metricKey) => ({
         metric_key: metricKey,
         entity_id: uuid,
@@ -421,7 +421,8 @@ function loadMetricPayload(params: { metric_keys?: string[]; entity_ids?: string
 }
 
 function pingRecords(uuid?: string, taskId = 1) {
-  const clients = uuid ? [uuid] : nodes.map((node) => node.uuid);
+  const taskClients = pingTasks.find((task) => task.id === taskId)?.clients ?? [];
+  const clients = uuid ? (taskClients.includes(uuid) ? [uuid] : []) : taskClients;
   const now = Date.now();
   return clients.flatMap((client) => {
     const index = nodes.findIndex((node) => node.uuid === client);
@@ -442,11 +443,17 @@ const pingTasks = [
   { id: 1, name: "中国电信", target: "电信探针" },
   { id: 2, name: "中国联通", target: "联通探针" },
   { id: 3, name: "中国移动", target: "移动探针" },
+  {
+    id: 4,
+    name: "KFC-JP",
+    target: "日本探针",
+    clients: nodes[0] ? [nodes[0].uuid] : [],
+  },
 ].map((task, index) => ({
   ...task,
   interval: 60,
   loss: 0,
-  clients: nodes.map((node) => node.uuid),
+  clients: task.clients ?? nodes.map((node) => node.uuid),
   type: "icmp",
   weight: index + 1,
 }));
@@ -552,6 +559,10 @@ export function installDevMockApi() {
           enableHomepageMultiPing:
             new URLSearchParams(window.location.search).get("multiPing") === "1",
           homepageMultiPingTaskIds: [1, 2, 3],
+          homepageMultiPingNodeTaskIds: {
+            ...(nodes[0] ? { [nodes[0].uuid]: [3, 2, 1] } : {}),
+            ...(nodes[1] ? { [nodes[1].uuid]: [1, 4, 3] } : {}),
+          },
         },
       });
     }

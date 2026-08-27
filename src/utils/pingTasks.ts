@@ -1,4 +1,5 @@
 export type HomepagePingTaskBindings = Record<string, string[]>;
+export type HomepageMultiPingNodeTaskIds = Record<string, number[]>;
 export const HOMEPAGE_MULTI_PING_TASK_COUNT = 3;
 
 const invertedBindingsCache = new WeakMap<HomepagePingTaskBindings, Map<string, number>>();
@@ -25,6 +26,63 @@ export function normalizeHomepageMultiPingTaskIds(value: unknown): number[] {
     if (normalized.length === HOMEPAGE_MULTI_PING_TASK_COUNT) break;
   }
   return normalized;
+}
+
+export function normalizeHomepageMultiPingNodeTaskIds(
+  value: unknown,
+): HomepageMultiPingNodeTaskIds {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return {};
+  }
+
+  const normalized: HomepageMultiPingNodeTaskIds = {};
+  const entries = Object.entries(value).sort(([left], [right]) =>
+    left.trim().localeCompare(right.trim()),
+  );
+  for (const [rawUuid, rawTaskIds] of entries) {
+    const uuid = rawUuid.trim();
+    const taskIds = normalizeHomepageMultiPingTaskIds(rawTaskIds);
+    if (!uuid || taskIds.length !== HOMEPAGE_MULTI_PING_TASK_COUNT) continue;
+    normalized[uuid] = taskIds;
+  }
+  return normalized;
+}
+
+export function resolveHomepageMultiPingTaskIds(
+  clientUuid: string,
+  globalTaskIds: number[],
+  nodeTaskIds: HomepageMultiPingNodeTaskIds = {},
+): number[] {
+  const overrideTaskIds = normalizeHomepageMultiPingTaskIds(nodeTaskIds[clientUuid]);
+  if (overrideTaskIds.length === HOMEPAGE_MULTI_PING_TASK_COUNT) {
+    return overrideTaskIds;
+  }
+
+  const normalizedGlobalTaskIds = normalizeHomepageMultiPingTaskIds(globalTaskIds);
+  return normalizedGlobalTaskIds.length === HOMEPAGE_MULTI_PING_TASK_COUNT
+    ? normalizedGlobalTaskIds
+    : [];
+}
+
+export function createHomepageMultiPingTaskOverride(
+  currentTaskIds: number[] | undefined,
+  globalTaskIds: number[],
+  availableTaskIds: number[],
+): number[] | null {
+  if (currentTaskIds) return null;
+
+  const available = new Set(
+    availableTaskIds.filter(
+      (taskId) => Number.isSafeInteger(taskId) && taskId > 0,
+    ),
+  );
+  const nextTaskIds = normalizeHomepageMultiPingTaskIds([
+    ...globalTaskIds.filter((taskId) => available.has(taskId)),
+    ...available,
+  ]);
+  return nextTaskIds.length === HOMEPAGE_MULTI_PING_TASK_COUNT
+    ? nextTaskIds
+    : null;
 }
 
 export function normalizeHomepagePingTaskBindings(
@@ -91,54 +149,39 @@ export function hasHomepagePingTaskBinding(
   return Boolean(clientUuid) && invertHomepagePingTaskBindings(bindings).has(clientUuid);
 }
 
-export function resolveHomepagePingTaskIdsByClient(
-  clientUuids: string[],
-  bindings: HomepagePingTaskBindings,
-  multiTaskIds: number[] = [],
-): Map<string, number[]> {
-  const selectedTaskIds = normalizeHomepageMultiPingTaskIds(multiTaskIds);
-  const selectedTaskIdsByClient = new Map<string, number[]>();
-
-  if (selectedTaskIds.length === HOMEPAGE_MULTI_PING_TASK_COUNT) {
-    for (const uuid of clientUuids) {
-      if (uuid) selectedTaskIdsByClient.set(uuid, selectedTaskIds);
-    }
-    return selectedTaskIdsByClient;
-  }
-
-  const singleTaskByClient = invertHomepagePingTaskBindings(bindings);
-  for (const uuid of clientUuids) {
-    const taskId = singleTaskByClient.get(uuid);
-    if (taskId != null) selectedTaskIdsByClient.set(uuid, [taskId]);
-  }
-  return selectedTaskIdsByClient;
-}
-
 export function resolveHomepagePingSelections(
   clientUuids: string[],
   bindings: HomepagePingTaskBindings,
   multiTaskIds: number[] = [],
+  nodeMultiTaskIds: HomepageMultiPingNodeTaskIds = {},
 ) {
-  const normalizedMultiTaskIds =
-    normalizeHomepageMultiPingTaskIds(multiTaskIds);
-  const useMultiPing =
-    normalizedMultiTaskIds.length === HOMEPAGE_MULTI_PING_TASK_COUNT;
-  const singleTaskIdsByClient = useMultiPing
-    ? new Map<string, number[]>()
-    : resolveHomepagePingTaskIdsByClient(clientUuids, bindings);
-  const multiTaskIdsByClient = useMultiPing
-    ? resolveHomepagePingTaskIdsByClient(
-        clientUuids,
-        {},
-        normalizedMultiTaskIds,
-      )
-    : new Map<string, number[]>();
+  const singleTaskByClient = invertHomepagePingTaskBindings(bindings);
+  const singleTaskIdsByClient = new Map<string, number[]>();
+  const multiTaskIdsByClient = new Map<string, number[]>();
+
+  for (const uuid of clientUuids) {
+    if (!uuid) continue;
+    const selectedTaskIds = resolveHomepageMultiPingTaskIds(
+      uuid,
+      multiTaskIds,
+      nodeMultiTaskIds,
+    );
+    if (selectedTaskIds.length === HOMEPAGE_MULTI_PING_TASK_COUNT) {
+      multiTaskIdsByClient.set(uuid, selectedTaskIds);
+      continue;
+    }
+    const singleTaskId = singleTaskByClient.get(uuid);
+    if (singleTaskId != null) singleTaskIdsByClient.set(uuid, [singleTaskId]);
+  }
+
+  const requestedTaskIdsByClient = new Map([
+    ...singleTaskIdsByClient,
+    ...multiTaskIdsByClient,
+  ]);
 
   return {
     singleTaskIdsByClient,
     multiTaskIdsByClient,
-    requestedTaskIdsByClient: useMultiPing
-      ? multiTaskIdsByClient
-      : singleTaskIdsByClient,
+    requestedTaskIdsByClient,
   };
 }

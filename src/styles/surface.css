@@ -866,6 +866,366 @@ body::after {
   font-size: 13px;
 }
 
+.multi-ping-config-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(7, 10, 18, 0.72);
+}
+
+.multi-ping-config-panel {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  width: min(1120px, calc(100vw - 32px));
+  height: min(820px, calc(100vh - 32px));
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--border-strong) 72%, transparent);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--surface-elev) 96%, transparent);
+  box-shadow: 0 32px 90px -28px rgba(0, 0, 0, 0.65);
+  color: var(--text-primary);
+}
+
+.multi-ping-config-header,
+.multi-ping-config-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 18px;
+  background: color-mix(in srgb, var(--surface-elev) 96%, transparent);
+}
+
+.multi-ping-config-header {
+  border-bottom: 1px solid var(--hairline);
+}
+
+.multi-ping-config-footer {
+  flex-wrap: wrap;
+  border-top: 1px solid var(--hairline);
+}
+
+.multi-ping-config-footer-error {
+  min-width: 0;
+  flex: 1;
+  overflow-wrap: anywhere;
+}
+
+.multi-ping-config-icon-button {
+  display: inline-flex;
+  width: 36px;
+  height: 36px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text-secondary);
+  transition: background 160ms ease, color 160ms ease, border-color 160ms ease;
+}
+
+.multi-ping-config-icon-button:hover {
+  border-color: var(--border-strong);
+  background: var(--hover-bg);
+  color: var(--text-primary);
+}
+
+.multi-ping-config-body {
+  display: grid;
+  min-height: 0;
+  grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
+}
+
+.multi-ping-config-sidebar {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  border-right: 1px solid var(--hairline);
+  background: color-mix(in srgb, var(--surface) 84%, transparent);
+}
+
+.multi-ping-config-sidebar-tools {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.multi-ping-config-filters,
+.multi-ping-config-mode {
+  display: grid;
+  gap: 3px;
+  padding: 3px;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--surface) 78%, transparent);
+}
+
+.multi-ping-config-filters {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.multi-ping-config-mode {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.multi-ping-config-filters button,
+.multi-ping-config-mode button {
+  min-width: 0;
+  min-height: 30px;
+  padding: 0 8px;
+  border-radius: 6px;
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 620;
+  white-space: nowrap;
+}
+
+.multi-ping-config-filters button:hover,
+.multi-ping-config-mode button:hover {
+  background: var(--hover-bg);
+  color: var(--text-primary);
+}
+
+.multi-ping-config-filters button.is-active,
+.multi-ping-config-mode button.is-active {
+  background: var(--surface-elev);
+  box-shadow: 0 5px 16px -12px rgba(0, 0, 0, 0.55);
+  color: var(--text-primary);
+}
+
+.multi-ping-config-mode button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.multi-ping-config-node-list {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.multi-ping-config-node-list-window {
+  position: relative;
+}
+
+.multi-ping-config-node {
+  position: absolute;
+  inset: 0 0 auto;
+  display: flex;
+  width: 100%;
+  height: 64px;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px 10px 14px;
+  border-bottom: 1px solid var(--hairline);
+  background: transparent;
+  color: inherit;
+  transition: background 150ms ease, box-shadow 150ms ease;
+}
+
+.multi-ping-config-node:hover {
+  background: var(--hover-bg);
+}
+
+.multi-ping-config-node.is-active {
+  background: color-mix(in srgb, var(--accent-500) 9%, var(--surface-elev));
+  box-shadow: inset 3px 0 0 var(--accent-500);
+}
+
+.multi-ping-config-status {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
+  color: var(--status-online);
+  font-size: 10px;
+  font-weight: 650;
+}
+
+.multi-ping-config-status.is-warning {
+  color: color-mix(in srgb, var(--status-warning) 84%, var(--text-primary));
+}
+
+.multi-ping-config-editor {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  background: color-mix(in srgb, var(--surface-elev) 92%, transparent);
+}
+
+.multi-ping-config-editor-head {
+  padding: 20px 24px;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.multi-ping-config-editor-content {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 22px;
+  overflow-y: auto;
+  padding: 24px;
+}
+
+.multi-ping-config-warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 11px 12px;
+  border: 1px solid color-mix(in srgb, var(--status-warning) 28%, var(--hairline));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--status-warning) 8%, var(--surface));
+  color: color-mix(in srgb, var(--status-warning) 82%, var(--text-primary));
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.multi-ping-config-warning > svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+}
+
+.multi-ping-config-warning strong,
+.multi-ping-config-warning span {
+  display: block;
+}
+
+.multi-ping-config-warning span {
+  margin-top: 2px;
+  color: var(--text-secondary);
+}
+
+.multi-ping-config-lines {
+  display: grid;
+  gap: 10px;
+}
+
+.multi-ping-config-line {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 12px;
+  min-height: 66px;
+  padding: 10px 12px;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--surface) 70%, transparent);
+}
+
+.multi-ping-config-line.is-invalid {
+  border-color: color-mix(in srgb, var(--status-warning) 32%, var(--hairline));
+}
+
+.multi-ping-config-inline-warning {
+  flex: 0 0 auto;
+  padding: 2px 5px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--status-warning) 12%, transparent);
+  color: color-mix(in srgb, var(--status-warning) 84%, var(--text-primary));
+  font-size: 9px;
+  font-weight: 680;
+}
+
+.multi-ping-config-line-number {
+  display: inline-flex;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid color-mix(in srgb, var(--accent-500) 24%, var(--hairline));
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--accent-500) 8%, transparent);
+  color: var(--accent-500);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.multi-ping-config-mobile-back {
+  display: none;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 14px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 620;
+}
+
+@media (max-width: 767px) {
+  .multi-ping-config-backdrop {
+    padding: 0;
+  }
+
+  .multi-ping-config-panel {
+    width: 100vw;
+    height: 100dvh;
+    border: 0;
+    border-radius: 0;
+  }
+
+  .multi-ping-config-header,
+  .multi-ping-config-footer {
+    padding: 13px 14px;
+  }
+
+  .multi-ping-config-footer-hint {
+    display: none;
+  }
+
+  .multi-ping-config-footer-error,
+  .multi-ping-config-footer-actions {
+    width: 100%;
+  }
+
+  .multi-ping-config-footer-actions {
+    justify-content: flex-end;
+  }
+
+  .multi-ping-config-body {
+    display: block;
+    overflow: hidden;
+  }
+
+  .multi-ping-config-sidebar,
+  .multi-ping-config-editor {
+    width: 100%;
+    height: 100%;
+    border-right: 0;
+  }
+
+  .multi-ping-config-sidebar.is-mobile-hidden,
+  .multi-ping-config-editor {
+    display: none;
+  }
+
+  .multi-ping-config-editor.is-mobile-open {
+    display: flex;
+  }
+
+  .multi-ping-config-editor-head,
+  .multi-ping-config-editor-content {
+    padding: 16px;
+  }
+
+  .multi-ping-config-mobile-back {
+    display: inline-flex;
+  }
+
+  .multi-ping-config-mode {
+    width: 100%;
+  }
+}
+
 .control-group {
   display: inline-flex;
   align-items: center;

@@ -22,6 +22,7 @@ import { resolvePingSampleCounts } from "@/utils/pingMetrics";
 import {
   HOMEPAGE_MULTI_PING_TASK_COUNT,
   resolveHomepagePingSelections,
+  type HomepageMultiPingNodeTaskIds,
   type HomepagePingTaskBindings,
 } from "@/utils/pingTasks";
 import type { NodeViewMode } from "@/utils/themeSettings";
@@ -45,7 +46,7 @@ const EMPTY_PING: PingOverviewItem = {
 const EMPTY_PING_LINES: HomepagePingLine[] = [];
 const EMPTY_PING_BUCKETS: PingOverviewBucket[] = [];
 const EMPTY_TASK_IDS: number[] = [];
-const EMPTY_BINDINGS: HomepagePingTaskBindings = {};
+const EMPTY_NODE_MULTI_TASK_IDS: HomepageMultiPingNodeTaskIds = {};
 
 type HomepagePingRequestMode = "single" | "multi";
 
@@ -53,10 +54,12 @@ export function resolveHomepagePingRequestMode(
   viewMode: NodeViewMode,
   multiPingEnabled: boolean,
   multiTaskIds: number[],
+  nodeMultiTaskIds: HomepageMultiPingNodeTaskIds = {},
 ): HomepagePingRequestMode {
   return (viewMode === "large" || viewMode === "compact") &&
     multiPingEnabled &&
-    multiTaskIds.length === HOMEPAGE_MULTI_PING_TASK_COUNT
+    (multiTaskIds.length === HOMEPAGE_MULTI_PING_TASK_COUNT ||
+      Object.keys(nodeMultiTaskIds).length > 0)
     ? "multi"
     : "single";
 }
@@ -109,14 +112,6 @@ function normalizeRefreshInterval(seconds: number | null | undefined) {
 function normalizeVisibleUuids(uuids: string[]) {
   return Array.from(new Set(uuids.filter(Boolean))).sort((left, right) =>
     left.localeCompare(right),
-  );
-}
-
-function stringifyBindings(bindings: HomepagePingTaskBindings) {
-  return JSON.stringify(
-    Object.entries(bindings)
-      .map(([taskId, clients]) => [taskId, [...clients].sort((left, right) => left.localeCompare(right))])
-      .sort(([left], [right]) => Number(left) - Number(right)),
   );
 }
 
@@ -256,13 +251,19 @@ function resolvePingAssignmentKey(
   clientUuids: string[],
   bindings: HomepagePingTaskBindings,
   multiTaskIds: number[],
+  nodeMultiTaskIds: HomepageMultiPingNodeTaskIds = {},
 ) {
   const normalizedUuids = normalizeVisibleUuids(clientUuids);
   const {
     singleTaskIdsByClient,
     multiTaskIdsByClient,
     requestedTaskIdsByClient,
-  } = resolveHomepagePingSelections(normalizedUuids, bindings, multiTaskIds);
+  } = resolveHomepagePingSelections(
+    normalizedUuids,
+    bindings,
+    multiTaskIds,
+    nodeMultiTaskIds,
+  );
   const selectedTaskIds = new Set(
     Array.from(requestedTaskIdsByClient.values()).flat(),
   );
@@ -358,6 +359,7 @@ export async function buildPingOverviewMap(
   loadOverview: typeof getPingOverview = getPingOverview,
   loadStats?: typeof getPingOverviewStats,
   onProgress?: (result: PingOverviewMapResult) => void,
+  nodeMultiTaskIds: HomepageMultiPingNodeTaskIds = {},
 ): Promise<PingOverviewMapResult> {
   const normalizedUuids = normalizeVisibleUuids(clientUuids);
   if (normalizedUuids.length === 0) {
@@ -380,6 +382,7 @@ export async function buildPingOverviewMap(
     normalizedUuids,
     bindings,
     multiTaskIds,
+    nodeMultiTaskIds,
   );
   const selectedTaskIds = Array.from(
     new Set(Array.from(requestedTaskIdsByClient.values()).flat()),
@@ -409,6 +412,7 @@ export async function buildPingOverviewMap(
 
   const itemsByTask = new Map<number, Map<string, PingOverviewItem>>();
   const taskNames = new Map<number, string>();
+  const assignedClientsByTask = new Map<number, Set<string>>();
   const successfulTaskIds = new Set<number>();
   const failedTaskIds = new Set<number>();
   const taskStates = new Map<number, PingOverviewTaskLoadState>(
@@ -466,6 +470,17 @@ export async function buildPingOverviewMap(
     changedUuids.add(uuid);
   }
 
+  const resolveLoadedItem = (uuid: string, taskId: number) => {
+    const assignedClients = assignedClientsByTask.get(taskId);
+    if (assignedClients && !assignedClients.has(uuid)) {
+      return {
+        ...assignedEmptyPing(uuid, "ready"),
+        isAssigned: false,
+      };
+    }
+    return itemsByTask.get(taskId)?.get(uuid) ?? assignedEmptyPing(uuid, "ready");
+  };
+
   const updateSingleItem = (uuid: string, taskId: number) => {
     const current = singleItems.get(uuid);
     if (!current) return;
@@ -473,7 +488,7 @@ export async function buildPingOverviewMap(
     const displayState = taskState === "pending" ? (current.loadState ?? "ready") : taskState;
     const next = successfulTaskIds.has(taskId)
       ? {
-          ...(itemsByTask.get(taskId)?.get(uuid) ?? assignedEmptyPing(uuid, "ready")),
+          ...resolveLoadedItem(uuid, taskId),
           loadState: "ready" as const,
         }
       : { ...current, loadState: displayState };
@@ -497,7 +512,7 @@ export async function buildPingOverviewMap(
       ? {
           taskId,
           taskName: taskNames.get(taskId) ?? current.taskName ?? `任务 #${taskId}`,
-          ...(itemsByTask.get(taskId)?.get(uuid) ?? assignedEmptyPing(uuid, "ready")),
+          ...resolveLoadedItem(uuid, taskId),
           loadState: "ready" as const,
         }
       : { ...current, loadState: displayState };
@@ -546,7 +561,13 @@ export async function buildPingOverviewMap(
     const {
       taskId,
       entityIds,
-      overview: { records, tasks, stats, intervalSeconds },
+      overview: {
+        records,
+        tasks,
+        stats,
+        intervalSeconds,
+        taskAssignmentsKnown,
+      },
     } = loaded;
     const effectiveStats = mergePingOverviewStats(
       taskId,
@@ -554,17 +575,21 @@ export async function buildPingOverviewMap(
       stats,
       batchedStats,
     );
+    const task = tasks.find((item) => item.id === taskId);
     const taskName =
-      tasks.find((task) => task.id === taskId)?.name ||
+      task?.name ||
       effectiveStats.find((stat) => stat.taskId === taskId)?.name;
     if (taskName) taskNames.set(taskId, taskName);
+    if (taskAssignmentsKnown || task?.clients.length) {
+      assignedClientsByTask.set(taskId, new Set(task?.clients ?? []));
+    }
     itemsByTask.set(
       taskId,
       buildPingOverviewItems(taskId, records, effectiveStats, intervalSeconds),
     );
 
     const taskInterval =
-      tasks.find((task) => task.id === taskId)?.interval ??
+      task?.interval ??
       effectiveStats.find((stat) => stat.taskId === taskId)?.interval;
     refreshIntervals.set(taskId, normalizeRefreshInterval(taskInterval));
     updateTaskOutputs(taskId);
@@ -656,7 +681,8 @@ let scheduledVisibleUuids: string[] = [];
 let scheduledVisibleKey = "";
 let scheduledBindings: HomepagePingTaskBindings = {};
 let scheduledMultiTaskIds: number[] = [];
-let scheduledSelectionKey = `${stringifyBindings({})}|multi:`;
+let scheduledNodeMultiTaskIds: HomepageMultiPingNodeTaskIds = {};
+let scheduledSelectionKey = "";
 let pingRefreshInFlight = false;
 let pingRefreshTimer: number | null = null;
 let pingAbortController: AbortController | null = null;
@@ -685,7 +711,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function parseCachedPingItem(value: unknown): PingOverviewItem | null {
   if (!isRecord(value)) return null;
   if (typeof value.client !== "string" || value.client.length === 0) return null;
-  if (value.isAssigned !== true) return null;
+  if (typeof value.isAssigned !== "boolean") return null;
   if (!Array.isArray(value.samples)) return null;
   const samples = value.samples.map((sample) => {
     if (!isRecord(sample)) return null;
@@ -726,7 +752,7 @@ function parseCachedPingItem(value: unknown): PingOverviewItem | null {
 
   return {
     client: value.client,
-    isAssigned: true,
+    isAssigned: value.isAssigned,
     loadState: "ready",
     lastValue,
     ...(typeof value.metricIntervalMs === "number" &&
@@ -1057,6 +1083,7 @@ async function refreshPingOverview() {
           },
         );
       },
+      scheduledNodeMultiTaskIds,
     );
     if (isCurrent()) {
       const hasRequestedTasks = next.assignmentKey.length > 0;
@@ -1111,10 +1138,16 @@ function ensurePingOverviewStarted(
   visibleUuids: string[],
   bindings: HomepagePingTaskBindings,
   multiTaskIds: number[],
+  nodeMultiTaskIds: HomepageMultiPingNodeTaskIds,
 ) {
   const normalizedVisibleUuids = normalizeVisibleUuids(visibleUuids);
   const visibleKey = normalizedVisibleUuids.join("|");
-  const selectionKey = `${stringifyBindings(bindings)}|multi:${multiTaskIds.join(",")}`;
+  const selectionKey = resolvePingAssignmentKey(
+    normalizedVisibleUuids,
+    bindings,
+    multiTaskIds,
+    nodeMultiTaskIds,
+  );
 
   if (
     scheduledVisibleKey !== visibleKey ||
@@ -1124,6 +1157,7 @@ function ensurePingOverviewStarted(
     scheduledVisibleKey = visibleKey;
     scheduledBindings = bindings;
     scheduledMultiTaskIds = multiTaskIds;
+    scheduledNodeMultiTaskIds = nodeMultiTaskIds;
     scheduledSelectionKey = selectionKey;
 
     pingAbortController?.abort();
@@ -1136,6 +1170,7 @@ function ensurePingOverviewStarted(
       normalizedVisibleUuids,
       bindings,
       multiTaskIds,
+      nodeMultiTaskIds,
     );
     const cached = readPingOverviewCache(assignmentKey);
     commitPingOverview(
@@ -1206,20 +1241,23 @@ export function useHomepagePingOverview(viewMode: NodeViewMode) {
     viewMode,
     themeSettings.enableHomepageMultiPing,
     themeSettings.homepageMultiPingTaskIds,
+    themeSettings.homepageMultiPingNodeTaskIds,
   );
-  const requestedBindings =
-    requestMode === "single"
-      ? themeSettings.homepagePingBindings
-      : EMPTY_BINDINGS;
+  const requestedBindings = themeSettings.homepagePingBindings;
   const requestedMultiTaskIds =
     requestMode === "multi"
       ? themeSettings.homepageMultiPingTaskIds
       : EMPTY_TASK_IDS;
+  const requestedNodeMultiTaskIds =
+    requestMode === "multi"
+      ? themeSettings.homepageMultiPingNodeTaskIds
+      : EMPTY_NODE_MULTI_TASK_IDS;
   const hasRequestedVisiblePing =
     resolvePingAssignmentKey(
       effectiveUuids,
       requestedBindings,
       requestedMultiTaskIds,
+      requestedNodeMultiTaskIds,
     ).length > 0;
 
   useLayoutEffect(() => {
@@ -1233,6 +1271,7 @@ export function useHomepagePingOverview(viewMode: NodeViewMode) {
       effectiveUuids,
       requestedBindings,
       requestedMultiTaskIds,
+      requestedNodeMultiTaskIds,
     );
     return () => {
       activeConsumers -= 1;
@@ -1246,6 +1285,7 @@ export function useHomepagePingOverview(viewMode: NodeViewMode) {
     requestMode,
     requestedBindings,
     requestedMultiTaskIds,
+    requestedNodeMultiTaskIds,
     hasRequestedVisiblePing,
     themeSettings.isReady,
   ]);

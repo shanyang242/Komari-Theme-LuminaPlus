@@ -118,7 +118,10 @@ export interface ThemeSettings {
   homepagePingBindings?: Record<string, string[]>;
   enableHomepageMultiPing?: boolean;
   homepageMultiPingTaskIds?: number[];
+  homepageMultiPingNodeTaskIds?: Record<string, number[]>;
   fakePingForUnbound?: boolean;
+  enableHomeHeaderAutoHide?: boolean;
+  homeHeaderVisibleSeconds?: number;
   showHomeOverview?: boolean;
   showGroupTabs?: boolean;
   showRegionBar?: boolean;

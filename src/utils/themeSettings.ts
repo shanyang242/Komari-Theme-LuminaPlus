@@ -41,6 +41,7 @@ export interface ResolvedThemeSettings {
   desktopNodeViewMode: NodeViewMode;
   mobileNodeViewMode: NodeViewMode;
   enableAdminButton: boolean;
+  hideAdminEntryWhenLoggedOut: boolean;
   showPingChart: boolean;
   homepagePingBindings: HomepagePingTaskBindings;
   enableHomepageMultiPing: boolean;
@@ -90,6 +91,7 @@ export const DEFAULT_THEME_SETTINGS: ResolvedThemeSettings = {
   desktopNodeViewMode: "large",
   mobileNodeViewMode: "compact",
   enableAdminButton: true,
+  hideAdminEntryWhenLoggedOut: false,
   showPingChart: true,
   homepagePingBindings: {},
   enableHomepageMultiPing: false,
@@ -183,6 +185,20 @@ export function normalizeHomeHeaderVisibleSeconds(value: unknown) {
   return Math.min(3600, Math.max(1, Math.round(seconds)));
 }
 
+export function shouldShowAdminEntry(
+  settings: Pick<
+    ResolvedThemeSettings,
+    "enableAdminButton" | "hideAdminEntryWhenLoggedOut"
+  >,
+  loggedIn: boolean,
+) {
+  // enableAdminButton 是旧版隐藏字段，继续保留其全局禁用语义；新设置只对未登录访客生效。
+  return (
+    settings.enableAdminButton &&
+    (loggedIn || !settings.hideAdminEntryWhenLoggedOut)
+  );
+}
+
 function normalizePlainText(value: unknown) {
   return typeof value === "string" ? value : "";
 }
@@ -222,6 +238,8 @@ export function normalizeThemeSettings(
       DEFAULT_THEME_SETTINGS.mobileNodeViewMode,
     ),
     enableAdminButton: enabledUnlessFalse(settings?.enableAdminButton),
+    hideAdminEntryWhenLoggedOut:
+      settings?.hideAdminEntryWhenLoggedOut === true,
     showPingChart: enabledUnlessFalse(settings?.showPingChart),
     homepagePingBindings: normalizeHomepagePingTaskBindings(settings?.homepagePingBindings),
     // 保留开关原值，让管理页能呈现并修复不完整配置；首页消费方仅在任务恰好为三项时启用。

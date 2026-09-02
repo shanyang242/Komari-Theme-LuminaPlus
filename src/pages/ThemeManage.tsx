@@ -278,6 +278,7 @@ function pickManagedThemeSettings(settings: ResolvedThemeSettings) {
     defaultAppearance: settings.defaultAppearance,
     desktopNodeViewMode: settings.desktopNodeViewMode,
     mobileNodeViewMode: settings.mobileNodeViewMode,
+    hideAdminEntryWhenLoggedOut: settings.hideAdminEntryWhenLoggedOut,
     homepagePingBindings: settings.homepagePingBindings,
     enableHomepageMultiPing: settings.enableHomepageMultiPing,
     homepageMultiPingTaskIds: settings.homepageMultiPingTaskIds,
@@ -708,6 +709,7 @@ const MultiPingNodeConfigControl = memo(function MultiPingNodeConfigControl({
   globalTaskIds,
   nodeTaskIds,
   configuredNodeCount,
+  fakePingForUnbound,
   disabled,
   saving,
   saveDisabled,
@@ -720,6 +722,7 @@ const MultiPingNodeConfigControl = memo(function MultiPingNodeConfigControl({
   globalTaskIds: number[];
   nodeTaskIds: HomepageMultiPingNodeTaskIds;
   configuredNodeCount: number;
+  fakePingForUnbound: boolean;
   disabled: boolean;
   saving: boolean;
   saveDisabled: boolean;
@@ -760,6 +763,7 @@ const MultiPingNodeConfigControl = memo(function MultiPingNodeConfigControl({
           tasks={tasks}
           globalTaskIds={globalTaskIds}
           nodeTaskIds={nodeTaskIds}
+          fakePingForUnbound={fakePingForUnbound}
           saving={saving}
           saveDisabled={saveDisabled}
           saveError={saveError}
@@ -1733,6 +1737,13 @@ export function ThemeManage() {
             checked={draft.enableHomeSort}
             onPatch={patch}
           />
+          <ToggleRow
+            field="hideAdminEntryWhenLoggedOut"
+            title="未登录时隐藏后台入口"
+            desc="仅隐藏访客看到的“后台登录”；/admin 仍可直接访问，登录后自动显示“管理”。"
+            checked={draft.hideAdminEntryWhenLoggedOut}
+            onPatch={patch}
+          />
         </div>
 
         <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,0.6fr)]">
@@ -2219,6 +2230,7 @@ export function ThemeManage() {
                   globalTaskIds={draft.homepageMultiPingTaskIds}
                   nodeTaskIds={draft.homepageMultiPingNodeTaskIds}
                   configuredNodeCount={multiPingConfiguredNodeCount}
+                  fakePingForUnbound={draft.fakePingForUnbound}
                   disabled={draftMultiPingInvalid || clientsLoading || tasksLoading}
                   saving={saving}
                   saveError={error}
@@ -2264,8 +2276,8 @@ export function ThemeManage() {
 
           <ToggleRow
             field="fakePingForUnbound"
-            title="未绑定节点显示模拟延迟"
-            desc="未绑定单线路 Ping 任务的在线节点显示前端生成的模拟数据（延迟 1-10ms、丢包 0%）。开启三网模式时仍用于迷你卡片和列表，大卡片与小卡片显示真实三网数据；模拟数据仅用于视觉统一，不代表真实网络质量。"
+            title="未绑定探测点显示模拟延迟"
+            desc="用户主动开启后，未绑定单线路 Ping 任务的在线节点，以及三网模式中后台未绑定的探测点，都会显示前端生成的模拟数据（延迟 1-10ms、丢包 0%）。模拟数据仅用于视觉统一，不代表真实网络质量。"
             checked={draft.fakePingForUnbound}
             onPatch={patch}
           />

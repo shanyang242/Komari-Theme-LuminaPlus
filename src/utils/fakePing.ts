@@ -1,4 +1,4 @@
-import type { PingOverviewItem } from "@/types/komari";
+import type { HomepagePingLine, PingOverviewItem } from "@/types/komari";
 
 // 未绑定首页 Ping 任务的节点用这份前端生成的"模拟延迟"填充卡片,避免与已绑定节点混排时出现
 // "未配置"占位。纯展示数据:不发请求、不代表真实网络质量,是否启用由 fakePingForUnbound 决定。
@@ -76,5 +76,23 @@ export function buildFakePingItem(uuid: string, minuteIndex: number): PingOvervi
     samples,
     max,
     loss: 0,
+  };
+}
+
+/**
+ * 把三网模式中后台未绑定的单条线路替换为模拟数据。节点 UUID 与任务 ID 一起作为种子，
+ * 同一台节点的三条线路会保持各自稳定、互不相同的曲线；展示模型仍保留真实节点 UUID、
+ * 任务名称和任务顺序。
+ */
+export function buildFakeHomepagePingLine(
+  line: HomepagePingLine,
+  minuteIndex: number,
+): HomepagePingLine {
+  const fake = buildFakePingItem(`${line.client}:${line.taskId}`, minuteIndex);
+  return {
+    ...line,
+    ...fake,
+    client: line.client,
+    loadState: "ready",
   };
 }

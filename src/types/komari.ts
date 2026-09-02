@@ -114,6 +114,7 @@ export interface ThemeSettings {
   desktopNodeViewMode?: "large" | "compact" | "mini" | "list";
   mobileNodeViewMode?: "large" | "compact" | "mini" | "list";
   enableAdminButton?: boolean;
+  hideAdminEntryWhenLoggedOut?: boolean;
   showPingChart?: boolean;
   homepagePingBindings?: Record<string, string[]>;
   enableHomepageMultiPing?: boolean;

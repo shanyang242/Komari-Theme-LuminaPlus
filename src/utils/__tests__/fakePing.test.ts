@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildFakeHomepagePingLine,
   buildFakePingItem,
   FAKE_PING_MAX_MS,
   FAKE_PING_MIN_MS,
@@ -55,6 +56,52 @@ describe("buildFakePingItem", () => {
     const item = buildFakePingItem(UUID, MINUTE_INDEX);
     expect(other.samples.map((sample) => sample.value)).not.toEqual(
       item.samples.map((sample) => sample.value),
+    );
+  });
+
+  it("三网未绑定线路复用模拟数据并保留真实任务元数据", () => {
+    const line = buildFakeHomepagePingLine(
+      {
+        taskId: 7,
+        taskName: "联通",
+        client: UUID,
+        isAssigned: false,
+        loadState: "ready",
+        lastValue: null,
+        samples: [],
+        max: 1,
+        loss: null,
+      },
+      MINUTE_INDEX,
+    );
+
+    expect(line.taskId).toBe(7);
+    expect(line.taskName).toBe("联通");
+    expect(line.client).toBe(UUID);
+    expect(line.isAssigned).toBe(true);
+    expect(line.loadState).toBe("ready");
+    expect(line.loss).toBe(0);
+    expect(line.samples).toHaveLength(60);
+  });
+
+  it("同一节点的不同三网任务使用不同模拟曲线", () => {
+    const makeLine = (taskId: number) =>
+      buildFakeHomepagePingLine(
+        {
+          taskId,
+          taskName: `任务 ${taskId}`,
+          client: UUID,
+          isAssigned: false,
+          lastValue: null,
+          samples: [],
+          max: 1,
+          loss: null,
+        },
+        MINUTE_INDEX,
+      );
+
+    expect(makeLine(1).samples.map((sample) => sample.value)).not.toEqual(
+      makeLine(2).samples.map((sample) => sample.value),
     );
   });
 });

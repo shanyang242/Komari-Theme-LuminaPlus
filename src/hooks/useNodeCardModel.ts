@@ -27,6 +27,7 @@ import {
 } from "@/utils/metricTone";
 import { resolveTrafficUsage, trafficTypeLabel, type TrafficDisplay } from "@/utils/traffic";
 import { resolveOsInfo } from "@/components/ui/OsLogo";
+import { buildFakeHomepagePingLine } from "@/utils/fakePing";
 import {
   hasHomepagePingTaskBinding,
   HOMEPAGE_MULTI_PING_TASK_COUNT,
@@ -114,7 +115,7 @@ export function useNodeCardModel(
     }
     return effectiveMultiPingTaskIds.map((taskId) => {
       const loaded = realPingLines.find((line) => line.taskId === taskId);
-      const line: HomepagePingLine =
+      const sourceLine: HomepagePingLine =
         loaded ?? {
           taskId,
           taskName: `任务 #${taskId}`,
@@ -126,6 +127,15 @@ export function useNodeCardModel(
           max: 1,
           loss: null,
         };
+      const line =
+        fakePingForUnbound &&
+        metrics?.online === true &&
+        sourceLine.isAssigned === false
+          ? buildFakeHomepagePingLine(
+              sourceLine,
+              Math.floor(bucketNow / 60_000),
+            )
+          : sourceLine;
       return {
         ...line,
         buckets: buildPingBuckets(line, pingBucketCount, bucketNow),
@@ -134,6 +144,8 @@ export function useNodeCardModel(
   }, [
     bucketNow,
     effectiveMultiPingTaskIds,
+    fakePingForUnbound,
+    metrics?.online,
     multiPingActive,
     pingBucketCount,
     realPingLines,

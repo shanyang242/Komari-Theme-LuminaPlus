@@ -6,7 +6,10 @@ import { useViewMode } from "@/hooks/useViewMode";
 import { useNodeStoreStatus } from "@/hooks/useNode";
 import { useAuth } from "@/hooks/useAuth";
 import { useThemeSettings } from "@/hooks/useThemeSettings";
-import type { NodeViewMode } from "@/utils/themeSettings";
+import {
+  shouldShowAdminEntry,
+  type NodeViewMode,
+} from "@/utils/themeSettings";
 import { clsx } from "clsx";
 
 const MetricColorPicker = lazy(() =>
@@ -42,9 +45,10 @@ export function FloatingControls({
   const [colorsOpen, setColorsOpen] = useState(false);
   const [colorsMounted, setColorsMounted] = useState(false);
   const settingsReady = themeSettings.isReady;
-  const showAdmin = settingsReady && themeSettings.enableAdminButton;
   // 主题管理入口与配色取色器都仅对登录管理员开放（配色存后端、全局生效）。
   const loggedIn = Boolean(me?.logged_in);
+  const showAdmin =
+    settingsReady && shouldShowAdminEntry(themeSettings, loggedIn);
   const showThemeManage = loggedIn;
   const showColorPicker = loggedIn;
   const showSyncWarning = failureStreak >= 2;

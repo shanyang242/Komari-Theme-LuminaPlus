@@ -35,6 +35,7 @@ interface MultiPingNodeConfigPanelProps {
   tasks: PingTask[];
   globalTaskIds: number[];
   nodeTaskIds: HomepageMultiPingNodeTaskIds;
+  fakePingForUnbound: boolean;
   saving: boolean;
   saveDisabled: boolean;
   saveError: string | null;
@@ -71,6 +72,7 @@ export function MultiPingNodeConfigPanel({
   tasks,
   globalTaskIds,
   nodeTaskIds,
+  fakePingForUnbound,
   saving,
   saveDisabled,
   saveError,
@@ -140,18 +142,7 @@ export function MultiPingNodeConfigPanel({
   const selectedInvalidTaskIds = selectedClient
     ? (invalidTaskIdsByClient.get(selectedClient.uuid) ?? EMPTY_TASK_IDS)
     : EMPTY_TASK_IDS;
-  const selectedAvailableTasks = useMemo(
-    () =>
-      selectedClient
-        ? tasks.filter(
-            (task) =>
-              taskClientsById.get(task.id)?.has(selectedClient.uuid) === true,
-          )
-        : [],
-    [selectedClient, taskClientsById, tasks],
-  );
-  const canEnableOverride =
-    selectedAvailableTasks.length >= HOMEPAGE_MULTI_PING_TASK_COUNT;
+  const canEnableOverride = tasks.length >= HOMEPAGE_MULTI_PING_TASK_COUNT;
   const nodeWindowStart = Math.max(
     0,
     Math.min(
@@ -204,7 +195,7 @@ export function MultiPingNodeConfigPanel({
     const nextTaskIds = createHomepageMultiPingTaskOverride(
       selectedTaskIds,
       globalTaskIds,
-      selectedAvailableTasks.map((task) => task.id),
+      tasks.map((task) => task.id),
     );
     if (!nextTaskIds) return;
     onChange({
@@ -222,7 +213,6 @@ export function MultiPingNodeConfigPanel({
     if (!selectedClient || !selectedTaskIds || rawValue === "") return;
     const nextTaskIds = [...selectedTaskIds];
     const nextTaskId = Number(rawValue);
-    if (!taskSupportsClient(nextTaskId, selectedClient.uuid, taskClientsById)) return;
     const previousTaskId = nextTaskIds[slot];
     const occupiedSlot = nextTaskIds.indexOf(nextTaskId);
     nextTaskIds[slot] = nextTaskId;
@@ -255,7 +245,11 @@ export function MultiPingNodeConfigPanel({
             </h2>
             <p className="mt-1 text-[12px] text-[var(--text-secondary)]">
               已单独配置 {customCount} / {clients.length} 台，其余继承全局默认
-              {invalidClientCount > 0 ? `，${invalidClientCount} 台需修正。` : "。"}
+              {invalidClientCount > 0
+                ? fakePingForUnbound
+                  ? `，${invalidClientCount} 台含未绑定探测点并将显示模拟数据。`
+                  : `，${invalidClientCount} 台含未绑定探测点。`
+                : "。"}
             </p>
           </div>
           <button
@@ -374,10 +368,14 @@ export function MultiPingNodeConfigPanel({
                       {invalidIds.length > 0 ? (
                         <span
                           className="multi-ping-config-status is-warning"
-                          title={`${invalidIds.map((taskId) => taskLabel(taskId, tasksById)).join("、")} 未在后台绑定此服务器`}
+                          title={
+                            fakePingForUnbound
+                              ? `${invalidIds.map((taskId) => taskLabel(taskId, tasksById)).join("、")} 未在后台绑定此服务器，将显示模拟数据`
+                              : `${invalidIds.map((taskId) => taskLabel(taskId, tasksById)).join("、")} 未在后台绑定此服务器`
+                          }
                         >
                           <AlertTriangle size={12} />
-                          需修正
+                          {fakePingForUnbound ? "将模拟" : "未绑定"}
                         </span>
                       ) : override ? (
                         <span className="multi-ping-config-status" title="已单独配置">
@@ -462,7 +460,7 @@ export function MultiPingNodeConfigPanel({
                         title={
                           canEnableOverride
                             ? "为当前服务器单独选择探测点"
-                            : "后台为此服务器绑定的探测点不足 3 个"
+                            : "当前可用的 Ping 任务不足 3 个"
                         }
                       >
                         单独配置
@@ -475,13 +473,15 @@ export function MultiPingNodeConfigPanel({
                       <AlertTriangle size={16} />
                       <div>
                         <strong>
-                          {selectedInvalidTaskIds
-                            .map((taskId) => taskLabel(taskId, tasksById))
-                            .join("、")} 未在 Komari 后台绑定到此服务器
+                          后台未绑定探测点
                         </strong>
                         <span>
-                          请先在后台 Ping 管理中完成绑定，或
-                          {selectedTaskIds ? "在下方更换探测点。" : "改用单独配置后更换探测点。"}
+                          {selectedInvalidTaskIds
+                            .map((taskId) => taskLabel(taskId, tasksById))
+                            .join("、")} 未在 Komari 后台绑定到此服务器。
+                          {fakePingForUnbound
+                            ? "模拟数据功能已开启，以上线路会显示模拟数据；模拟数据不代表真实网络质量。"
+                            : "模拟数据功能未开启，以上线路不会生成延迟；仍可改用单独配置并在下方更换探测点。"}
                         </span>
                       </div>
                     </div>
@@ -519,17 +519,22 @@ export function MultiPingNodeConfigPanel({
                                   aria-label={`${selectedClient.name} 线路 ${slot + 1}`}
                                   className="surface-inset mt-1.5 w-full px-3 py-2 text-[13px] text-[var(--text-primary)] outline-none"
                                 >
-                                  {selectedTaskId != null && !selectedTaskSupported && (
+                                  {selectedTaskId != null && !tasksById.has(selectedTaskId) && (
                                     <option value={selectedTaskId} disabled>
-                                      {taskLabel(selectedTaskId, tasksById)}（后台未绑定）
+                                      {taskLabel(selectedTaskId, tasksById)}（当前不可用）
                                     </option>
                                   )}
-                                  {selectedAvailableTasks.map((task) => (
+                                  {tasks.map((task) => (
                                     <option
                                       key={task.id}
                                       value={task.id}
                                     >
                                       {task.name || `任务 #${task.id}`}
+                                      {!taskSupportsClient(
+                                        task.id,
+                                        selectedClient.uuid,
+                                        taskClientsById,
+                                      ) && "（后台未绑定）"}
                                     </option>
                                   ))}
                                 </select>

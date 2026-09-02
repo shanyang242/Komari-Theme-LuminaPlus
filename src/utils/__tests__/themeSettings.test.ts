@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_THEME_SETTINGS,
   normalizeThemeSettings,
+  shouldShowAdminEntry,
 } from "@/utils/themeSettings";
 import { DEFAULT_BACKGROUND_VIDEO_URL } from "@/utils/background";
 
@@ -146,6 +147,23 @@ describe("normalizeThemeSettings", () => {
     expect(
       normalizeThemeSettings({ homeHeaderVisibleSeconds: 9999 }).homeHeaderVisibleSeconds,
     ).toBe(3600);
+  });
+
+  it("hides the admin entry only from logged-out visitors when explicitly enabled", () => {
+    const defaults = normalizeThemeSettings({});
+    expect(defaults.hideAdminEntryWhenLoggedOut).toBe(false);
+    expect(shouldShowAdminEntry(defaults, false)).toBe(true);
+
+    const visitorHidden = normalizeThemeSettings({
+      hideAdminEntryWhenLoggedOut: true,
+    });
+    expect(shouldShowAdminEntry(visitorHidden, false)).toBe(false);
+    expect(shouldShowAdminEntry(visitorHidden, true)).toBe(true);
+
+    // 旧字段继续作为全局总开关，避免改变存量手工配置的行为。
+    const legacyDisabled = normalizeThemeSettings({ enableAdminButton: false });
+    expect(shouldShowAdminEntry(legacyDisabled, false)).toBe(false);
+    expect(shouldShowAdminEntry(legacyDisabled, true)).toBe(false);
   });
 
   it("parses hiddenNodes from a delimited string and dedupes", () => {

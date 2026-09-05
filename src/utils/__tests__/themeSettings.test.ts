@@ -20,6 +20,31 @@ describe("normalizeThemeSettings", () => {
     );
   });
 
+  it("keeps ambient effects opt-in and normalizes the selected preset", () => {
+    const defaults = normalizeThemeSettings({});
+    expect(defaults.enableAmbientEffect).toBe(false);
+    expect(defaults.ambientEffect).toBe("sakura");
+
+    expect(
+      normalizeThemeSettings({
+        enableAmbientEffect: true,
+        ambientEffect: "leaves",
+      }),
+    ).toMatchObject({
+      enableAmbientEffect: true,
+      ambientEffect: "leaves",
+    });
+    expect(normalizeThemeSettings({ ambientEffect: "unknown" } as never).ambientEffect).toBe(
+      "sakura",
+    );
+    expect(normalizeThemeSettings({ ambientEffect: "fireflies" } as never).ambientEffect).toBe(
+      "sakura",
+    );
+    expect(normalizeThemeSettings({ enableAmbientEffect: "yes" } as never).enableAmbientEffect).toBe(
+      false,
+    );
+  });
+
   it("normalizes the light and dark video fields independently", () => {
     const light = "https://cdn.example/day.mp4?Policy=a(b)&Signature=x%2By%3D";
     const dark = "/media/night%20sky.mp4?token=a%7Cb";

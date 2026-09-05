@@ -43,6 +43,15 @@ export function resolvePingSampleCounts(
   return { total, lost, valid: total - lost };
 }
 
+/** 返回图表使用的 0–100 丢包百分比；旧 records 数据没有 loss 时由负延迟推导。 */
+export function resolvePingRecordLossPercent(record: PingRecord) {
+  if (typeof record.loss === "number" && Number.isFinite(record.loss)) {
+    return Math.min(100, Math.max(0, record.loss));
+  }
+  const { total, lost } = resolvePingSampleCounts(record);
+  return (lost / total) * 100;
+}
+
 function pointTimeKey(time: string) {
   const timestamp = Date.parse(time);
   return Number.isFinite(timestamp) ? String(timestamp) : time;

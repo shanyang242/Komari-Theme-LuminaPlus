@@ -19,6 +19,7 @@ import {
   Save,
   Search,
   SlidersHorizontal,
+  Sparkles,
   Sun,
   SunMoon,
   Video,
@@ -80,6 +81,7 @@ import {
   DEFAULT_THEME_SETTINGS,
   normalizeHomeHeaderVisibleSeconds,
   normalizeThemeSettings,
+  type AmbientEffect,
   type BackgroundMediaType,
   type ResolvedThemeSettings,
 } from "@/utils/themeSettings";
@@ -118,6 +120,17 @@ const BACKGROUND_POSITION_OPTIONS: Array<{ value: BackgroundPosition; label: str
   { value: "top", label: "顶部" },
   { value: "center", label: "居中" },
   { value: "bottom", label: "底部" },
+];
+const AMBIENT_EFFECT_OPTIONS: Array<{
+  value: AmbientEffect;
+  label: string;
+}> = [
+  { value: "sakura", label: "樱花飘落" },
+  { value: "rain", label: "细雨" },
+  { value: "snow", label: "缓雪" },
+  { value: "leaves", label: "秋叶飘落" },
+  { value: "confetti", label: "庆典彩纸" },
+  { value: "fireworks", label: "烟花" },
 ];
 
 function localDateInputMax() {
@@ -326,6 +339,8 @@ function pickManagedThemeSettings(settings: ResolvedThemeSettings) {
     backgroundVideoDark: settings.backgroundVideoDark,
     backgroundAlignment: settings.backgroundAlignment,
     surfaceOpacity: settings.surfaceOpacity,
+    enableAmbientEffect: settings.enableAmbientEffect,
+    ambientEffect: settings.ambientEffect,
   };
 }
 
@@ -1491,6 +1506,37 @@ export function ThemeManage() {
             checked={draft.enableBackgroundImage}
             onPatch={patch}
           />
+
+          <div className="surface-inset flex flex-col gap-3 px-4 py-4">
+            <ToggleRow
+              field="enableAmbientEffect"
+              title="启用背景动效"
+              desc="默认关闭；开启后在页面上轻量渲染所选氛围效果，不影响点击和滚动。"
+              checked={draft.enableAmbientEffect}
+              onPatch={patch}
+            />
+            <label className="flex min-w-0 flex-col gap-2">
+              <span className="inline-flex items-center gap-2 text-[12px] font-medium text-[var(--text-secondary)]">
+                <Sparkles size={14} />
+                动效选择
+              </span>
+              <select
+                value={draft.ambientEffect}
+                onChange={(event) => patch("ambientEffect", event.target.value as AmbientEffect)}
+                disabled={!draft.enableAmbientEffect}
+                className="surface-inset w-full px-3 py-2 text-[13px] outline-none disabled:cursor-not-allowed disabled:opacity-55"
+              >
+                {AMBIENT_EFFECT_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+              <span className="text-[11px] leading-relaxed text-[var(--text-tertiary)]">
+                关闭总开关时保留当前选择且不创建渲染层；移动端会自动降低粒子数量，系统减少动态效果时停止播放。
+              </span>
+            </label>
+          </div>
 
           <div className="surface-inset flex flex-col gap-3 px-4 py-4">
             <div className="text-[13px] font-semibold text-[var(--text-primary)]">桌面端背景类型</div>

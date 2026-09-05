@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { usePreferences } from "@/hooks/usePreferences";
+import { useSaveDataPreference } from "@/hooks/useSaveDataPreference";
 import { useThemeSettings } from "@/hooks/useThemeSettings";
 import {
   applyBackgroundCache,
@@ -17,34 +18,6 @@ import {
   MOBILE_VIEWPORT_QUERY,
   REDUCED_MOTION_QUERY,
 } from "@/utils/mediaQuery";
-
-interface NetworkInformationWithSaveData {
-  saveData?: boolean;
-  addEventListener?: (type: "change", listener: () => void) => void;
-  removeEventListener?: (type: "change", listener: () => void) => void;
-}
-
-function getNetworkInformation() {
-  if (typeof navigator === "undefined") return undefined;
-  return (navigator as Navigator & { connection?: NetworkInformationWithSaveData }).connection;
-}
-
-function prefersSaveData() {
-  return getNetworkInformation()?.saveData === true;
-}
-
-function useSaveDataPreference() {
-  const [saveData, setSaveData] = useState(prefersSaveData);
-  useEffect(() => {
-    const connection = getNetworkInformation();
-    if (!connection?.addEventListener) return;
-    const update = () => setSaveData(connection.saveData === true);
-    connection.addEventListener("change", update);
-    update();
-    return () => connection.removeEventListener?.("change", update);
-  }, []);
-  return saveData;
-}
 
 /** 图片由 body 伪元素首帧绘制；真实 DOM 只负责桌面视频及其播放生命周期。 */
 export function BackgroundLayer() {

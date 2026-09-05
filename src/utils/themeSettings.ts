@@ -35,6 +35,22 @@ import {
 export type Appearance = "system" | "light" | "dark";
 export type NodeViewMode = "large" | "compact" | "mini" | "list";
 export type BackgroundMediaType = "image" | "video";
+export type AmbientEffect =
+  | "sakura"
+  | "rain"
+  | "snow"
+  | "leaves"
+  | "confetti"
+  | "fireworks";
+
+export const AMBIENT_EFFECTS: readonly AmbientEffect[] = [
+  "sakura",
+  "rain",
+  "snow",
+  "leaves",
+  "confetti",
+  "fireworks",
+];
 
 export interface ResolvedThemeSettings {
   defaultAppearance: Appearance;
@@ -84,6 +100,8 @@ export interface ResolvedThemeSettings {
   backgroundVideoDark: string;
   backgroundAlignment: string;
   surfaceOpacity: number;
+  enableAmbientEffect: boolean;
+  ambientEffect: AmbientEffect;
 }
 
 export const DEFAULT_THEME_SETTINGS: ResolvedThemeSettings = {
@@ -134,6 +152,8 @@ export const DEFAULT_THEME_SETTINGS: ResolvedThemeSettings = {
   backgroundVideoDark: "",
   backgroundAlignment: DEFAULT_BACKGROUND_ALIGNMENT,
   surfaceOpacity: DEFAULT_SURFACE_OPACITY,
+  enableAmbientEffect: false,
+  ambientEffect: "sakura",
 };
 
 export function isAppearance(value: unknown): value is Appearance {
@@ -205,6 +225,14 @@ function normalizePlainText(value: unknown) {
 
 function normalizeBackgroundMediaType(value: unknown): BackgroundMediaType {
   return value === "video" ? "video" : "image";
+}
+
+export function isAmbientEffect(value: unknown): value is AmbientEffect {
+  return typeof value === "string" && AMBIENT_EFFECTS.includes(value as AmbientEffect);
+}
+
+function normalizeAmbientEffect(value: unknown): AmbientEffect {
+  return isAmbientEffect(value) ? value : DEFAULT_THEME_SETTINGS.ambientEffect;
 }
 
 // 管理员默认排序:字段非法回落 default;方向非法时回落该字段的自然方向(文本升、数值降)。
@@ -290,5 +318,8 @@ export function normalizeThemeSettings(
     backgroundVideoDark: normalizeBackgroundVideoUrl(settings?.backgroundVideoDark),
     backgroundAlignment: normalizeBackgroundAlignment(settings?.backgroundAlignment),
     surfaceOpacity: normalizeSurfaceOpacity(settings?.surfaceOpacity),
+    // 环境动效默认关闭；保存的预设仍会保留，方便站长关闭后再次开启。
+    enableAmbientEffect: settings?.enableAmbientEffect === true,
+    ambientEffect: normalizeAmbientEffect(settings?.ambientEffect),
   };
 }

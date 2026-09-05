@@ -1,6 +1,7 @@
 import { Outlet, useLocation } from "react-router-dom";
 import { Lock } from "lucide-react";
 import { BackgroundLayer } from "./BackgroundLayer";
+import { AmbientEffectLayer } from "./AmbientEffectLayer";
 import { Spinner } from "@/components/ui/Spinner";
 import { useAppearance } from "@/hooks/useAppearance";
 import { useAuth } from "@/hooks/useAuth";
@@ -43,6 +44,7 @@ export function AppShell() {
   return (
     <div className="relative flex min-h-screen flex-col">
       <BackgroundLayer />
+      <AmbientEffectLayer />
       <main className="app-main flex-1 px-3 pb-8 sm:px-5 md:px-6 lg:px-8">
         <div className="mx-auto w-full max-w-[1720px]">
           {isCheckingShell ? (

@@ -105,6 +105,25 @@ body::after {
   }
 }
 
+/* 可选的主题氛围动效：轻量覆盖普通内容但不拦截交互；菜单和模态层仍按各自
+   z-index 绘制在它上方。覆盖而非藏在卡片下，才能让雨滴、樱花等在纯色主题中可见。 */
+.ambient-effect-layer {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 20;
+  width: 100vw;
+  height: 100vh;
+  opacity: 0.72;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ambient-effect-layer {
+    display: none;
+  }
+}
+
 /* 有意不做卡片磨砂(backdrop-filter):它依赖 GPU 合成,不同设备/浏览器渲染差异大
    (关闭硬件加速的桌面浏览器甚至完全不画),还会和卡片的 content-visibility 优化冲突
    (Chromium 把 paint containment 视为 backdrop root,吞掉元素自身的 backdrop-filter)。
@@ -211,6 +230,7 @@ body::after {
 /* 普通页面只处理页面边距与 iOS PWA 安全区，不为首页专属悬浮卡留空。 */
 .app-main {
   --app-gutter: 0.75rem;
+  position: relative;
   padding-left: max(var(--app-gutter), env(safe-area-inset-left, 0px));
   padding-right: max(var(--app-gutter), env(safe-area-inset-right, 0px));
   padding-top: calc(env(safe-area-inset-top, 0px) + 1.25rem);
@@ -1953,6 +1973,12 @@ body::after {
   justify-content: flex-end;
   gap: 8px;
   margin-bottom: 12px;
+}
+
+.instance-ping-metric-switch {
+  margin-right: auto;
+  padding: 4px;
+  border-radius: 12px;
 }
 
 .instance-ping-tasks {

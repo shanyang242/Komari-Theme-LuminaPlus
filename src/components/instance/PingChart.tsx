@@ -14,19 +14,23 @@ import {
   type ChartTooltipState,
 } from "./chartShared";
 import { ChartTooltip, SwitchToggle } from "./ChartParts";
+import { alignPingChartRecords } from "./pingChartData";
 import {
   cutPeakValues,
   detectTypicalIntervalSeconds,
   downsampleAligned,
+  downsampleWeightedAligned,
   insertMetricGapSentinels,
   smoothByCount,
 } from "./chartData";
 import { latencyHeatColor, lossHeatColor } from "@/utils/metricTone";
 import { historyChartRangeSeconds, historyCoverageLabel } from "@/utils/historyRange";
-import { resolvePingChartInterval, resolvePingSampleCounts } from "@/utils/pingMetrics";
+import {
+  resolvePingChartInterval,
+  resolvePingSampleCounts,
+} from "@/utils/pingMetrics";
 import { usePreferences } from "@/hooks/usePreferences";
 import type { PingRecord, PingTaskStats } from "@/types/komari";
-import type { TimedMetricPoint } from "./chartData";
 
 interface WeightedLatency {
   value: number;
@@ -121,6 +125,7 @@ export function PingChart({
   const { resolvedAppearance } = usePreferences();
   const { w, h, ref: chartSizeRef } = useResponsiveChartSize("wide");
   const [hiddenTasks, setHiddenTasks] = useState<Set<number>>(new Set());
+  const [chartMetric, setChartMetric] = useState<"latency" | "loss">("latency");
   const [connectNulls, setConnectNulls] = useState(false);
   const [cutPeak, setCutPeak] = useState(false);
   const chartRef = useRef<uPlot.AlignedData>([[]]);
@@ -192,9 +197,8 @@ export function PingChart({
     [data],
   );
 
-  const chart = useMemo(() => {
+  const chartPoints = useMemo(() => {
     if (!data?.records.length || !tasks.length) return null;
-    const pointMap = new Map<number, TimedMetricPoint>();
     const taskIntervals = tasks
       .map((task) => task.interval)
       .filter((value): value is number => typeof value === "number" && value > 0);
@@ -209,23 +213,7 @@ export function PingChart({
     );
     const tolerance = Math.min(6, Math.max(0.8, fallbackInterval * 0.25));
 
-    // 升序游标把邻近任务采样合并到同一时间锚点，保持 O(n)。
-    let lastAnchor = Number.NEGATIVE_INFINITY;
-    for (const { record, time } of sortedRecords) {
-      if (!taskKeySet.has(String(record.task_id))) continue;
-      const anchor = time - lastAnchor <= tolerance ? lastAnchor : time;
-      if (anchor === time) lastAnchor = time;
-      const current = pointMap.get(anchor) ?? { time: anchor };
-      // 0 是亚毫秒成功，负值才表示丢包。
-      current[String(record.task_id)] = record.value >= 0 ? record.value : null;
-      pointMap.set(anchor, current);
-    }
-
-    let chartPoints = [...pointMap.values()].sort((a, b) => a.time - b.time);
-    if (cutPeak && taskKeys.length > 0) {
-      chartPoints = cutPeakValues(chartPoints, taskKeys);
-    }
-    chartPoints = insertMetricGapSentinels(chartPoints, {
+    const gapOptions = {
       intervals: new Map(
         tasks.map((task) => [
           String(task.id),
@@ -234,11 +222,26 @@ export function PingChart({
       ),
       defaultInterval: fallbackInterval,
       matchToleranceRatio: 0.25,
-    });
-    const times = chartPoints.map((point) => point.time);
+    };
+
+    return {
+      ...alignPingChartRecords(sortedRecords, taskKeySet, tolerance),
+      gapOptions,
+    };
+  }, [data, sortedRecords, taskKeySet, tasks]);
+
+  // 对齐结果独立缓存；仅对当前指标执行断点处理和降采样，削峰不影响丢包率。
+  const latencyChart = useMemo(() => {
+    if (!chartPoints || chartMetric !== "latency") return null;
+    let points = chartPoints.latencyPoints;
+    if (cutPeak && taskKeys.length > 0) {
+      points = cutPeakValues(points, taskKeys);
+    }
+    points = insertMetricGapSentinels(points, chartPoints.gapOptions);
+    const times = points.map((point) => point.time);
     // undefined 表示错相采样，null 表示真实断点。
     const perTask = taskKeys.map((taskKey) =>
-      chartPoints.map((point) => point[taskKey]),
+      points.map((point) => point[taskKey]),
     );
 
     const reduced = downsampleAligned(times, perTask, MAX_RENDER_POINTS, !cutPeak);
@@ -248,7 +251,31 @@ export function PingChart({
     );
 
     return [reduced.times, ...smoothed] as uPlot.AlignedData;
-  }, [cutPeak, data, sortedRecords, taskKeySet, taskKeys, tasks]);
+  }, [chartMetric, chartPoints, cutPeak, taskKeys]);
+
+  const lossChart = useMemo(() => {
+    if (!chartPoints || chartMetric !== "loss") return null;
+    const lossPoints = insertMetricGapSentinels(
+      chartPoints.lossPoints,
+      chartPoints.gapOptions,
+    );
+    const lossTimes = lossPoints.map((point) => point.time);
+    const lossPerTask = taskKeys.map((taskKey) =>
+      lossPoints.map((point) => point[taskKey]),
+    );
+    const lossWeights = taskKeys.map((taskKey) =>
+      lossPoints.map((point) => chartPoints.lossWeightMap.get(point.time)?.[taskKey]),
+    );
+    const reducedLoss = downsampleWeightedAligned(
+      lossTimes,
+      lossPerTask,
+      lossWeights,
+      MAX_RENDER_POINTS,
+    );
+    return [reducedLoss.times, ...reducedLoss.perTask] as uPlot.AlignedData;
+  }, [chartMetric, chartPoints, taskKeys]);
+
+  const chart = chartMetric === "loss" ? lossChart : latencyChart;
 
   useEffect(() => {
     if (chart) chartRef.current = chart;
@@ -289,6 +316,13 @@ export function PingChart({
         }
       }
     }
+    if (chartMetric === "loss") {
+      if (max === Number.NEGATIVE_INFINITY || max <= 5) return [0, 5];
+      if (max <= 10) return [0, 10];
+      if (max <= 25) return [0, 25];
+      if (max <= 50) return [0, 50];
+      return [0, 100];
+    }
     if (min === Number.POSITIVE_INFINITY) return [0, 100];
     if (min === max) {
       const pad = Math.max(5, min * 0.1);
@@ -296,7 +330,7 @@ export function PingChart({
     }
     const pad = Math.max(5, (max - min) * 0.12);
     return [Math.max(0, min - pad), max + pad];
-  }, [chart, tasks, visibleTaskIds]);
+  }, [chart, chartMetric, tasks, visibleTaskIds]);
 
   const baseOptions = useMemo<Omit<uPlot.Options, "width" | "height"> | null>(() => {
     if (!chart) return null;
@@ -324,7 +358,12 @@ export function PingChart({
           })
           .map(({ label, raw, color }) => ({
             label,
-            value: raw == null ? "—" : `${raw.toFixed(1)} ms`,
+            value:
+              raw == null
+                ? "—"
+                : chartMetric === "loss"
+                  ? `${raw.toFixed(1)}%`
+                  : `${raw.toFixed(1)} ms`,
             color,
           })),
     });
@@ -351,7 +390,14 @@ export function PingChart({
           grid: { stroke: grid, width: 1 },
           ticks: { stroke: grid },
           size: 54,
-          values: (_self, splits) => splits.map((value) => (value === 0 ? "" : `${Math.round(value)} ms`)),
+          values: (_self, splits) =>
+            splits.map((value) =>
+              chartMetric === "loss"
+                ? `${Number(value.toFixed(1))}%`
+                : value === 0
+                  ? ""
+                  : `${Math.round(value)} ms`,
+            ),
         },
       ],
       series: [
@@ -369,7 +415,10 @@ export function PingChart({
         init: [
           (u) => {
             u.root.setAttribute("role", "img");
-            u.root.setAttribute("aria-label", `Ping 延迟历史图表，共 ${tasks.length} 条线路`);
+            u.root.setAttribute(
+              "aria-label",
+              `Ping ${chartMetric === "loss" ? "丢包率" : "延迟"}历史图表，共 ${tasks.length} 条线路`,
+            );
           },
           tooltipHooks.onInit,
         ],
@@ -377,7 +426,7 @@ export function PingChart({
         setCursor: [tooltipHooks.onSetCursor],
       },
     };
-  }, [chart, connectNulls, hiddenTasks, hours, isDark, requestedXRange, taskColors, taskIndexById, taskLabels, tasks, visibleTasks, yRange]);
+  }, [chart, chartMetric, connectNulls, hiddenTasks, hours, isDark, requestedXRange, taskColors, taskIndexById, taskLabels, tasks, visibleTasks, yRange]);
 
   const options = useMemo<uPlot.Options | null>(
     () => (baseOptions ? { ...baseOptions, width: w, height: h } : null),
@@ -491,12 +540,32 @@ export function PingChart({
   return (
     <InstancePanel title="Ping 图表" description={coverageLabel ?? undefined}>
       <div className="instance-ping-toolbar">
-        <SwitchToggle
-          label="削峰平滑"
-          active={cutPeak}
-          onToggle={() => setCutPeak((value) => !value)}
-          title="对尖峰值做轻度平滑，仅影响图线显示"
-        />
+        <div className="instance-segmented instance-ping-metric-switch" aria-label="Ping 图表指标">
+          <button
+            type="button"
+            data-active={chartMetric === "latency" ? "true" : "false"}
+            aria-pressed={chartMetric === "latency"}
+            onClick={() => setChartMetric("latency")}
+          >
+            延迟
+          </button>
+          <button
+            type="button"
+            data-active={chartMetric === "loss" ? "true" : "false"}
+            aria-pressed={chartMetric === "loss"}
+            onClick={() => setChartMetric("loss")}
+          >
+            丢包率
+          </button>
+        </div>
+        {chartMetric === "latency" && (
+          <SwitchToggle
+            label="削峰平滑"
+            active={cutPeak}
+            onToggle={() => setCutPeak((value) => !value)}
+            title="对尖峰值做轻度平滑，仅影响图线显示"
+          />
+        )}
         <SwitchToggle
           label="断点连线"
           active={connectNulls}
@@ -566,7 +635,7 @@ export function PingChart({
         {chart && options && visibleTasks.length > 0 ? (
           <>
             <UplotReact
-              key={`${uuid}-${hours}-${cutPeak ? "smooth" : "raw"}-${connectNulls ? "span" : "gap"}`}
+              key={`${uuid}-${hours}-${chartMetric}-${cutPeak ? "smooth" : "raw"}-${connectNulls ? "span" : "gap"}`}
               options={options}
               data={chart}
             />

@@ -161,6 +161,14 @@ export interface ThemeSettings {
   backgroundVideoDark?: string;
   backgroundAlignment?: string;
   surfaceOpacity?: number;
+  enableAmbientEffect?: boolean;
+  ambientEffect?:
+    | "sakura"
+    | "rain"
+    | "snow"
+    | "leaves"
+    | "confetti"
+    | "fireworks";
 }
 
 export const PublicConfigSchema = z

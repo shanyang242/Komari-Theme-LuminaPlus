@@ -90,21 +90,6 @@
               const mobile =
                 parseImage(dark ? bg.darkMobile : bg.lightMobile) ?? desktopImage;
               const isMobile = window.matchMedia("(max-width: 720px)").matches;
-              const hasCoarsePointer = window.matchMedia(
-                "(hover: none) and (pointer: coarse)",
-              ).matches;
-              const reducedMotion = window.matchMedia(
-                "(prefers-reduced-motion: reduce)",
-              ).matches;
-              const saveData = navigator.connection && navigator.connection.saveData === true;
-              const shouldLoadDesktopVideo =
-                bg.v === 2 &&
-                bg.desktopVideo === true &&
-                !isMobile &&
-                !hasCoarsePointer &&
-                !reducedMotion &&
-                !saveData;
-              const desktop = shouldLoadDesktopVideo ? "none" : desktopImage;
               const parsedAlpha =
                 (typeof bg.alpha === "string" && bg.alpha.trim() !== "") ||
                 typeof bg.alpha === "number"
@@ -115,11 +100,11 @@
                 : 100;
               const scrim = alpha >= 95 ? 0 : Math.round(((95 - alpha) / 95) * 16);
               const style = document.documentElement.style;
-              style.setProperty("--bg-image-desktop", desktop);
+              style.setProperty("--bg-image-desktop", desktopImage);
               style.setProperty("--bg-image-mobile", mobile);
               style.setProperty("--bg-size", sizes.has(bg.size) ? bg.size : "cover");
               style.setProperty("--bg-position", positions.has(bg.position) ? bg.position : "center");
-              const selectedImage = isMobile ? mobile : desktop;
+              const selectedImage = isMobile ? mobile : desktopImage;
               if (selectedImage !== "none") {
                 style.setProperty("--surface-alpha", String(alpha));
               } else {

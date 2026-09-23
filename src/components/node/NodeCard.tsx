@@ -13,12 +13,10 @@ import {
   Calendar,
   RefreshCw,
   CircleDollarSign,
-  Network,
 } from "lucide-react";
 import { useNodeCardModel } from "@/hooks/useNodeCardModel";
 import { usePreferences } from "@/hooks/usePreferences";
 import { useMetricColorsVersion } from "@/hooks/useMetricColors";
-import { useThemeSettings } from "@/hooks/useThemeSettings";
 import { formatBytes } from "@/utils/format";
 import { HOMEPAGE_MULTI_PING_TASK_COUNT } from "@/utils/pingTasks";
 import {
@@ -31,7 +29,6 @@ import { MetricBar } from "./MetricBar";
 import { LatencyBars } from "./LatencyBars";
 import { QualityBars } from "./QualityBars";
 import { CanvasStrip, mixSrgbTowardWhite, safeCanvasColor } from "./CanvasStrip";
-import { NodeTodayTrafficPopover } from "./NodeTodayTrafficPopover";
 import { TrafficQuotaLabel } from "./TrafficQuotaLabel";
 import type { TrafficResetDisplay } from "@/utils/trafficReset";
 import {
@@ -54,18 +51,15 @@ type DisplayTag = { label: string; color: string };
 
 export const NodeCard = memo(function NodeCard({
   uuid,
-  showTodayTraffic = true,
   showCosts = true,
 }: {
   uuid: string;
-  showTodayTraffic?: boolean;
   showCosts?: boolean;
 }) {
   const { resolvedAppearance } = usePreferences();
   // 自定义配色改动时 version 自增，拼进 redrawKey 让 canvas 进度条即时重画（含离线静态卡）。
   const colorsVersion = useMetricColorsVersion();
   const redrawKey = `${resolvedAppearance}:${colorsVersion}`;
-  const themeSettings = useThemeSettings();
   const model = useNodeCardModel(uuid, { includeMultiPing: true });
 
   if (!model.node) {
@@ -105,7 +99,6 @@ export const NodeCard = memo(function NodeCard({
     isOffline,
     osName,
   } = model;
-  const showConnections = themeSettings.isReady && themeSettings.showConnections;
 
   return (
     <article
@@ -116,7 +109,6 @@ export const NodeCard = memo(function NodeCard({
           node={node}
           subtitle={subtitle}
           osName={osName}
-          showTodayTraffic={showTodayTraffic}
         />
 
         <div className="server-card-stack">
@@ -142,23 +134,6 @@ export const NodeCard = memo(function NodeCard({
             typeLabel={traffic.typeLabel}
             reset={trafficReset}
           />
-
-          {showConnections && (
-            <div className="card-metric-section server-card-meta-grid">
-              <FooterStat
-                icon={<Network size={13} strokeWidth={2} />}
-                label="TCP 连接"
-                value={node.connectionsTcp.toLocaleString()}
-                color="var(--progress-network)"
-              />
-              <FooterStat
-                icon={<Network size={13} strokeWidth={2} />}
-                label="UDP 连接"
-                value={node.connectionsUdp.toLocaleString()}
-                color="var(--progress-network)"
-              />
-            </div>
-          )}
 
           {homepagePingLines.length === HOMEPAGE_MULTI_PING_TASK_COUNT ? (
             <MultiPingStatus
@@ -197,12 +172,10 @@ function NodeCardHeader({
   node,
   subtitle,
   osName,
-  showTodayTraffic,
 }: {
   node: NodeCardNode;
   subtitle: string;
   osName: string;
-  showTodayTraffic: boolean;
 }) {
   const detailLabels = nodeDetailLinkLabels(node.name, osName);
   return (
@@ -230,7 +203,6 @@ function NodeCardHeader({
         )}
       </div>
       <div className="server-card-actions">
-        {showTodayTraffic && <NodeTodayTrafficPopover uuid={node.uuid} />}
         <Link
           to={`/instance/${encodeURIComponent(node.uuid)}`}
           className="server-card-detail-link"

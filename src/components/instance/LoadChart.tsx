@@ -10,7 +10,7 @@ import {
 } from "react";
 import UplotReact from "uplot-react";
 import type uPlot from "uplot";
-import { ArrowDown, ArrowUp, Cpu, Gauge, HardDrive, MemoryStick, Network, RefreshCw, Workflow } from "lucide-react";
+import { ArrowDown, ArrowUp, Cpu, Gauge, HardDrive, MemoryStick, Network, RefreshCw } from "lucide-react";
 import { useLoadRecords } from "@/hooks/useRecords";
 import { useNodeMeta, useNodeMetrics } from "@/hooks/useNode";
 import { InstancePanel, InstanceChartLoading } from "./InstancePanel";
@@ -49,8 +49,6 @@ const DISK_KEYS = ["disk"];
 const DISK_COLORS = [CHART_PALETTE.disk];
 const NETWORK_KEYS = ["netIn", "netOut"];
 const NETWORK_COLORS = [CHART_PALETTE.success, CHART_PALETTE.cpu];
-const CONNECTION_KEYS = ["connections", "udp"];
-const CONNECTION_COLORS = [CHART_PALETTE.memory, CHART_PALETTE.cpu];
 const PROCESS_KEYS = ["process"];
 const PROCESS_COLORS = [CHART_PALETTE.warning];
 const SERIES_LABELS: Record<string, string> = {
@@ -60,8 +58,6 @@ const SERIES_LABELS: Record<string, string> = {
   disk: "磁盘",
   netIn: "下行",
   netOut: "上行",
-  connections: "TCP",
-  udp: "UDP",
   process: "进程",
 };
 const LOAD_INTERPOLATE_KEYS = [
@@ -71,8 +67,6 @@ const LOAD_INTERPOLATE_KEYS = [
   "disk",
   "netIn",
   "netOut",
-  "connections",
-  "udp",
   "process",
 ];
 
@@ -98,8 +92,6 @@ const DOWNSAMPLE_KEYS = [
   "disk",
   "netIn",
   "netOut",
-  "connections",
-  "udp",
   "process",
 ] as const;
 
@@ -140,8 +132,6 @@ function pointFromNode(node: NodeMetrics): ChartPoint {
     disk: node.diskTotal > 0 ? (node.diskUsed / node.diskTotal) * 100 : null,
     netIn: node.netDown,
     netOut: node.netUp,
-    connections: node.connectionsTcp,
-    udp: node.connectionsUdp,
     process: node.process,
   };
 }
@@ -150,7 +140,7 @@ function formatTooltipValue(key: string, value: number | null | undefined, unit:
   if (value == null || !Number.isFinite(value)) return "—";
   if (key === "netIn" || key === "netOut") return formatTrafficRateLabel(value);
   if (unit === "%") return `${value.toFixed(2)}%`;
-  if (key === "process" || key === "connections" || key === "udp") return `${Math.round(value)}`;
+  if (key === "process") return `${Math.round(value)}`;
   return value.toFixed(2);
 }
 
@@ -441,8 +431,6 @@ export function LoadChart({
         disk: totals.diskTotal > 0 ? (record.disk / totals.diskTotal) * 100 : null,
         netIn: record.net_in,
         netOut: record.net_out,
-        connections: record.connections,
-        udp: record.connections_udp,
         process: record.process,
       };
     });
@@ -654,27 +642,6 @@ export function LoadChart({
           spanGaps={connectNulls}
           axisKind="network"
           axisSize={78}
-          xRange={requestedXRange}
-        />
-        <ChartCard
-          icon={<Workflow size={13} />}
-          title="连接数"
-          uuid={uuid}
-          value={
-            isRealtime && node
-              ? `TCP ${node.connectionsTcp} / UDP ${node.connectionsUdp}`
-              : latestHistoryRecord
-                ? `TCP ${Math.round(latestHistoryRecord.connections ?? 0)} / UDP ${Math.round(latestHistoryRecord.connections_udp ?? 0)}`
-                : "—"
-          }
-          note="连接"
-          points={points}
-          keys={CONNECTION_KEYS}
-          colors={CONNECTION_COLORS}
-          resolvedAppearance={resolvedAppearance}
-          rangeHours={hours}
-          spanGaps={connectNulls}
-          axisKind="count"
           xRange={requestedXRange}
         />
         <ChartCard

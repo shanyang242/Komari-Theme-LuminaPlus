@@ -57,6 +57,19 @@ describe("resolveTrafficUsage", () => {
     expect(usage.fraction).toBe(1);
     expect(usage.remaining).toBe(0);
   });
+
+  it("prefers a backend effective value, including an exact zero", () => {
+    expect(resolveTrafficUsage("sum", 30, 70, 200, 40).used).toBe(40);
+    const zero = resolveTrafficUsage("sum", 30, 70, 200, 0);
+    expect(zero.used).toBe(0);
+    expect(zero.remaining).toBe(200);
+    expect(zero.fraction).toBe(0);
+  });
+
+  it("keeps the legacy calculation when the backend field is missing", () => {
+    expect(resolveTrafficUsage("sum", 30, 70, 200, undefined).used).toBe(100);
+    expect(resolveTrafficUsage("sum", 30, 70, 200, null).used).toBe(100);
+  });
 });
 
 describe("trafficTypeLabel", () => {

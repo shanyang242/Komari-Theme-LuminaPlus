@@ -1,11 +1,10 @@
 import { lazy, Suspense, useEffect, useState } from "react";
-import { AlertTriangle, ChevronLeft, ChevronRight, Grid3x3, LayoutGrid, List, Monitor, Palette, Rows3, Settings, SlidersHorizontal, Sun, Moon } from "lucide-react";
+import { AlertTriangle, ChevronLeft, ChevronRight, LayoutGrid, Monitor, Palette, Rows3, Settings, SlidersHorizontal, Sun, Moon } from "lucide-react";
 import { Link } from "react-router-dom";
 import { usePreferences } from "@/hooks/usePreferences";
 import { useViewMode } from "@/hooks/useViewMode";
 import { useNodeStoreStatus } from "@/hooks/useNode";
 import { useAuth } from "@/hooks/useAuth";
-import { useAdminEntryPath } from "@/hooks/useAdminEntryPath";
 import { useThemeSettings } from "@/hooks/useThemeSettings";
 import {
   shouldShowAdminEntry,
@@ -22,8 +21,6 @@ const MetricColorPicker = lazy(() =>
 const VIEW_MODE_META: Record<NodeViewMode, { icon: typeof LayoutGrid; label: string }> = {
   large: { icon: LayoutGrid, label: "大视图" },
   compact: { icon: Rows3, label: "小视图" },
-  mini: { icon: Grid3x3, label: "迷你视图" },
-  list: { icon: List, label: "列表视图" },
 };
 
 const APPEARANCE_OPTIONS = [
@@ -40,7 +37,6 @@ export function FloatingControls({
   const { appearance, setAppearance } = usePreferences();
   const { mode, nextMode, toggleMode } = useViewMode();
   const { data: me } = useAuth();
-  const adminEntryPath = useAdminEntryPath();
   const themeSettings = useThemeSettings();
   const { failureStreak } = useNodeStoreStatus();
   const [collapsed, setCollapsed] = useState(true);
@@ -154,9 +150,9 @@ export function FloatingControls({
                 <SlidersHorizontal size={16} />
               </Link>
             )}
-            {showAdmin && adminEntryPath && (
+            {showAdmin && (
               <a
-                href={adminEntryPath}
+                href="/admin"
                 aria-label={me?.logged_in ? "管理" : "后台登录"}
                 title={me?.logged_in ? "管理" : "后台登录"}
                 tabIndex={hiddenTabIndex}

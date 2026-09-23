@@ -61,6 +61,7 @@ export const NodeInfoSchema = z
     public_remark: looseString.default(""),
     traffic_limit: looseNumber.default(0),
     traffic_limit_type: looseString.default(""),
+    traffic_reset_day: looseNumber.default(0),
     ipv4: looseString.default(""),
     ipv6: looseString.default(""),
     created_at: looseString.default(""),
@@ -77,10 +78,11 @@ export interface NodeRealtime {
   load: { load1: number; load5: number; load15: number };
   disk: { total: number; used: number };
   network: { up: number; down: number; totalUp: number; totalDown: number };
-  connections: { tcp: number; udp: number };
   uptime: number;
   process: number;
   updated_at?: string | number;
+  /** 修改版后端返回的校准后配额已用量。 */
+  trafficUsedEffective?: number | null;
 }
 
 /** 展示用模型:扁平化的节点信息 + 实时指标 + 在线标志。 */
@@ -99,20 +101,20 @@ export interface NodeMetrics {
   netDown: number;
   trafficUp: number;
   trafficDown: number;
+  /** null/undefined 时必须沿用主题原有上下行归约逻辑。 */
+  trafficUsedEffective?: number | null;
   uptime: number;
   load1: number;
   load5: number;
   load15: number;
   process: number;
-  connectionsTcp: number;
-  connectionsUdp: number;
   updatedAt: number;
 }
 
 export interface ThemeSettings {
   defaultAppearance?: "system" | "light" | "dark";
-  desktopNodeViewMode?: "large" | "compact" | "mini" | "list";
-  mobileNodeViewMode?: "large" | "compact" | "mini" | "list";
+  desktopNodeViewMode?: "large" | "compact";
+  mobileNodeViewMode?: "large" | "compact";
   enableAdminButton?: boolean;
   hideAdminEntryWhenLoggedOut?: boolean;
   showPingChart?: boolean;
@@ -127,25 +129,12 @@ export interface ThemeSettings {
   showGroupTabs?: boolean;
   showRegionBar?: boolean;
   showCardGroup?: boolean;
-  homeGroupOrder?: string[];
-  enableHomeSort?: boolean;
-  homeSortField?: "default" | "name" | "speed" | "traffic" | "price";
-  homeSortDirection?: "asc" | "desc";
   showCostsToGuests?: boolean;
   showCostSummary?: boolean;
   showCostSummaryFloatingButton?: boolean;
-  showOverviewRatings?: boolean;
-  showTrafficRating?: boolean;
-  showBandwidthRating?: boolean;
-  showAssetRating?: boolean;
-  trafficRatingLabels?: string;
-  bandwidthRatingLabels?: string;
-  assetRatingLabels?: string;
   compactShowTrafficTotal?: boolean;
   compactShowBilling?: boolean;
   compactShowUptime?: boolean;
-  showConnections?: boolean;
-  showTodayTrafficPopover?: boolean;
   hiddenNodes?: string[];
   costIgnoredNodes?: string[];
   // 值支持旧版纯数字(自动升格)或 { amount, paidCny?, acquiredAt? } 条目,见 normalizeCostPremiums。
@@ -155,11 +144,8 @@ export interface ThemeSettings {
   >;
   costRateApiUrl?: string;
   enableBackgroundImage?: boolean;
-  backgroundMediaType?: "image" | "video";
   backgroundImage?: string;
   backgroundImageMobile?: string;
-  backgroundVideo?: string;
-  backgroundVideoDark?: string;
   backgroundAlignment?: string;
   surfaceOpacity?: number;
   enableAmbientEffect?: boolean;
@@ -184,7 +170,6 @@ export const PublicConfigSchema = z
     record_enabled: z.boolean().default(true),
     record_preserve_time: z.number().default(0),
     ping_record_preserve_time: z.number().default(0),
-    metric_retention_days: z.number().default(0),
     custom_head: z.string().default(""),
     custom_body: z.string().default(""),
     theme_settings: z.record(z.string(), z.unknown()).default({}),
@@ -232,8 +217,6 @@ export const LoadRecordSchema = z
     net_total_up: z.number().default(0),
     net_total_down: z.number().default(0),
     process: z.number().default(0),
-    connections: z.number().default(0),
-    connections_udp: z.number().default(0),
     time: z.union([z.string(), z.number()]),
     client: z.string().default(""),
   })
@@ -247,8 +230,6 @@ export const PingRecordSchema = z
     time: z.union([z.string(), z.number()]),
     value: z.number(),
     client: z.string().default(""),
-    count: z.number().optional(),
-    loss: z.number().nullable().optional(),
   })
   .passthrough();
 
@@ -281,11 +262,9 @@ export interface PingRecordsResponse {
   count: number;
   records: PingRecord[];
   tasks: PingTask[];
-  /** 新 metric API 实际采用的聚合间隔，用于图表正确识别长区间连续点。 */
-  intervalSeconds?: number;
   rangeStartMs?: number;
   rangeEndMs?: number;
-  /** 新 metric API 返回的服务端区间统计；旧后端回退时不存在。 */
+  /** 修改版后端返回的节点 Ping 区间统计。 */
   stats?: PingTaskStats[];
 }
 
@@ -316,15 +295,9 @@ export interface PingOverviewItem {
   /** 当前任务本轮请求状态；模拟 Ping 不设置此字段。 */
   loadState?: PingOverviewTaskLoadState;
   lastValue: number | null;
-  /** metric API 聚合桶的真实宽度；旧 records 接口没有该字段。 */
-  metricIntervalMs?: number;
   samples: Array<{
     time: number;
     value: number;
-    /** 聚合 metric 点覆盖的原始样本数。 */
-    count?: number;
-    /** 聚合窗口的丢包百分比。 */
-    loss?: number | null;
   }>;
   max: number;
   loss: number | null;

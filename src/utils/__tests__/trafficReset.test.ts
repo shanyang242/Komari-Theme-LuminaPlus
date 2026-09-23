@@ -5,6 +5,21 @@ const local = (year: number, month: number, day: number, hour = 12) =>
   new Date(year, month - 1, day, hour).getTime();
 
 describe("monthly traffic reset from expiry day", () => {
+  it("prefers an explicit backend reset day in Asia/Shanghai", () => {
+    const beforeShanghaiMidnight = Date.parse("2026-09-09T15:59:59Z");
+    const afterShanghaiMidnight = Date.parse("2026-09-09T16:00:00Z");
+    expect(getTrafficResetDisplay(null, beforeShanghaiMidnight, 10)).toEqual({
+      label: "1天后重置",
+      title: "流量重置日：2026-09-10 · 后台设置，每月10日重置（不足该日取月末，Asia/Shanghai）",
+    });
+    expect(getTrafficResetDisplay(null, afterShanghaiMidnight, 10)?.label).toBe("今日重置");
+  });
+
+  it("clamps an explicit day to month end and restores it next month", () => {
+    expect(getTrafficResetDisplay(null, Date.parse("2026-02-27T16:00:00Z"), 31)?.label).toBe("今日重置");
+    expect(getTrafficResetDisplay(null, Date.parse("2026-02-28T16:00:00Z"), 31)?.title).toContain("2026-03-31");
+  });
+
   it("uses the expiry day independently of expiry month and billing cycle", () => {
     expect(getTrafficResetDisplay(local(2026, 11, 30), local(2026, 9, 9))).toEqual({
       label: "21天后重置",

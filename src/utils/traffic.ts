@@ -50,8 +50,13 @@ export function resolveTrafficUsage(
   up: number,
   down: number,
   limit: number,
+  effectiveUsed?: number | null,
 ): TrafficUsage {
-  const used = computeTrafficUsed(type, up, down);
+  // 新主控直接提供校准后的标量；包括 0 在内都必须被视为有效值。
+  // 字段缺失时仍执行旧逻辑，保证主题可继续用于未适配的 Komari 后端。
+  const used = effectiveUsed != null && Number.isFinite(effectiveUsed)
+    ? Math.max(0, effectiveUsed)
+    : computeTrafficUsed(type, up, down);
   const unlimited = !(limit > 0);
   const remaining = unlimited ? 0 : Math.max(0, limit - used);
   const fraction = unlimited ? 0 : Math.max(0, Math.min(1, used / limit));

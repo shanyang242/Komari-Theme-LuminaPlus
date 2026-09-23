@@ -81,8 +81,8 @@ export function getBarGeometry(width: number, count: number): { gap: number; bar
   return { gap, barWidth };
 }
 
-// 延迟/丢包柱的统一取值模型:激活判定/柱高/颜色/透明度只在这一处定义,canvas(大卡/列表)、
-// DOM(紧凑卡)、SVG(迷你卡)三种渲染层各自消费,避免规则漂移。基准取大卡规则:
+// 延迟/丢包柱的统一取值模型:激活判定/柱高/颜色/透明度只在这一处定义，
+// 由大卡 Canvas 与小卡 DOM 共同使用。
 // 延迟与丢包都使用固定高度，严重度只由绝对值颜色表达，便于跨节点比较。
 export interface HealthBarSlotModel {
   active: boolean;

@@ -25,35 +25,16 @@ import {
 } from "./chartData";
 import { latencyHeatColor, lossHeatColor } from "@/utils/metricTone";
 import { historyChartRangeSeconds, historyCoverageLabel } from "@/utils/historyRange";
-import {
-  resolvePingChartInterval,
-  resolvePingSampleCounts,
-} from "@/utils/pingMetrics";
 import { usePreferences } from "@/hooks/usePreferences";
 import type { PingRecord, PingTaskStats } from "@/types/komari";
 
-interface WeightedLatency {
-  value: number;
-  weight: number;
-}
-
-function valueAtWeightedIndex(sorted: WeightedLatency[], index: number) {
-  let offset = 0;
-  for (const sample of sorted) {
-    offset += sample.weight;
-    if (index < offset) return sample.value;
-  }
-  return sorted[sorted.length - 1]?.value ?? null;
-}
-
-function percentileFromWeighted(sorted: WeightedLatency[], ratio: number) {
-  const total = sorted.reduce((sum, sample) => sum + sample.weight, 0);
-  if (total <= 0) return null;
-  const index = (total - 1) * ratio;
+function percentileFromSorted(sorted: number[], ratio: number) {
+  if (sorted.length === 0) return null;
+  const index = (sorted.length - 1) * ratio;
   const lower = Math.floor(index);
   const upper = Math.ceil(index);
-  const lowerValue = valueAtWeightedIndex(sorted, lower);
-  const upperValue = valueAtWeightedIndex(sorted, upper);
+  const lowerValue = sorted[lower];
+  const upperValue = sorted[upper];
   if (lowerValue == null || upperValue == null) return null;
   if (lower === upper) return lowerValue;
   const weight = index - lower;
@@ -61,37 +42,28 @@ function percentileFromWeighted(sorted: WeightedLatency[], ratio: number) {
 }
 
 export function summarizePingRecords(records: PingRecord[]) {
-  const samples = records.map((record) => ({
-    record,
-    ...resolvePingSampleCounts(record),
-  }));
-  const valid = samples
-    .filter(({ record, valid: count }) => record.value >= 0 && count > 0)
-    .map(({ record, valid: count }) => ({ value: record.value, weight: count }))
-    .sort((a, b) => a.value - b.value);
-  const total = samples.reduce((sum, sample) => sum + sample.total, 0);
-  const lost = samples.reduce((sum, sample) => sum + sample.lost, 0);
-  const validCount = valid.reduce((sum, sample) => sum + sample.weight, 0);
+  const valid = records
+    .filter((record) => record.value >= 0)
+    .map((record) => record.value)
+    .sort((a, b) => a - b);
+  const total = records.length;
+  const lost = total - valid.length;
 
   let latest: number | null = null;
-  for (let index = samples.length - 1; index >= 0; index -= 1) {
-    const { record, valid: count } = samples[index];
-    if (record.value >= 0 && count > 0) {
-      latest = record.value;
+  for (let index = records.length - 1; index >= 0; index -= 1) {
+    if (records[index].value >= 0) {
+      latest = records[index].value;
       break;
     }
   }
 
   return {
     latest,
-    avg:
-      validCount > 0
-        ? valid.reduce((sum, sample) => sum + sample.value * sample.weight, 0) / validCount
-        : null,
-    min: valid[0]?.value ?? null,
-    max: valid[valid.length - 1]?.value ?? null,
-    p50: percentileFromWeighted(valid, 0.5),
-    p99: percentileFromWeighted(valid, 0.99),
+    avg: valid.length > 0 ? valid.reduce((sum, value) => sum + value, 0) / valid.length : null,
+    min: valid[0] ?? null,
+    max: valid[valid.length - 1] ?? null,
+    p50: percentileFromSorted(valid, 0.5),
+    p99: percentileFromSorted(valid, 0.99),
     total,
     lost,
     loss: total > 0 ? (lost / total) * 100 : 0,
@@ -206,18 +178,16 @@ export function PingChart({
       sortedRecords.map(({ time }) => time),
       60,
     );
-    const fallbackInterval = resolvePingChartInterval(
-      data.intervalSeconds,
-      taskIntervals.length > 0 ? Math.min(...taskIntervals) : null,
-      detectedInterval,
-    );
+    const fallbackInterval = taskIntervals.length > 0
+      ? Math.min(...taskIntervals)
+      : detectedInterval;
     const tolerance = Math.min(6, Math.max(0.8, fallbackInterval * 0.25));
 
     const gapOptions = {
       intervals: new Map(
         tasks.map((task) => [
           String(task.id),
-          resolvePingChartInterval(data.intervalSeconds, task.interval, fallbackInterval),
+          task.interval > 0 ? task.interval : fallbackInterval,
         ] as const),
       ),
       defaultInterval: fallbackInterval,
@@ -290,9 +260,7 @@ export function PingChart({
     return {
       rangeStartMs: data.rangeStartMs,
       rangeEndMs: data.rangeEndMs,
-      intervalSeconds:
-        data.intervalSeconds ??
-        (taskIntervals.length > 0 ? Math.min(...taskIntervals) : undefined),
+      intervalSeconds: taskIntervals.length > 0 ? Math.min(...taskIntervals) : undefined,
     };
   }, [data, tasks]);
   const coverageLabel = useMemo(() => {

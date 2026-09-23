@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { resolveFlatConnectionsTcp, resolveTrafficTotal } from "@/services/wsStore";
+import { resolveTrafficTotal } from "@/services/wsStore";
 
 // 像 resolveTrafficTotals 每个 tick 那样,把一串原始累计读数喂给 resolver:把上一个显示值
 //(store 存在 node metrics 上)往后传。
@@ -39,21 +39,5 @@ describe("resolveTrafficTotal", () => {
 
   it("does not surface a value until a real reading arrives", () => {
     expect(drive([0, 0, 10])).toEqual([0, 0, 10]);
-  });
-});
-
-describe("resolveFlatConnectionsTcp", () => {
-  it("derives TCP as connections − udp (latest-status sends TCP+UDP combined)", () => {
-    expect(resolveFlatConnectionsTcp({ connections: 12, connections_udp: 5 })).toBe(7);
-  });
-
-  it("prefers an explicit connections_tcp when present", () => {
-    expect(
-      resolveFlatConnectionsTcp({ connections: 12, connections_udp: 5, connections_tcp: 9 }),
-    ).toBe(9);
-  });
-
-  it("clamps to 0 when udp exceeds the combined count", () => {
-    expect(resolveFlatConnectionsTcp({ connections: 3, connections_udp: 5 })).toBe(0);
   });
 });

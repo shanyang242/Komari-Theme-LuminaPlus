@@ -11,7 +11,6 @@ import {
   Gauge,
   HardDrive,
   MemoryStick,
-  Network,
   Unplug,
 } from "lucide-react";
 import { clsx } from "clsx";
@@ -36,7 +35,6 @@ import {
   TRAFFIC_SLIVER_RATIO,
 } from "./nodeCardShared";
 import { IpStackBadges } from "./IpStackBadges";
-import { NodeTodayTrafficPopover } from "./NodeTodayTrafficPopover";
 import { TrafficQuotaLabel } from "./TrafficQuotaLabel";
 import type { TrafficResetDisplay } from "@/utils/trafficReset";
 import type {
@@ -317,11 +315,9 @@ function CompactHealthItem({
 function CompactNodeHeader({
   node,
   osName,
-  showTodayTraffic,
 }: {
   node: CompactNode;
   osName: string;
-  showTodayTraffic: boolean;
 }) {
   const detailLabels = nodeDetailLinkLabels(node.name, osName);
   return (
@@ -339,9 +335,6 @@ function CompactNodeHeader({
         </div>
       </div>
       <div className="compact-node-actions">
-        {showTodayTraffic && (
-          <NodeTodayTrafficPopover uuid={node.uuid} size={14} />
-        )}
         <Link
           to={`/instance/${encodeURIComponent(node.uuid)}`}
           className="compact-node-detail-link"
@@ -448,7 +441,6 @@ function CompactNodeInfoStrip({
   showTrafficTotal,
   showBilling,
   showCosts,
-  showConnections,
   expire,
   expireColor,
   renewalPrice,
@@ -460,13 +452,12 @@ function CompactNodeInfoStrip({
   showTrafficTotal: boolean;
   showBilling: boolean;
   showCosts: boolean;
-  showConnections: boolean;
   expire: CompactExpire;
   expireColor: string;
   renewalPrice: string | null;
 }) {
   const infoTileCount =
-    1 + (showTrafficTotal ? 1 : 0) + (showBilling ? 1 : 0) + (showConnections ? 1 : 0);
+    1 + (showTrafficTotal ? 1 : 0) + (showBilling ? 1 : 0);
 
   return (
     <div
@@ -535,21 +526,6 @@ function CompactNodeInfoStrip({
               color={renewalPrice ? "var(--status-success)" : "var(--text-tertiary)"}
             />
           )}
-        </CompactInfoTile>
-      )}
-      {showConnections && (
-        <CompactInfoTile label="连接数" color="var(--progress-network)">
-          <CompactInfoRow
-            icon={<Network size={12} strokeWidth={2.1} />}
-            label="TCP"
-            value={node.connectionsTcp.toLocaleString()}
-            color="var(--progress-network)"
-          />
-          <CompactInfoRow
-            icon={<Network size={12} strokeWidth={2.1} />}
-            label="UDP"
-            value={node.connectionsUdp.toLocaleString()}
-          />
         </CompactInfoTile>
       )}
     </div>
@@ -660,11 +636,9 @@ const CompactNodeHealth = memo(function CompactNodeHealth({
 
 export const CompactNodeCard = memo(function CompactNodeCard({
   uuid,
-  showTodayTraffic = true,
   showCosts = true,
 }: {
   uuid: string;
-  showTodayTraffic?: boolean;
   showCosts?: boolean;
 }) {
   const model = useNodeCardModel(uuid, {
@@ -704,7 +678,6 @@ export const CompactNodeCard = memo(function CompactNodeCard({
   const showTrafficTotal = themeSettings.isReady && themeSettings.compactShowTrafficTotal;
   const showBilling = themeSettings.isReady && themeSettings.compactShowBilling;
   const showUptime = themeSettings.isReady && themeSettings.compactShowUptime;
-  const showConnections = themeSettings.isReady && themeSettings.showConnections;
   // 开关关闭或节点离线时,完全跳过格式化工作。
   const uptimeLabel = showUptime && !isOffline ? formatCompactUptime(node.uptime) : "";
 
@@ -713,7 +686,6 @@ export const CompactNodeCard = memo(function CompactNodeCard({
       <CompactNodeHeader
         node={node}
         osName={osName}
-        showTodayTraffic={showTodayTraffic}
       />
       <CompactNodeChips subtitle={subtitle} tags={footerTags} ipv4={node.ipv4} ipv6={node.ipv6} />
       <CompactNodeVitals node={node} loadFraction={loadFraction} />
@@ -725,7 +697,6 @@ export const CompactNodeCard = memo(function CompactNodeCard({
         showTrafficTotal={showTrafficTotal}
         showBilling={showBilling}
         showCosts={showCosts}
-        showConnections={showConnections}
         expire={expire}
         expireColor={expireColor}
         renewalPrice={renewalPrice}

@@ -177,7 +177,7 @@ export function useNodeCardModel(
       subtitle: joinDisplayParts(subtitleParts),
       expire: formatExpireDays(meta.expired_at, now),
       expireColor: getExpireTextColor(meta.expired_at, now),
-      trafficReset: getTrafficResetDisplay(meta.expired_at, now),
+      trafficReset: getTrafficResetDisplay(meta.expired_at, now, meta.traffic_reset_day),
       renewalPrice: formatRenewalPrice(meta),
       osName: resolveOsInfo(meta.os).name,
       loadBaseline: meta.cpu_cores > 0 ? meta.cpu_cores : 4,
@@ -225,6 +225,7 @@ export function useNodeCardModel(
       metrics.trafficUp,
       metrics.trafficDown,
       meta.traffic_limit,
+      metrics.trafficUsedEffective,
     );
     const trafficUsedLabel = formatBytes(trafficUsage.used);
     // 不限量时渲染成 ∞，让剩余值和"已用/上限"那行与限量情况保持一致

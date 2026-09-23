@@ -1,5 +1,4 @@
 import type { PingRecord } from "@/types/komari";
-import { resolvePingRecordLossPercent, resolvePingSampleCounts } from "@/utils/pingMetrics";
 import type { TimedMetricPoint } from "./chartData";
 
 /** 输入按时间升序排列；邻近采样共享时间锚点，丢包率按原始样本数合并。 */
@@ -27,11 +26,10 @@ export function alignPingChartRecords(
     const loss = lossPointMap.get(anchor) ?? { time: anchor };
     const weights = lossWeightMap.get(anchor) ?? { time: anchor };
     const previousWeight = weights[taskKey] ?? 0;
-    const weight = resolvePingSampleCounts(record).total;
-    const totalWeight = previousWeight + weight;
+    const totalWeight = previousWeight + 1;
     // 同任务也可能因采样抖动落入同一锚点，不能用后一条覆盖已有丢包和权重。
     loss[taskKey] =
-      ((loss[taskKey] ?? 0) * previousWeight + resolvePingRecordLossPercent(record) * weight) /
+      ((loss[taskKey] ?? 0) * previousWeight + (record.value < 0 ? 100 : 0)) /
       totalWeight;
     weights[taskKey] = totalWeight;
     lossPointMap.set(anchor, loss);

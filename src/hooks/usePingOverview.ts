@@ -4,34 +4,26 @@ import { useMinuteClock } from "@/hooks/useClock";
 import { useVisibleNodeUuids } from "@/hooks/useNode";
 import { useHiddenNodeUuids } from "@/hooks/useVisibleNodes";
 import { useThemeSettings } from "@/hooks/useThemeSettings";
-import {
-  getPingOverview,
-  getPingOverviewStats,
-  prewarmPingOverviewDependencies,
-} from "@/services/api";
+import { getPingOverview } from "@/services/api";
 import type {
   HomepagePingLine,
   PingOverviewBucket,
   PingOverviewItem,
   PingOverviewTaskLoadState,
   PingRecord,
-  PingTaskStats,
 } from "@/types/komari";
 import { withTimeoutSignal } from "@/utils/abort";
-import { resolvePingSampleCounts } from "@/utils/pingMetrics";
 import {
   HOMEPAGE_MULTI_PING_TASK_COUNT,
   resolveHomepagePingSelections,
   type HomepageMultiPingNodeTaskIds,
   type HomepagePingTaskBindings,
 } from "@/utils/pingTasks";
-import type { NodeViewMode } from "@/utils/themeSettings";
 
 const DEFAULT_PING_REFRESH_INTERVAL = 60_000;
 const MIN_PING_REFRESH_INTERVAL = 10_000;
 const MAX_PING_REFRESH_INTERVAL = 300_000;
-// 首页延迟图表最多显示 24 个 bucket。metric API 返回的是聚合区间而不是瞬时点，
-// 绘制时要把较粗的后端区间投影到它覆盖的可视 bucket，同时保持卡片密度一致。
+// 首页延迟图表最多显示 24 个 bucket。
 const MAX_VISIBLE_HOMEPAGE_PING_BUCKETS = 24;
 
 const EMPTY_PING: PingOverviewItem = {
@@ -51,13 +43,11 @@ const EMPTY_NODE_MULTI_TASK_IDS: HomepageMultiPingNodeTaskIds = {};
 type HomepagePingRequestMode = "single" | "multi";
 
 export function resolveHomepagePingRequestMode(
-  viewMode: NodeViewMode,
   multiPingEnabled: boolean,
   multiTaskIds: number[],
   nodeMultiTaskIds: HomepageMultiPingNodeTaskIds = {},
 ): HomepagePingRequestMode {
-  return (viewMode === "large" || viewMode === "compact") &&
-    multiPingEnabled &&
+  return multiPingEnabled &&
     (multiTaskIds.length === HOMEPAGE_MULTI_PING_TASK_COUNT ||
       Object.keys(nodeMultiTaskIds).length > 0)
     ? "multi"
@@ -124,9 +114,7 @@ function equalSamples(
   for (let i = 0; i < a.length; i++) {
     if (
       a[i]?.time !== b[i]?.time ||
-      a[i]?.value !== b[i]?.value ||
-      a[i]?.count !== b[i]?.count ||
-      a[i]?.loss !== b[i]?.loss
+      a[i]?.value !== b[i]?.value
     ) {
       return false;
     }
@@ -142,7 +130,6 @@ function equalPingItem(a: PingOverviewItem | undefined, b: PingOverviewItem | un
     a.isAssigned === b.isAssigned &&
     a.loadState === b.loadState &&
     a.lastValue === b.lastValue &&
-    a.metricIntervalMs === b.metricIntervalMs &&
     a.max === b.max &&
     a.loss === b.loss &&
     equalSamples(a.samples, b.samples)
@@ -160,15 +147,7 @@ function equalPingLine(a: HomepagePingLine | undefined, b: HomepagePingLine | un
 export function buildPingOverviewItems(
   taskId: number,
   records: PingRecord[],
-  metricStats: PingTaskStats[] = [],
-  metricIntervalSeconds?: number,
 ) {
-  const metricIntervalMs =
-    typeof metricIntervalSeconds === "number" &&
-    Number.isFinite(metricIntervalSeconds) &&
-    metricIntervalSeconds > 0
-      ? metricIntervalSeconds * 1000
-      : undefined;
   const selectedRecords = records.filter((record) => record.task_id === taskId);
   const grouped = new Map<string, Array<(typeof selectedRecords)[number]>>();
   const lossStatsByClient = new Map<string, { total: number; lost: number }>();
@@ -180,21 +159,13 @@ export function buildPingOverviewItems(
     else grouped.set(record.client, [record]);
 
     const stats = lossStatsByClient.get(record.client) ?? { total: 0, lost: 0 };
-    const counts = resolvePingSampleCounts(record);
-    stats.total += counts.total;
-    stats.lost += counts.lost;
+    stats.total += 1;
+    if (record.value < 0) stats.lost += 1;
     lossStatsByClient.set(record.client, stats);
   }
 
   const result = new Map<string, PingOverviewItem>();
-  const statsByClient = new Map(
-    metricStats
-      .filter((stat) => stat.taskId === taskId)
-      .map((stat) => [stat.client, stat] as const),
-  );
-  const clients = new Set([...grouped.keys(), ...statsByClient.keys()]);
-
-  for (const client of clients) {
+  for (const client of grouped.keys()) {
     const clientRecords = grouped.get(client) ?? [];
     const sorted = [...clientRecords].sort(
       (left, right) => toTimestamp(left.time) - toTimestamp(right.time),
@@ -208,12 +179,7 @@ export function buildPingOverviewItems(
       const value = record.value;
       const time = toTimestamp(record.time);
       if (time > 0) {
-        samples.push({
-          time,
-          value,
-          count: "count" in record && typeof record.count === "number" ? record.count : undefined,
-          loss: "loss" in record && typeof record.loss === "number" ? record.loss : undefined,
-        });
+        samples.push({ time, value });
       }
       if (value > max) {
         max = value;
@@ -221,19 +187,13 @@ export function buildPingOverviewItems(
     }
 
     const lossStats = lossStatsByClient.get(client);
-    const serverStats = statsByClient.get(client);
     result.set(client, {
       client,
       isAssigned: true,
-      lastValue:
-        serverStats?.latest ??
-        (latestRecord && latestRecord.value >= 0 ? latestRecord.value : null),
-      metricIntervalMs,
+      lastValue: latestRecord && latestRecord.value >= 0 ? latestRecord.value : null,
       samples,
-      max: serverStats?.max ?? max,
-      loss:
-        serverStats?.loss ??
-        (lossStats?.total ? (lossStats.lost / lossStats.total) * 100 : null),
+      max,
+      loss: lossStats?.total ? (lossStats.lost / lossStats.total) * 100 : null,
     });
   }
 
@@ -274,7 +234,7 @@ function resolvePingAssignmentKey(
   ].join("|");
 }
 
-// 限制 RPC 与兼容接口组成的整条回退链，避免一次刷新长期占住轮询。
+// 限制一次请求的最长时间，避免刷新长期占住轮询。
 const PING_REQUEST_TIMEOUT_MS = 35_000;
 const PING_CACHE_STORAGE_KEY = "komari:lumina-plus:homepage-ping:v1";
 const PING_CACHE_TTL_MS = 5 * 60_000;
@@ -327,28 +287,6 @@ function assignedEmptyLine(
   };
 }
 
-function mergePingOverviewStats(
-  taskId: number,
-  entityIds: string[],
-  localStats: PingTaskStats[] | undefined,
-  batchedStats: PingTaskStats[],
-) {
-  const allowedClients = new Set(entityIds);
-  const merged = new Map<string, PingTaskStats>();
-  for (const stat of localStats ?? []) {
-    if (stat.taskId === taskId && allowedClients.has(stat.client)) {
-      merged.set(stat.client, stat);
-    }
-  }
-  // 批量接口包含更完整的分位数与标准差，应覆盖 records 本地推导出的同节点统计。
-  for (const stat of batchedStats) {
-    if (stat.taskId === taskId && allowedClients.has(stat.client)) {
-      merged.set(stat.client, stat);
-    }
-  }
-  return [...merged.values()];
-}
-
 export async function buildPingOverviewMap(
   hours: number,
   clientUuids: string[],
@@ -357,7 +295,6 @@ export async function buildPingOverviewMap(
   signal?: AbortSignal,
   previous?: PreviousPingOverview,
   loadOverview: typeof getPingOverview = getPingOverview,
-  loadStats?: typeof getPingOverviewStats,
   onProgress?: (result: PingOverviewMapResult) => void,
   nodeMultiTaskIds: HomepageMultiPingNodeTaskIds = {},
 ): Promise<PingOverviewMapResult> {
@@ -406,7 +343,6 @@ export async function buildPingOverviewMap(
 
   type LoadedPingOverviewTask = {
     taskId: number;
-    entityIds: string[];
     overview: Awaited<ReturnType<typeof getPingOverview>>;
   };
 
@@ -419,8 +355,6 @@ export async function buildPingOverviewMap(
     selectedTaskIds.map((taskId) => [taskId, "pending"]),
   );
   const refreshIntervals = new Map<number, number>();
-  const loadedByTask = new Map<number, LoadedPingOverviewTask>();
-  let batchedStats: PingTaskStats[] = [];
 
   // 结果 Map 只初始化一次。后续任务完成时通过反向索引更新受影响的节点，
   // 避免每个任务都重新遍历全部节点并重建占位对象。
@@ -554,71 +488,31 @@ export async function buildPingOverviewMap(
   };
 
   const applyOverview = (loaded: LoadedPingOverviewTask) => {
-    loadedByTask.set(loaded.taskId, loaded);
     successfulTaskIds.add(loaded.taskId);
     failedTaskIds.delete(loaded.taskId);
     taskStates.set(loaded.taskId, "ready");
     const {
       taskId,
-      entityIds,
       overview: {
         records,
         tasks,
-        stats,
-        intervalSeconds,
         taskAssignmentsKnown,
       },
     } = loaded;
-    const effectiveStats = mergePingOverviewStats(
-      taskId,
-      entityIds,
-      stats,
-      batchedStats,
-    );
     const task = tasks.find((item) => item.id === taskId);
-    const taskName =
-      task?.name ||
-      effectiveStats.find((stat) => stat.taskId === taskId)?.name;
+    const taskName = task?.name;
     if (taskName) taskNames.set(taskId, taskName);
     if (taskAssignmentsKnown || task?.clients.length) {
       assignedClientsByTask.set(taskId, new Set(task?.clients ?? []));
     }
     itemsByTask.set(
       taskId,
-      buildPingOverviewItems(taskId, records, effectiveStats, intervalSeconds),
+      buildPingOverviewItems(taskId, records),
     );
 
-    const taskInterval =
-      task?.interval ??
-      effectiveStats.find((stat) => stat.taskId === taskId)?.interval;
-    refreshIntervals.set(taskId, normalizeRefreshInterval(taskInterval));
+    refreshIntervals.set(taskId, normalizeRefreshInterval(task?.interval));
     updateTaskOutputs(taskId);
   };
-
-  const rebuildLoadedItems = () => {
-    for (const loaded of loadedByTask.values()) applyOverview(loaded);
-  };
-
-  const batchStatsLoader =
-    loadStats ?? (loadOverview === getPingOverview ? getPingOverviewStats : null);
-  const batchStatsRequest = batchStatsLoader
-    ? withTimeoutSignal(
-        (requestSignal) =>
-          batchStatsLoader(hours, selectedTaskIds, {
-            signal: requestSignal,
-            entityIds: normalizedUuids,
-          }),
-        PING_REQUEST_TIMEOUT_MS,
-        signal,
-      )
-        .then((stats) => {
-          batchedStats = stats;
-          rebuildLoadedItems();
-          emitProgress();
-          return stats;
-        })
-        .catch(() => [] as PingTaskStats[])
-    : Promise.resolve([] as PingTaskStats[]);
 
   // 先提交每个任务的 pending 状态，让首帧和后续轮询都能保留固定的柱状区域；
   // 之后每个任务完成或失败时再按任务更新状态。
@@ -634,11 +528,9 @@ export async function buildPingOverviewMap(
             );
             return {
               taskId,
-              entityIds,
               overview: await loadOverview(hours, taskId, {
                 signal: requestSignal,
                 entityIds,
-                includeStats: batchStatsLoader == null,
               }),
             };
           },
@@ -659,7 +551,7 @@ export async function buildPingOverviewMap(
     }),
   );
 
-  await Promise.all([batchStatsRequest, overviewRequest]);
+  await overviewRequest;
   return buildResult();
 }
 
@@ -723,16 +615,7 @@ function parseCachedPingItem(value: unknown): PingOverviewItem | null {
     ) {
       return null;
     }
-    return {
-      time: sample.time,
-      value: sample.value,
-      ...(typeof sample.count === "number" && Number.isFinite(sample.count)
-        ? { count: sample.count }
-        : {}),
-      ...(typeof sample.loss === "number" && Number.isFinite(sample.loss)
-        ? { loss: sample.loss }
-        : {}),
-    };
+    return { time: sample.time, value: sample.value };
   });
   if (samples.some((sample) => sample == null)) return null;
 
@@ -755,11 +638,6 @@ function parseCachedPingItem(value: unknown): PingOverviewItem | null {
     isAssigned: value.isAssigned,
     loadState: "ready",
     lastValue,
-    ...(typeof value.metricIntervalMs === "number" &&
-    Number.isFinite(value.metricIntervalMs) &&
-    value.metricIntervalMs > 0
-      ? { metricIntervalMs: value.metricIntervalMs }
-      : {}),
     samples: samples as PingOverviewItem["samples"],
     max:
       typeof value.max === "number" && Number.isFinite(value.max) && value.max >= 0
@@ -1068,7 +946,6 @@ async function refreshPingOverview() {
       signal,
       pingOverviewState,
       getPingOverview,
-      undefined,
       (progress) => {
         if (!isCurrent()) return;
         commitPingOverview(
@@ -1222,7 +1099,7 @@ function getPingLinesSnapshot(uuid: string) {
   return pingOverviewState.multiLines.get(uuid) ?? EMPTY_PING_LINES;
 }
 
-export function useHomepagePingOverview(viewMode: NodeViewMode) {
+export function useHomepagePingOverview() {
   const { data: me } = useAuth();
   const visibleUuids = useVisibleNodeUuids(me?.logged_in === true);
   const themeSettings = useThemeSettings();
@@ -1238,7 +1115,6 @@ export function useHomepagePingOverview(viewMode: NodeViewMode) {
     [visibleUuids, hiddenUuids],
   );
   const requestMode = resolveHomepagePingRequestMode(
-    viewMode,
     themeSettings.enableHomepageMultiPing,
     themeSettings.homepageMultiPingTaskIds,
     themeSettings.homepageMultiPingNodeTaskIds,
@@ -1252,20 +1128,8 @@ export function useHomepagePingOverview(viewMode: NodeViewMode) {
     requestMode === "multi"
       ? themeSettings.homepageMultiPingNodeTaskIds
       : EMPTY_NODE_MULTI_TASK_IDS;
-  const hasRequestedVisiblePing =
-    resolvePingAssignmentKey(
-      effectiveUuids,
-      requestedBindings,
-      requestedMultiTaskIds,
-      requestedNodeMultiTaskIds,
-    ).length > 0;
-
   useLayoutEffect(() => {
     if (!themeSettings.isReady) return;
-    // 空首页或全部节点被隐藏时不应触发 capability probe / 公开任务列表请求。
-    if (hasRequestedVisiblePing) {
-      prewarmPingOverviewDependencies();
-    }
     activeConsumers += 1;
     ensurePingOverviewStarted(
       effectiveUuids,
@@ -1286,7 +1150,6 @@ export function useHomepagePingOverview(viewMode: NodeViewMode) {
     requestedBindings,
     requestedMultiTaskIds,
     requestedNodeMultiTaskIds,
-    hasRequestedVisiblePing,
     themeSettings.isReady,
   ]);
 }
@@ -1324,7 +1187,7 @@ export function useNodePingOverviewLines(
 }
 
 export function buildPingBuckets(
-  ping: Pick<PingOverviewItem, "samples" | "metricIntervalMs">,
+  ping: Pick<PingOverviewItem, "samples">,
   count?: number,
   now = Date.now(),
 ): PingOverviewBucket[] {
@@ -1334,12 +1197,6 @@ export function buildPingBuckets(
     Number.isFinite(requestedCount) && requestedCount > 0
       ? Math.min(240, Math.max(1, Math.round(requestedCount)))
       : MAX_VISIBLE_HOMEPAGE_PING_BUCKETS;
-  const metricIntervalMs =
-    typeof ping.metricIntervalMs === "number" &&
-    Number.isFinite(ping.metricIntervalMs) &&
-    ping.metricIntervalMs > 0
-      ? ping.metricIntervalMs
-      : 0;
   const resolvedCount = boundedRequestedCount;
   const bucketMs = totalWindowMs / resolvedCount;
   const windowStart = now - totalWindowMs;
@@ -1352,49 +1209,18 @@ export function buildPingBuckets(
     bucketIndex: number,
     sample: PingOverviewItem["samples"][number],
   ) => {
-    const { total: sampleCount, lost: sampleLost, valid: sampleValid } =
-      resolvePingSampleCounts(sample);
-
-    totals[bucketIndex] += sampleCount;
-    losts[bucketIndex] += sampleLost;
-    // 聚合点的 value 已由 metric 适配层恢复为“成功样本均值”，这里按 valid count
-    // 加权；旧接口/模拟数据没有 count，仍等价于单样本累加。
-    if (sample.value >= 0 && sampleValid > 0) {
-      positiveSums[bucketIndex] += sample.value * sampleValid;
-      positiveCounts[bucketIndex] += sampleValid;
+    totals[bucketIndex] += 1;
+    if (sample.value < 0) {
+      losts[bucketIndex] += 1;
+    } else {
+      positiveSums[bucketIndex] += sample.value;
+      positiveCounts[bucketIndex] += 1;
     }
   };
 
   for (const sample of ping.samples ?? []) {
-    if (metricIntervalMs > bucketMs) {
-      const sampleEnd = sample.time + metricIntervalMs;
-      if (sampleEnd <= windowStart || sample.time > now) continue;
-
-      // 后端时间戳是聚合桶起点。以每个可视 bucket 的中点判断它属于哪个
-      // 聚合区间，相当于对粗粒度数据做 sample-and-hold：不会制造规律性空洞，
-      // 也不会因为减少 DOM 数量而让不同节点的柱宽不一致。
-      for (let index = 0; index < resolvedCount; index += 1) {
-        const midpoint = windowStart + (index + 0.5) * bucketMs;
-        if (midpoint >= sample.time && midpoint < sampleEnd) {
-          addSampleToBucket(index, sample);
-        }
-      }
-      continue;
-    }
-
-    let sampleTime = sample.time;
-    if (metricIntervalMs > 0) {
-      const sampleEnd = sample.time + metricIntervalMs;
-      if (sampleEnd <= windowStart || sample.time > now) continue;
-      const overlapStart = Math.max(sample.time, windowStart);
-      const overlapEnd = Math.min(sampleEnd, now);
-      if (overlapEnd < overlapStart) continue;
-      sampleTime = overlapStart + (overlapEnd - overlapStart) / 2;
-    } else if (sample.time < windowStart || sample.time > now) {
-      continue;
-    }
-
-    let bucketIndex = Math.floor((sampleTime - windowStart) / bucketMs);
+    if (sample.time < windowStart || sample.time > now) continue;
+    let bucketIndex = Math.floor((sample.time - windowStart) / bucketMs);
     if (bucketIndex < 0) continue;
     if (bucketIndex >= resolvedCount) bucketIndex = resolvedCount - 1;
     addSampleToBucket(bucketIndex, sample);
@@ -1420,20 +1246,20 @@ export function buildPingBuckets(
 }
 
 export function usePingBuckets(
-  ping: Pick<PingOverviewItem, "samples" | "metricIntervalMs">,
+  ping: Pick<PingOverviewItem, "samples">,
   count?: number,
   enabled = true,
 ): PingOverviewBucket[] {
-  const { samples, metricIntervalMs } = ping;
+  const { samples } = ping;
   // 轮询返回同引用数据时窗口也要随时间前移,否则时间轴最多滞后约 2 个桶;分钟粒度足够
   // (桶宽 ≥150s),也避免每个 ws tick 都重算。
   const now = useMinuteClock(enabled);
   return useMemo(
     () =>
       enabled
-        ? buildPingBuckets({ samples, metricIntervalMs }, count, now)
+        ? buildPingBuckets({ samples }, count, now)
         : EMPTY_PING_BUCKETS,
-    [count, enabled, metricIntervalMs, now, samples],
+    [count, enabled, now, samples],
   );
 }
 

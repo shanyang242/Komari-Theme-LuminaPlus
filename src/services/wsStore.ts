@@ -111,13 +111,12 @@ function emptyMetrics(info: NodeInfo, online: boolean | null): NodeMetrics {
     netDown: 0,
     trafficUp: 0,
     trafficDown: 0,
+    trafficUsedEffective: null,
     uptime: 0,
     load1: 0,
     load5: 0,
     load15: 0,
     process: 0,
-    connectionsTcp: 0,
-    connectionsUdp: 0,
     updatedAt: 0,
   };
 }
@@ -185,13 +184,12 @@ function mergeRealtime(
     netDown: rt.network?.down ?? 0,
     trafficUp: trafficTotals.up,
     trafficDown: trafficTotals.down,
+    trafficUsedEffective: rt.trafficUsedEffective ?? null,
     uptime: rt.uptime ?? 0,
     load1: rt.load?.load1 ?? 0,
     load5: rt.load?.load5 ?? 0,
     load15: rt.load?.load15 ?? 0,
     process: rt.process ?? 0,
-    connectionsTcp: rt.connections?.tcp ?? 0,
-    connectionsUdp: rt.connections?.udp ?? 0,
     updatedAt: updatedAt > 0 ? updatedAt : metrics.updatedAt,
   };
 }
@@ -212,13 +210,12 @@ function shallowEqualMetrics(a: NodeMetrics, b: NodeMetrics) {
     a.netDown === b.netDown &&
     a.trafficUp === b.trafficUp &&
     a.trafficDown === b.trafficDown &&
+    a.trafficUsedEffective === b.trafficUsedEffective &&
     a.uptime === b.uptime &&
     a.load1 === b.load1 &&
     a.load5 === b.load5 &&
     a.load15 === b.load15 &&
     a.process === b.process &&
-    a.connectionsTcp === b.connectionsTcp &&
-    a.connectionsUdp === b.connectionsUdp &&
     a.updatedAt === b.updatedAt
   );
 }
@@ -252,6 +249,7 @@ function shallowEqualNodeInfo(a: NodeInfo, b: NodeInfo) {
     a.public_remark === b.public_remark &&
     a.traffic_limit === b.traffic_limit &&
     a.traffic_limit_type === b.traffic_limit_type &&
+    a.traffic_reset_day === b.traffic_reset_day &&
     a.created_at === b.created_at
     // updated_at 是未展示的心跳字段，不应触发整个节点列表重渲染。
   );
@@ -472,6 +470,12 @@ function asNumber(value: unknown, fallback = 0): number {
   return fallback;
 }
 
+function asOptionalNonNegativeNumber(value: unknown): number | null {
+  if (value == null) return null;
+  const parsed = asNumber(value, Number.NaN);
+  return Number.isFinite(parsed) ? Math.max(0, parsed) : null;
+}
+
 function asRecord(value: unknown): RealtimePayload {
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as RealtimePayload)
@@ -509,12 +513,6 @@ function toTimestamp(value: string | number | undefined): number {
   return Number.isNaN(parsed) ? 0 : parsed;
 }
 
-// 旧扁平协议的 connections 是 TCP+UDP 合计。
-export function resolveFlatConnectionsTcp(payload: RealtimePayload): number {
-  if (payload.connections_tcp != null) return asNumber(payload.connections_tcp);
-  return Math.max(0, asNumber(payload.connections) - asNumber(payload.connections_udp));
-}
-
 function normalizeRealtime(
   raw: unknown,
   meta: NodeInfo,
@@ -522,54 +520,6 @@ function normalizeRealtime(
 ): NodeRealtime | null {
   const payload = asRecord(raw);
   if (Object.keys(payload).length === 0) return null;
-
-  const cpu = asRecord(payload.cpu);
-  const ram = asRecord(payload.ram);
-  const swap = asRecord(payload.swap);
-  const load = asRecord(payload.load);
-  const disk = asRecord(payload.disk);
-  const network = asRecord(payload.network);
-  const connections = asRecord(payload.connections);
-  const hasNestedShape =
-    Object.keys(cpu).length > 0 ||
-    Object.keys(ram).length > 0 ||
-    Object.keys(network).length > 0;
-
-  if (hasNestedShape) {
-    return {
-      cpu: { usage: asNumber(cpu.usage) },
-      ram: {
-        total: asNumber(ram.total, metrics.ramTotal || meta.mem_total),
-        used: asNumber(ram.used),
-      },
-      swap: {
-        total: asNumber(swap.total, metrics.swapTotal || meta.swap_total),
-        used: asNumber(swap.used),
-      },
-      load: {
-        load1: asNumber(load.load1),
-        load5: asNumber(load.load5),
-        load15: asNumber(load.load15),
-      },
-      disk: {
-        total: asNumber(disk.total, metrics.diskTotal || meta.disk_total),
-        used: asNumber(disk.used),
-      },
-      network: {
-        up: asNumber(network.up),
-        down: asNumber(network.down),
-        totalUp: asNumber(network.totalUp),
-        totalDown: asNumber(network.totalDown),
-      },
-      connections: {
-        tcp: asNumber(connections.tcp),
-        udp: asNumber(connections.udp),
-      },
-      uptime: asNumber(payload.uptime),
-      process: asNumber(payload.process),
-      updated_at: (payload.updated_at ?? payload.time) as string | number | undefined,
-    };
-  }
 
   return {
     cpu: { usage: asNumber(payload.cpu) },
@@ -596,13 +546,10 @@ function normalizeRealtime(
       totalUp: asNumber(payload.net_total_up),
       totalDown: asNumber(payload.net_total_down),
     },
-    connections: {
-      tcp: resolveFlatConnectionsTcp(payload),
-      udp: asNumber(payload.connections_udp),
-    },
     uptime: asNumber(payload.uptime),
     process: asNumber(payload.process),
     updated_at: (payload.updated_at ?? payload.time) as string | number | undefined,
+    trafficUsedEffective: asOptionalNonNegativeNumber(payload.traffic_used_effective),
   };
 }
 

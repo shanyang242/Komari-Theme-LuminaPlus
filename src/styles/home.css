@@ -556,35 +556,6 @@
   text-overflow: ellipsis;
 }
 
-.overview-card-rating {
-  flex: 0 1 auto;
-  min-width: 0;
-  max-width: 48%;
-  overflow: hidden;
-  font-size: 12px;
-  font-weight: 720;
-  line-height: 1.2;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-  font-variant-numeric: tabular-nums;
-}
-
-.overview-card-rating[data-rating-level="0"] {
-  color: color-mix(in srgb, var(--status-success) 72%, var(--text-secondary));
-}
-
-.overview-card-rating[data-rating-level="1"] {
-  color: var(--accent-500);
-}
-
-.overview-card-rating[data-rating-level="2"] {
-  color: var(--progress-memory);
-}
-
-.overview-card-rating[data-rating-level="3"] {
-  color: color-mix(in srgb, #f5b84b 82%, var(--text-primary));
-}
-
 /* 在线条:左绿=在线、右红=离线,中间中性轨道=未知。初始用中性而非红色,避免指标
    到达前首帧闪红;随后绿/红从两端同时长入。准确的「12 / 14」就在其上方,所以这条
    只作快速一瞥用。 */
@@ -689,12 +660,9 @@
   background: color-mix(in srgb, var(--hover-bg-a) 72%, transparent);
 }
 
-/* 激活 tab 的描边+浮起阴影与费用抽屉的排序 tab(cost-summary.css 的 .cost-summary-sort-tab)
-   完全一致,组选择器只定义这一处;背景与文字色两处风格不同(费用抽屉用硬编码固定色,且暗色下
-   不另配阴影),仍各自定义。 */
+/* 分组与区域选中状态共用描边和阴影。 */
 .home-group-tabs button[data-active="true"],
-.home-region-chip[data-active="true"],
-.cost-summary-sort-tab[data-active="true"] {
+.home-region-chip[data-active="true"] {
   border-color: rgba(82, 82, 91, 0.28);
   box-shadow:
     0 10px 22px -18px rgba(0, 0, 0, 0.34),
@@ -703,8 +671,7 @@
 }
 
 [data-appearance="dark"] .home-group-tabs button[data-active="true"],
-[data-appearance="dark"] .home-region-chip[data-active="true"],
-[data-appearance="dark"] .cost-summary-sort-tab[data-active="true"] {
+[data-appearance="dark"] .home-region-chip[data-active="true"] {
   border-color: rgba(255, 255, 255, 0.12);
 }
 
@@ -780,12 +747,6 @@
 
   .overview-card-sub-compact {
     display: inline;
-  }
-
-  .overview-card-rating {
-    flex: 0 0 auto;
-    max-width: 5.5em;
-    font-size: 11px;
   }
 
   .overview-card-caption {
@@ -897,83 +858,12 @@
   padding-top: 0;
 }
 
-/* 首页控件条复用卡片网格列定义：分组标签落在第一列，排序控件钉在最后一列。 */
+/* 首页分组控件条。 */
 .home-controls-bar {
   align-items: center;
 }
 
-.home-sort {
-  position: relative;
-}
-
-.home-controls-bar .home-sort {
-  grid-column: -2 / -1;
-  justify-self: end;
-  align-self: center;
-}
-
-.home-sort-trigger {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 38px;
-  padding: 0 12px;
-  border: 1px solid color-mix(in srgb, var(--border-strong) 54%, transparent);
-  border-radius: 14px;
-  background: var(--surface-a);
-  box-shadow:
-    0 14px 30px -26px rgba(0, 0, 0, 0.5),
-    inset 0 1px 0 color-mix(in srgb, white 16%, transparent);
-  color: var(--text-secondary);
-  font-size: 12px;
-  font-weight: 650;
-  white-space: nowrap;
-  cursor: pointer;
-  transition:
-    color 160ms ease,
-    border-color 160ms ease,
-    background 160ms ease;
-}
-
-.home-sort-trigger svg {
-  display: block;
-  flex: none;
-}
-
-.home-sort-trigger:hover,
-.home-sort-trigger[aria-expanded="true"] {
-  color: var(--text-primary);
-  border-color: var(--border-strong);
-  background: color-mix(in srgb, var(--hover-bg-a) 60%, var(--surface-a));
-}
-
-/* panel/item 骨架及 hover/激活态与实例切换器共享,见 surface.css 的弹出菜单组选择器;
-   这里只保留排序浮层的差异项。 */
-.home-sort-panel {
-  right: 0;
-  min-width: 180px;
-  /* 移动端不超出视口 */
-  max-width: min(260px, calc(100vw - 32px));
-}
-
-.home-sort-item {
-  gap: 8px;
-}
-
-.home-sort-item-label {
-  flex: 1 1 auto;
-}
-
-.home-sort-item svg {
-  display: block;
-  flex: none;
-}
-
-.home-sort-item[data-active="true"] svg {
-  color: var(--accent-500);
-}
-
-/* 移动端让分组与排序并排；分组可横向滚动，排序保持在右侧。 */
+/* 移动端分组标签可横向滚动。 */
 @media (max-width: 768px) {
   .home-controls-bar {
     display: flex;
@@ -986,13 +876,6 @@
     width: auto;
     min-width: 0;
   }
-
-  .home-controls-bar .home-sort {
-    grid-column: auto;
-    align-self: auto;
-    flex: 0 0 auto;
-    margin-inline-start: auto;
-  }
 }
 
 @media (min-width: 1024px) {
@@ -1003,74 +886,4 @@
   .home-dashboard {
     padding-top: 24px;
   }
-}
-
-/* 迷你档最多 5 列，但任何断点都不允许卡片窄于 260px；断点按页面实际 gutter
-   和列间距反推，避免 1280px 左右被固定列数压到 216px。 */
-.node-grid-mini {
-  grid-template-columns: repeat(5, minmax(var(--mini-card-min-width, 260px), 1fr));
-}
-
-@media (max-width: 1440px) {
-  .node-grid-mini {
-    grid-template-columns: repeat(4, minmax(var(--mini-card-min-width, 260px), 1fr));
-  }
-}
-
-@media (max-width: 1150px) {
-  .node-grid-mini {
-    grid-template-columns: repeat(3, minmax(var(--mini-card-min-width, 260px), 1fr));
-  }
-}
-
-@media (max-width: 860px) {
-  .node-grid-mini {
-    grid-template-columns: repeat(2, minmax(var(--mini-card-min-width, 260px), 1fr));
-  }
-}
-
-@media (max-width: 580px) {
-  .node-grid-mini {
-    grid-template-columns: minmax(min(100%, var(--mini-card-min-width, 260px)), 1fr);
-  }
-}
-
-/* 迷你与列表档总览卡使用密集变体。 */
-.home-overview.is-dense {
-  gap: 10px;
-  margin-bottom: 14px;
-}
-
-.home-overview.is-dense .overview-card {
-  min-height: 0;
-  gap: 6px;
-  border-radius: 12px;
-  padding: 10px 13px;
-}
-
-.home-overview.is-dense .overview-card-label {
-  font-size: 10px;
-  letter-spacing: 0.1em;
-}
-
-.home-overview.is-dense .overview-card-value {
-  font-size: 21px;
-}
-
-.home-overview.is-dense .overview-card-unit {
-  font-size: 11px;
-}
-
-.home-overview.is-dense .overview-card[data-metric="online"] .overview-card-value {
-  font-size: 19px;
-}
-
-.home-overview.is-dense .overview-card[data-metric="online"] .overview-card-unit {
-  font-size: 10px;
-}
-
-.home-overview.is-dense .overview-card-action {
-  width: 22px;
-  min-width: 22px;
-  height: 22px;
 }

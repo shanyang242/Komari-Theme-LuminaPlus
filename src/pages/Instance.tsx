@@ -5,17 +5,14 @@ import "uplot/dist/uPlot.min.css";
 import { InstanceDetails } from "@/components/instance/InstanceDetails";
 import { PingChart } from "@/components/instance/PingChart";
 import { LoadChart } from "@/components/instance/LoadChart";
-import { IpInfoPanel } from "@/components/instance/IpInfoPanel";
 import { Spinner } from "@/components/ui/Spinner";
 import {
   buildLoadTimeRangeOptions,
   buildPingTimeRangeOptions,
 } from "@/components/instance/chartShared";
 import { usePublicConfig } from "@/hooks/usePublicConfig";
-import { useAuth } from "@/hooks/useAuth";
 import { useNodeMeta, useNodeStoreStatus } from "@/hooks/useNode";
 import { useThemeSettings } from "@/hooks/useThemeSettings";
-import { useIpInfo } from "@/hooks/useIpInfo";
 
 const DEFAULT_PING_HOURS = 4;
 type TimeRangeOption = ReturnType<typeof buildLoadTimeRangeOptions>[number];
@@ -49,37 +46,23 @@ function RangeSelector({
 export function Instance() {
   const { uuid } = useParams<{ uuid: string }>();
   const { data: config } = usePublicConfig();
-  const { data: me, isPending: authPending } = useAuth();
   const themeSettings = useThemeSettings();
   const meta = useNodeMeta(uuid ?? "");
   const storeStatus = useNodeStoreStatus(Boolean(uuid));
-  const [chartType, setChartType] = useState<"load" | "ping" | "ip">("load");
+  const [chartType, setChartType] = useState<"load" | "ping">("load");
   const [loadHours, setLoadHours] = useState(0);
   const [pingHours, setPingHours] = useState(DEFAULT_PING_HOURS);
   const chartControlsRef = useRef<HTMLDivElement | null>(null);
 
-  const metricRetentionHours =
-    config?.metric_retention_days && config.metric_retention_days > 0
-      ? config.metric_retention_days * 24
-      : null;
-
   const loadRanges = useMemo(
-    () => buildLoadTimeRangeOptions(metricRetentionHours ?? config?.record_preserve_time),
-    [config?.record_preserve_time, metricRetentionHours],
+    () => buildLoadTimeRangeOptions(config?.record_preserve_time),
+    [config?.record_preserve_time],
   );
   const pingRanges = useMemo(
-    () => buildPingTimeRangeOptions(metricRetentionHours ?? config?.ping_record_preserve_time),
-    [config?.ping_record_preserve_time, metricRetentionHours],
+    () => buildPingTimeRangeOptions(config?.ping_record_preserve_time),
+    [config?.ping_record_preserve_time],
   );
   const showPingChart = themeSettings.isReady && themeSettings.showPingChart;
-  const ipInfoEnabled = !authPending && me?.logged_in === true;
-  const ipInfo = useIpInfo(
-    uuid ?? "",
-    meta?.ipv4,
-    meta?.ipv6,
-    meta?.region,
-    ipInfoEnabled,
-  );
 
   const alignCharts = useCallback(() => {
     const frame = window.requestAnimationFrame(() => {
@@ -113,12 +96,6 @@ export function Instance() {
       setChartType("load");
     }
   }, [chartType, showPingChart]);
-
-  useEffect(() => {
-    if (!ipInfo.available && chartType === "ip") {
-      setChartType("load");
-    }
-  }, [chartType, ipInfo.available]);
 
   if (!uuid) return null;
 
@@ -184,18 +161,6 @@ export function Instance() {
               Ping
             </button>
           )}
-          {ipInfo.available && (
-            <button
-              type="button"
-              data-active={chartType === "ip" ? "true" : "false"}
-              aria-pressed={chartType === "ip"}
-              onClick={() => {
-                startTransition(() => setChartType("ip"));
-              }}
-            >
-              IP 信息
-            </button>
-          )}
         </div>
         {chartType === "load" && (
           <RangeSelector
@@ -232,13 +197,6 @@ export function Instance() {
               active={chartType === "ping"}
             />
           ) : null}
-        </div>
-        <div
-          className="instance-chart-view"
-          hidden={chartType !== "ip"}
-          aria-hidden={chartType !== "ip"}
-        >
-          {chartType === "ip" && ipInfo.available ? <IpInfoPanel lookups={ipInfo.lookups} /> : null}
         </div>
       </div>
     </div>

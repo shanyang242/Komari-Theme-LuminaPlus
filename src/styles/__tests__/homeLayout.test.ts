@@ -8,10 +8,6 @@ const controlsSource = readFileSync(
   new URL("../../components/shell/FloatingControls.tsx", import.meta.url),
   "utf8",
 );
-const miniSource = readFileSync(
-  new URL("../../components/node/MiniNodeCard.tsx", import.meta.url),
-  "utf8",
-);
 const nodeGridSource = readFileSync(
   new URL("../../components/node/NodeGrid.tsx", import.meta.url),
   "utf8",
@@ -43,26 +39,11 @@ describe("home responsive layout contracts", () => {
     expect(surfaceCss).toMatch(/padding-right:\s*max\(var\(--app-gutter\)/);
   });
 
-  it("enforces the mini card width floor before adding another fixed column", () => {
-    expect(homeCss).toContain("minmax(var(--mini-card-min-width, 260px), 1fr)");
-    for (const breakpoint of [1440, 1150, 860, 580]) {
-      expect(homeCss).toContain(`@media (max-width: ${breakpoint}px)`);
-    }
-  });
-
   it("resets child panels on collapse and keeps home-only routing out of controls", () => {
     expect(controlsSource).toContain("if (nextCollapsed) setColorsOpen(false)");
     expect(controlsSource).not.toContain("useLocation");
     expect(controlsSource).not.toContain("useSearchParams");
     expect(controlsSource).not.toContain("usePublicConfig");
-  });
-
-  it("keeps mini cards observer-free and URL-encodes their detail route", () => {
-    expect(miniSource).not.toMatch(
-      /from\s+["']\.\/(?:MetricBar|LatencyBars|QualityBars|CanvasStrip)["']/,
-    );
-    expect(miniSource).not.toContain("<canvas");
-    expect(miniSource).toContain("encodeURIComponent(node.uuid)");
   });
 
   it("does not render zero-value overview cards before the node store is hydrated", () => {

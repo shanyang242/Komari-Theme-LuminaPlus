@@ -3,15 +3,10 @@ import { Link, Navigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import {
   ArrowLeft,
-  ChevronDown,
-  ChevronUp,
   CircleDollarSign,
   EyeOff,
-  Grid3x3,
-  ImageIcon,
   LayoutTemplate,
   LayoutGrid,
-  List,
   ListFilter,
   Moon,
   RefreshCw,
@@ -22,7 +17,6 @@ import {
   Sparkles,
   Sun,
   SunMoon,
-  Video,
   Wallpaper,
 } from "lucide-react";
 import { clsx } from "clsx";
@@ -31,7 +25,6 @@ import { MultiPingNodeConfigPanel } from "@/components/theme/MultiPingNodeConfig
 import { Spinner } from "@/components/ui/Spinner";
 import { Flag } from "@/components/ui/Flag";
 import { usePublicConfig } from "@/hooks/usePublicConfig";
-import { useAdminEntryPath } from "@/hooks/useAdminEntryPath";
 import { useHourlyClock } from "@/hooks/useClock";
 import { queryClient } from "@/services/queryClient";
 import {
@@ -43,12 +36,10 @@ import {
 } from "@/services/api";
 import type { AdminClient, PingTask, ThemeSettings } from "@/types/komari";
 import {
-  DEFAULT_BACKGROUND_VIDEO_URL,
   type BackgroundPosition,
   type BackgroundSize,
   normalizeBackgroundAlignment,
   normalizeBackgroundUrl,
-  normalizeBackgroundVideoUrl,
   parseBackgroundAlignment,
 } from "@/utils/background";
 import {
@@ -66,11 +57,6 @@ import {
 } from "@/utils/cost";
 import { normalizeNodeIdentityList } from "@/utils/nodeIdentity";
 import {
-  dedupeGroupLabels,
-  normalizeHomeGroupOrder,
-  sortHomeGroupOptions,
-} from "@/utils/homeNodes";
-import {
   HOMEPAGE_MULTI_PING_TASK_COUNT,
   normalizeHomepageMultiPingNodeTaskIds,
   normalizeHomepageMultiPingTaskIds,
@@ -83,14 +69,8 @@ import {
   normalizeHomeHeaderVisibleSeconds,
   normalizeThemeSettings,
   type AmbientEffect,
-  type BackgroundMediaType,
   type ResolvedThemeSettings,
 } from "@/utils/themeSettings";
-import {
-  getDefaultOverviewRatingLabelText,
-  type OverviewRatingKind,
-} from "@/utils/overviewRating";
-import { HOME_SORT_FIELDS, HOME_SORT_FIELD_LABELS } from "@/utils/homeSort";
 
 const APPEARANCE_OPTIONS = [
   { value: "light", label: "浅色", icon: Sun },
@@ -100,18 +80,8 @@ const APPEARANCE_OPTIONS = [
 const NODE_VIEW_MODE_OPTIONS = [
   { value: "large", label: "大卡片", icon: LayoutGrid },
   { value: "compact", label: "小卡片", icon: Rows3 },
-  { value: "mini", label: "迷你卡片", icon: Grid3x3 },
-  { value: "list", label: "列表", icon: List },
 ] as const;
-const MOBILE_VIEW_MODE_OPTIONS = NODE_VIEW_MODE_OPTIONS.filter((option) => option.value !== "list");
-const BACKGROUND_MEDIA_TYPE_OPTIONS: Array<{
-  value: BackgroundMediaType;
-  label: string;
-  icon: typeof ImageIcon;
-}> = [
-  { value: "image", label: "图片", icon: ImageIcon },
-  { value: "video", label: "视频", icon: Video },
-];
+const MOBILE_VIEW_MODE_OPTIONS = NODE_VIEW_MODE_OPTIONS;
 const BACKGROUND_SIZE_OPTIONS: Array<{ value: BackgroundSize; label: string }> = [
   { value: "cover", label: "填满" },
   { value: "contain", label: "完整" },
@@ -142,16 +112,6 @@ function localDateInputMax() {
     String(now.getDate()).padStart(2, "0"),
   ].join("-");
 }
-
-const OVERVIEW_RATING_LABEL_FIELDS: Array<{
-  key: OverviewRatingKind;
-  title: string;
-  toggleKey: "showTrafficRating" | "showBandwidthRating" | "showAssetRating";
-}> = [
-  { key: "traffic", title: "累计流量", toggleKey: "showTrafficRating" },
-  { key: "bandwidth", title: "实时带宽", toggleKey: "showBandwidthRating" },
-  { key: "asset", title: "资产概览", toggleKey: "showAssetRating" },
-];
 
 function sortTasks(tasks: PingTask[]) {
   return [...tasks].sort((left, right) => {
@@ -304,25 +264,12 @@ function pickManagedThemeSettings(settings: ResolvedThemeSettings) {
     showGroupTabs: settings.showGroupTabs,
     showRegionBar: settings.showRegionBar,
     showCardGroup: settings.showCardGroup,
-    homeGroupOrder: settings.homeGroupOrder,
-    enableHomeSort: settings.enableHomeSort,
-    homeSortField: settings.homeSortField,
-    homeSortDirection: settings.homeSortDirection,
     showCostsToGuests: settings.showCostsToGuests,
     showCostSummary: settings.showCostSummary,
     showCostSummaryFloatingButton: settings.showCostSummaryFloatingButton,
-    showOverviewRatings: settings.showOverviewRatings,
-    showTrafficRating: settings.showTrafficRating,
-    showBandwidthRating: settings.showBandwidthRating,
-    showAssetRating: settings.showAssetRating,
-    trafficRatingLabels: settings.trafficRatingLabels,
-    bandwidthRatingLabels: settings.bandwidthRatingLabels,
-    assetRatingLabels: settings.assetRatingLabels,
     compactShowTrafficTotal: settings.compactShowTrafficTotal,
     compactShowBilling: settings.compactShowBilling,
     compactShowUptime: settings.compactShowUptime,
-    showConnections: settings.showConnections,
-    showTodayTrafficPopover: settings.showTodayTrafficPopover,
     hiddenNodes: settings.hiddenNodes,
     costIgnoredNodes: settings.costIgnoredNodes,
     // 按键排序:costPremiums 的键序随编辑历史漂移(删掉再加回同一键会排到最后),而 dirty /
@@ -334,11 +281,8 @@ function pickManagedThemeSettings(settings: ResolvedThemeSettings) {
     ),
     costRateApiUrl: settings.costRateApiUrl,
     enableBackgroundImage: settings.enableBackgroundImage,
-    backgroundMediaType: settings.backgroundMediaType,
     backgroundImage: settings.backgroundImage,
     backgroundImageMobile: settings.backgroundImageMobile,
-    backgroundVideo: settings.backgroundVideo,
-    backgroundVideoDark: settings.backgroundVideoDark,
     backgroundAlignment: settings.backgroundAlignment,
     surfaceOpacity: settings.surfaceOpacity,
     enableAmbientEffect: settings.enableAmbientEffect,
@@ -352,18 +296,13 @@ function managedSettingsSignature(settings: ThemeSettings & Record<string, unkno
 
 type ManagedThemeSettings = ReturnType<typeof pickManagedThemeSettings>;
 
-// 表单草稿:与托管设置同名同构,仅三处以「编辑态」存储——隐藏/忽略列表在表单里是多行文本
-// (提交时再归一化回数组),三个评级名称合成按 kind 索引的对象(UI 按 OVERVIEW_RATING_LABEL_FIELDS
-// 循环渲染)。其余字段直接透传,不维护第二份键清单。
+// 表单草稿:与托管设置同名同构，仅隐藏/忽略列表以多行文本编辑
+// (提交时再归一化回数组)。其余字段直接透传,不维护第二份键清单。
 type ThemeDraft = Omit<
   ManagedThemeSettings,
   | "hiddenNodes"
   | "costIgnoredNodes"
-  | "trafficRatingLabels"
-  | "bandwidthRatingLabels"
-  | "assetRatingLabels"
 > & {
-  ratingLabels: Record<OverviewRatingKind, string>;
   hiddenNodesText: string;
   costIgnoredText: string;
 };
@@ -373,18 +312,10 @@ function draftFromSettings(settings: ResolvedThemeSettings): ThemeDraft {
   const {
     hiddenNodes,
     costIgnoredNodes,
-    trafficRatingLabels,
-    bandwidthRatingLabels,
-    assetRatingLabels,
     ...rest
   } = pickManagedThemeSettings(settings);
   return {
     ...rest,
-    ratingLabels: {
-      traffic: trafficRatingLabels,
-      bandwidth: bandwidthRatingLabels,
-      asset: assetRatingLabels,
-    },
     hiddenNodesText: hiddenNodes.join("\n"),
     costIgnoredText: costIgnoredNodes.join("\n"),
   };
@@ -795,8 +726,6 @@ const MultiPingNodeConfigControl = memo(function MultiPingNodeConfigControl({
 
 export function ThemeManage() {
   const now = useHourlyClock();
-  const adminEntryPath = useAdminEntryPath();
-  const adminPingHref = adminEntryPath ? `${adminEntryPath}/ping` : undefined;
   const {
     data: config,
     isLoading: configLoading,
@@ -915,24 +844,6 @@ export function ThemeManage() {
     () => new Map(sortedClients.map((client) => [client.uuid, client])),
     [sortedClients],
   );
-
-  // 后端实际存在的分组,按首页 Tab 的渲染顺序排列(已配置的在前,未排序的在后)。
-  // 用户直接拖动这个列表来调整顺序。
-  const availableGroups = useMemo(
-    () => dedupeGroupLabels(sortedClients.map((client) => client.group)),
-    [sortedClients],
-  );
-  const orderedDraftGroups = useMemo(
-    () => sortHomeGroupOptions(availableGroups, draft.homeGroupOrder),
-    [availableGroups, draft.homeGroupOrder],
-  );
-  const moveGroup = (index: number, direction: -1 | 1) => {
-    const target = index + direction;
-    if (target < 0 || target >= orderedDraftGroups.length) return;
-    const next = [...orderedDraftGroups];
-    [next[index], next[target]] = [next[target], next[index]];
-    patch("homeGroupOrder", next);
-  };
 
   const filteredTasks = useMemo(() => {
     const keyword = taskSearch.trim().toLowerCase();
@@ -1088,61 +999,24 @@ export function ThemeManage() {
     draft.homepageMultiPingTaskIds.length !== HOMEPAGE_MULTI_PING_TASK_COUNT;
 
   // 由当前草稿拼出的设置 payload,保存请求和 dirty 判断都用它。草稿字段与设置同名,这里只做
-  // 「编辑态 → 存储态」的换形与归一化;文本域(hiddenNodesText/costIgnoredText)和 ratingLabels
-  // 解构出来换回存储字段,其余原样透传。
-  const normalizedBackgroundVideo = normalizeBackgroundVideoUrl(draft.backgroundVideo);
-  const normalizedBackgroundVideoDark = normalizeBackgroundVideoUrl(draft.backgroundVideoDark);
-  const backgroundVideoLightMalformed =
-    draft.backgroundVideo.trim() !== "" && !normalizedBackgroundVideo;
-  const backgroundVideoDarkInvalid =
-    draft.backgroundVideoDark.trim() !== "" && !normalizedBackgroundVideoDark;
-  const backgroundVideoLightInvalid =
-    draft.backgroundMediaType === "video" && !normalizedBackgroundVideo;
-  const videoInputInvalid =
-    draft.backgroundMediaType === "video" &&
-    (!normalizedBackgroundVideo || backgroundVideoDarkInvalid);
-
+  // 「编辑态 → 存储态」的换形与归一化;文本域解构出来换回存储字段。
   const draftThemeSettings = useMemo<ThemeSettings>(() => {
-    const {
-      ratingLabels,
-      hiddenNodesText,
-      costIgnoredText,
-      ...rest
-    } = draft;
+    const { hiddenNodesText, costIgnoredText, ...rest } = draft;
     return {
       ...rest,
       homepagePingBindings: pruneBindings(rest.homepagePingBindings),
       homepageMultiPingNodeTaskIds: normalizeHomepageMultiPingNodeTaskIds(
         rest.homepageMultiPingNodeTaskIds,
       ),
-      homeGroupOrder: normalizeHomeGroupOrder(rest.homeGroupOrder),
-      trafficRatingLabels: ratingLabels.traffic,
-      bandwidthRatingLabels: ratingLabels.bandwidth,
-      assetRatingLabels: ratingLabels.asset,
       hiddenNodes: normalizeNodeIdentityList(hiddenNodesText),
       costIgnoredNodes: normalizeCostIgnoredNodes(costIgnoredText),
       costPremiums: normalizeCostPremiums(rest.costPremiums),
       costRateApiUrl: normalizeCostRateApiUrl(rest.costRateApiUrl),
       backgroundImage: normalizeBackgroundUrl(rest.backgroundImage),
       backgroundImageMobile: normalizeBackgroundUrl(rest.backgroundImageMobile),
-      backgroundVideo: backgroundVideoLightMalformed
-        ? sourceThemeSettings.backgroundVideo
-        : normalizedBackgroundVideo || DEFAULT_BACKGROUND_VIDEO_URL,
-      backgroundVideoDark: backgroundVideoDarkInvalid
-        ? sourceThemeSettings.backgroundVideoDark
-        : normalizedBackgroundVideoDark,
       backgroundAlignment: normalizeBackgroundAlignment(rest.backgroundAlignment),
     };
-  }, [
-    backgroundVideoDarkInvalid,
-    backgroundVideoLightMalformed,
-    draft,
-    normalizedBackgroundVideo,
-    normalizedBackgroundVideoDark,
-    sourceThemeSettings.backgroundVideo,
-    sourceThemeSettings.backgroundVideoDark,
-  ]);
-
+  }, [draft]);
   // 只比较本页实际管理的设置。enableAdminButton/showPingChart 这类隐藏设置会通过
   // baseSettings 在保存时保留,但不该让表单永远显示为 dirty。
   const draftSignature = useMemo(
@@ -1154,10 +1028,7 @@ export function ThemeManage() {
   // 标为 dirty(重置可用),而保存按钮再额外按合法性把关(见下文)。
   const costRateApiUrlDirty =
     draft.costRateApiUrl.trim() !== sourceThemeSettings.costRateApiUrl;
-  const isDirty =
-    draftSignature !== sourceSignature ||
-    costRateApiUrlDirty ||
-    videoInputInvalid;
+  const isDirty = draftSignature !== sourceSignature || costRateApiUrlDirty;
 
   // 用户重新编辑后清掉「已保存」提示,避免过期的成功提示和 dirty 表单并存。
   useEffect(() => {
@@ -1202,7 +1073,6 @@ export function ThemeManage() {
       !config?.theme ||
       savingDraftRef.current ||
       draftCostRateApiUrlInvalid ||
-      videoInputInvalid ||
       draftMultiPingInvalid
     ) {
       return false;
@@ -1218,6 +1088,16 @@ export function ThemeManage() {
         ...draftThemeSettings,
       };
       delete nextSettings.homepagePingTask;
+      for (const key of [
+        "enableHomeSort", "homeSortField", "homeSortDirection",
+        "homeGroupOrder",
+        "showOverviewRatings", "showTrafficRating", "showBandwidthRating", "showAssetRating",
+        "trafficRatingLabels", "bandwidthRatingLabels", "assetRatingLabels",
+        "showConnections", "showTodayTrafficPopover",
+        "backgroundMediaType", "backgroundVideo", "backgroundVideoDark",
+      ]) {
+        delete nextSettings[key];
+      }
       await saveThemeSettings(config.theme, nextSettings);
       await queryClient.invalidateQueries({ queryKey: ["public"] });
       if (editVersionRef.current === submittedEditVersion) {
@@ -1301,26 +1181,11 @@ export function ThemeManage() {
     (clientsError instanceof Error ? clientsError.message : null);
   const noTasksYet = !tasksLoading && !clientsLoading && sortedTasks.length === 0;
   const noFilteredTaskMatch = !tasksLoading && !clientsLoading && !noTasksYet && filteredTasks.length === 0;
-  const setRatingLabelDraft = (kind: OverviewRatingKind, value: string) => {
-    editVersionRef.current += 1;
-    setDraft((prev) => ({
-      ...prev,
-      ratingLabels: { ...prev.ratingLabels, [kind]: value },
-    }));
-  };
   const draftBgAlignment = parseBackgroundAlignment(draft.backgroundAlignment);
   const setBgSize = (size: BackgroundSize) =>
     patch("backgroundAlignment", `${size},${draftBgAlignment.position}`);
   const setBgPosition = (position: BackgroundPosition) =>
     patch("backgroundAlignment", `${draftBgAlignment.size},${position}`);
-  const hasBackgroundMedia =
-    draft.enableBackgroundImage &&
-    Boolean(
-        normalizeBackgroundUrl(draft.backgroundImage) ||
-        normalizeBackgroundUrl(draft.backgroundImageMobile) ||
-        draft.backgroundMediaType === "video" &&
-        (draft.backgroundVideo || draft.backgroundVideoDark),
-    );
   const acquiredAtMax = localDateInputMax();
 
   return (
@@ -1348,7 +1213,6 @@ export function ThemeManage() {
                 !isDirty ||
                 saving ||
                 draftCostRateApiUrlInvalid ||
-                videoInputInvalid ||
                 draftMultiPingInvalid
               }
               className="theme-manage-button is-primary"
@@ -1499,14 +1363,14 @@ export function ThemeManage() {
       <InstancePanel
         kicker={<><span className="instance-panel-kicker-num">03</span>背景</>}
         title="背景与透明度"
-        description="为站点设置自定义背景图或桌面视频，并调节卡片不透明度。"
+        description="为站点设置自定义背景图，并调节卡片不透明度。"
         aside={<Wallpaper size={16} />}
       >
         <div className="flex flex-col gap-4">
           <ToggleRow
             field="enableBackgroundImage"
             title="启用自定义背景"
-            desc="关闭后不加载任何背景图或视频（下方 URL 配置会保留），站点回到纯色主题；再次开启即恢复。"
+            desc="关闭后不加载背景图（下方 URL 配置会保留），站点回到纯色主题；再次开启即恢复。"
             checked={draft.enableBackgroundImage}
             onPatch={patch}
           />
@@ -1542,25 +1406,6 @@ export function ThemeManage() {
             </label>
           </div>
 
-          <div className="surface-inset flex flex-col gap-3 px-4 py-4">
-            <div className="text-[13px] font-semibold text-[var(--text-primary)]">桌面端背景类型</div>
-            <div className="instance-segmented">
-              {BACKGROUND_MEDIA_TYPE_OPTIONS.map(({ value, label, icon: Icon }) => (
-                <button
-                  key={value}
-                  type="button"
-                  data-active={draft.backgroundMediaType === value ? "true" : "false"}
-                  aria-pressed={draft.backgroundMediaType === value}
-                  onClick={() => patch("backgroundMediaType", value)}
-                  className="inline-flex items-center justify-center gap-2"
-                >
-                  <Icon size={14} />
-                  <span>{label}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-
           <div className="grid gap-4 md:grid-cols-2">
             <label className="flex min-w-0 flex-col gap-2">
               <span className="text-[12px] font-medium text-[var(--text-secondary)]">
@@ -1591,47 +1436,6 @@ export function ThemeManage() {
               </span>
             </label>
           </div>
-
-          {draft.backgroundMediaType === "video" && (
-            <div className="grid gap-4 md:grid-cols-2">
-              <label className="flex min-w-0 flex-col gap-2">
-                <span className="text-[12px] font-medium text-[var(--text-secondary)]">
-                  浅色模式视频
-                </span>
-                <input
-                  value={draft.backgroundVideo}
-                  onChange={(event) => patch("backgroundVideo", event.target.value)}
-                  placeholder="https://example.com/light.mp4"
-                  aria-invalid={backgroundVideoLightInvalid}
-                  className="surface-inset w-full px-3 py-2 text-[13px] outline-none"
-                />
-                {backgroundVideoLightInvalid && (
-                  <span className="text-[12px] text-[var(--status-offline)]">
-                    {backgroundVideoLightMalformed
-                      ? "请输入 HTTP(S) 或以 / 开头的站内视频直链"
-                      : `视频模式需要浅色视频地址，可使用 ${DEFAULT_BACKGROUND_VIDEO_URL}`}
-                  </span>
-                )}
-              </label>
-              <label className="flex min-w-0 flex-col gap-2">
-                <span className="text-[12px] font-medium text-[var(--text-secondary)]">
-                  深色模式视频（可选）
-                </span>
-                <input
-                  value={draft.backgroundVideoDark}
-                  onChange={(event) => patch("backgroundVideoDark", event.target.value)}
-                  placeholder="留空则沿用浅色模式视频"
-                  aria-invalid={backgroundVideoDarkInvalid}
-                  className="surface-inset w-full px-3 py-2 text-[13px] outline-none"
-                />
-                {backgroundVideoDarkInvalid && (
-                  <span className="text-[12px] text-[var(--status-offline)]">
-                    请输入 HTTP(S) 或以 / 开头的站内视频直链
-                  </span>
-                )}
-              </label>
-            </div>
-          )}
 
           <div className="grid gap-4 md:grid-cols-2">
             <div className="surface-inset flex flex-col gap-3 px-4 py-4">
@@ -1696,7 +1500,7 @@ export function ThemeManage() {
             </div>
             <span className="text-[11px] leading-relaxed text-[var(--text-tertiary)]">
               输入 0–100 的整数。100 = 完全不透明（与默认主题一致），数值越低卡片越通透、越能透出自定义背景。
-              {hasBackgroundMedia
+              {draft.enableBackgroundImage && (normalizeBackgroundUrl(draft.backgroundImage) || normalizeBackgroundUrl(draft.backgroundImageMobile))
                 ? " 低于 95 时会自动在背景上叠加可读性遮罩，保证文字清晰；卡片本身保持纯半透明。"
                 : " 需先在上方设置自定义背景后才会生效。"}
             </span>
@@ -1707,7 +1511,7 @@ export function ThemeManage() {
       <InstancePanel
         kicker={<><span className="instance-panel-kicker-num">04</span>首页</>}
         title="首页巡检"
-        description="控制首页顶部总览、分组筛选和节点排序方式；适合节点较多时快速查看状态。"
+        description="控制首页顶部总览和分组筛选；适合节点较多时快速查看状态。"
         aside={<ListFilter size={16} />}
       >
         <div className="mb-4 grid gap-3 md:grid-cols-2">
@@ -1781,13 +1585,6 @@ export function ThemeManage() {
             onPatch={patch}
           />
           <ToggleRow
-            field="enableHomeSort"
-            title="启用排序切换"
-            desc="首页显示排序控件，访客可临时切换排序方式（离线节点恒定置底）。"
-            checked={draft.enableHomeSort}
-            onPatch={patch}
-          />
-          <ToggleRow
             field="hideAdminEntryWhenLoggedOut"
             title="未登录时隐藏后台入口"
             desc="仅隐藏访客看到的“后台登录”；/admin 仍可直接访问，登录后自动显示“管理”。"
@@ -1796,162 +1593,6 @@ export function ThemeManage() {
           />
         </div>
 
-        <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,0.6fr)]">
-          <div>
-            <div className="mb-2 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-              <span className="text-[13px] font-medium text-[var(--text-primary)]">默认排序维度</span>
-              <span className="text-[11px] text-[var(--text-tertiary)]">
-                首次访问时的初始排序；访客可临时切换。
-              </span>
-            </div>
-            <div className="instance-segmented is-scrollable">
-              {HOME_SORT_FIELDS.map((field) => (
-                <button
-                  key={field}
-                  type="button"
-                  data-active={draft.homeSortField === field ? "true" : "false"}
-                  aria-pressed={draft.homeSortField === field}
-                  disabled={!draft.enableHomeSort}
-                  onClick={() => patch("homeSortField", field)}
-                >
-                  {HOME_SORT_FIELD_LABELS[field]}
-                </button>
-              ))}
-            </div>
-          </div>
-          <div>
-            <div className="mb-2 text-[13px] font-medium text-[var(--text-primary)]">默认方向</div>
-            <div className="instance-segmented">
-              <button
-                type="button"
-                data-active={draft.homeSortDirection === "asc" ? "true" : "false"}
-                aria-pressed={draft.homeSortDirection === "asc"}
-                disabled={!draft.enableHomeSort}
-                onClick={() => patch("homeSortDirection", "asc")}
-              >
-                升序
-              </button>
-              <button
-                type="button"
-                data-active={draft.homeSortDirection === "desc" ? "true" : "false"}
-                aria-pressed={draft.homeSortDirection === "desc"}
-                disabled={!draft.enableHomeSort}
-                onClick={() => patch("homeSortDirection", "desc")}
-              >
-                降序
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <div className="mt-4">
-          <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-            <span className="text-[13px] font-medium text-[var(--text-primary)]">分组排序</span>
-            <span className="text-[11px] text-[var(--text-tertiary)]">
-              调整首页分组 Tab 的显示顺序；未列出的分组按后端顺序排在后面。
-            </span>
-          </div>
-          {orderedDraftGroups.length === 0 ? (
-            <p className="surface-inset mt-2 px-4 py-3 text-[12px] text-[var(--text-tertiary)]">
-              {clientsLoading ? "正在加载分组…" : "暂无分组（节点未设置分组时无需排序）"}
-            </p>
-          ) : (
-            <ul className="mt-2 flex flex-col gap-2">
-              {orderedDraftGroups.map((group, index) => (
-                <li
-                  key={group}
-                  className="surface-inset flex items-center justify-between gap-3 px-4 py-2.5"
-                >
-                  <span className="flex min-w-0 items-center gap-2">
-                    <span className="tabular text-[12px] text-[var(--text-tertiary)]">
-                      {index + 1}
-                    </span>
-                    <span
-                      className="truncate text-[13px] text-[var(--text-primary)]"
-                      title={group}
-                    >
-                      {group}
-                    </span>
-                  </span>
-                  <span className="flex shrink-0 items-center gap-1">
-                    <button
-                      type="button"
-                      disabled={index === 0}
-                      onClick={() => moveGroup(index, -1)}
-                      className="theme-manage-button is-compact"
-                      aria-label={`上移 ${group}`}
-                    >
-                      <ChevronUp size={14} />
-                    </button>
-                    <button
-                      type="button"
-                      disabled={index === orderedDraftGroups.length - 1}
-                      onClick={() => moveGroup(index, 1)}
-                      className="theme-manage-button is-compact"
-                      aria-label={`下移 ${group}`}
-                    >
-                      <ChevronDown size={14} />
-                    </button>
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-
-        <div className="mt-4 surface-inset px-4 py-4">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <span className="min-w-0">
-              <span className="block text-[13px] font-semibold text-[var(--text-primary)]">
-                总览评级
-              </span>
-              <span className="mt-1 block text-[11px] text-[var(--text-tertiary)]">
-                在累计流量、实时带宽、资产概览右下角显示文字评级；名称用英文逗号分隔，只取前四个。
-              </span>
-            </span>
-            <label className="inline-flex shrink-0 items-center gap-2 text-[12px] font-medium text-[var(--text-secondary)]">
-              <span>启用</span>
-              <input
-                type="checkbox"
-                checked={draft.showOverviewRatings}
-                onChange={(event) => patch("showOverviewRatings", event.target.checked)}
-                className="h-4 w-4 accent-[var(--accent-500)]"
-              />
-            </label>
-          </div>
-
-          <div className="mt-3 grid gap-3 md:grid-cols-3">
-            {OVERVIEW_RATING_LABEL_FIELDS.map((field) => {
-              const defaultLabel = getDefaultOverviewRatingLabelText(field.key);
-              const ratingEnabled = draft.showOverviewRatings && draft[field.toggleKey];
-              return (
-                <div key={field.key} className="flex min-w-0 flex-col gap-2">
-                  <label className="flex items-center justify-between gap-2 text-[12px] font-medium text-[var(--text-secondary)]">
-                    <span>{field.title}</span>
-                    <input
-                      type="checkbox"
-                      checked={draft[field.toggleKey]}
-                      disabled={!draft.showOverviewRatings}
-                      onChange={(event) => patch(field.toggleKey, event.target.checked)}
-                      className="h-4 w-4 shrink-0 accent-[var(--accent-500)]"
-                    />
-                  </label>
-                  <input
-                    value={draft.ratingLabels[field.key]}
-                    disabled={!ratingEnabled}
-                    onChange={(event) => setRatingLabelDraft(field.key, event.target.value)}
-                    placeholder={defaultLabel}
-                    aria-label={`${field.title}评级名称`}
-                    className="surface-inset w-full px-3 py-2 text-[13px] outline-none disabled:opacity-60"
-                  />
-                  <span className="text-[11px] text-[var(--text-tertiary)]">
-                    例如: {defaultLabel}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-        </div>
       </InstancePanel>
 
       <InstancePanel
@@ -1979,34 +1620,9 @@ export function ThemeManage() {
       <InstancePanel
         kicker={<><span className="instance-panel-kicker-num">06</span>卡片</>}
         title="卡片显示项"
-        description="分别管理跨卡片视图的功能入口，以及小卡片专属的信息密度。"
+        description="管理小卡片专属的信息密度。"
         aside={<Rows3 size={16} />}
       >
-        <div>
-          <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-            <span className="text-[13px] font-medium text-[var(--text-primary)]">跨视图设置</span>
-            <span className="text-[11px] text-[var(--text-tertiary)]">
-              适用于多个卡片尺寸，具体范围以每项说明为准。
-            </span>
-          </div>
-          <div className="mt-2 grid gap-3 md:grid-cols-2">
-            <ToggleRow
-              field="showTodayTrafficPopover"
-              title="显示今日流量悬浮窗"
-              desc="在大卡片、小卡片与迷你卡片标题旁显示入口；鼠标悬浮或点击可查看今日流量与峰值速度。默认开启。"
-              checked={draft.showTodayTrafficPopover}
-              onPatch={patch}
-            />
-            <ToggleRow
-              field="showConnections"
-              title="显示连接数（TCP/UDP）"
-              desc="在大卡片与小卡片展示实时 TCP / UDP 连接数；需被控端上报，未上报显示 0。默认关闭。"
-              checked={draft.showConnections}
-              onPatch={patch}
-            />
-          </div>
-        </div>
-
         <div className="mt-4">
           <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
             <span className="text-[13px] font-medium text-[var(--text-primary)]">小卡片专属</span>
@@ -2051,7 +1667,7 @@ export function ThemeManage() {
             <ToggleRow
               field="showCostsToGuests"
               title="向未登录访客公开费用"
-              desc="关闭后，续费价格、资产统计和价格排序仅登录管理员可见；到期时间仍正常显示。"
+              desc="关闭后，续费价格和资产统计仅登录管理员可见；到期时间仍正常显示。"
               checked={draft.showCostsToGuests}
               onPatch={patch}
             />
@@ -2160,11 +1776,11 @@ export function ThemeManage() {
         title="主页延迟检测"
         description={
           <>
-            单线路模式为每个节点绑定一项 Ping 任务；开启三网模式后，大卡片和小卡片默认展示三项全局任务，也可以为每台服务器单独覆盖探测点。迷你卡片与列表仍显示节点的单线路绑定。
+            单线路模式为每个节点绑定一项 Ping 任务；开启三网模式后，大卡片和小卡片默认展示三项全局任务，也可以为每台服务器单独覆盖探测点。
             {" "}
             如果当前还没有可用任务，请先前往
             {" "}
-            <a href={adminPingHref} className="theme-manage-inline-link">
+            <a href="/admin/ping" className="theme-manage-inline-link">
               后台 Ping 管理
             </a>
             {" "}
@@ -2294,8 +1910,7 @@ export function ThemeManage() {
                   saveDisabled={
                     !isDirty ||
                     draftCostRateApiUrlInvalid ||
-                    videoInputInvalid ||
-                    draftMultiPingInvalid
+                        draftMultiPingInvalid
                   }
                   onChange={patchNodeMultiPingTaskIds}
                   onSave={handleSave}
@@ -2327,7 +1942,7 @@ export function ThemeManage() {
 
           {draft.enableHomepageMultiPing && (
             <div className="text-[11px] text-[var(--text-tertiary)]">
-              下方单线路绑定继续用于迷你卡片和列表；大卡片与小卡片使用上方三项任务。
+              下方单线路绑定继续用于节点详情；大卡片与小卡片使用上方三项任务。
             </div>
           )}
 
@@ -2348,7 +1963,7 @@ export function ThemeManage() {
           {noTasksYet && (
             <div className="theme-manage-empty-state">
               <span>当前还没有可用于首页展示的 Ping 任务。</span>
-              <a href={adminPingHref} className="theme-manage-inline-link">
+              <a href="/admin/ping" className="theme-manage-inline-link">
                 前往后台 Ping 管理创建任务
               </a>
             </div>

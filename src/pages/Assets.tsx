@@ -1,7 +1,7 @@
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useRef } from "react";
 import type { CSSProperties } from "react";
 import { Link, Navigate } from "react-router-dom";
-import { CalendarClock, ChevronDown, ChevronLeft, ChevronUp, RefreshCw } from "lucide-react";
+import { CalendarClock, ChevronLeft, RefreshCw } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { Flag } from "@/components/ui/Flag";
 import { Spinner } from "@/components/ui/Spinner";
@@ -23,61 +23,16 @@ import {
 } from "@/utils/renewalReminder";
 import { canViewCosts } from "@/utils/themeSettings";
 
-type AssetDetail = ReturnType<typeof calculateCostSummary>["details"][number];
-type AssetsSortField =
-  | "weight"
-  | "price"
-  | "remaining"
-  | "premium"
-  | "premiumMonthly"
-  | "expiry";
-type AssetsSortDirection = "asc" | "desc";
-
-const NATURAL_DIRECTION: Record<AssetsSortField, AssetsSortDirection> = {
-  weight: "asc",
-  price: "desc",
-  remaining: "desc",
-  premium: "desc",
-  premiumMonthly: "desc",
-  expiry: "asc",
-};
-
-const TABLE_COLUMNS: Array<{ field: AssetsSortField; label: string; numeric?: boolean }> = [
-  { field: "weight", label: "节点" },
-  { field: "price", label: "价格", numeric: true },
-  { field: "remaining", label: "剩余价值", numeric: true },
-  { field: "premium", label: "溢价", numeric: true },
-  { field: "premiumMonthly", label: "溢价月摊", numeric: true },
-  { field: "expiry", label: "到期", numeric: true },
-];
-
-const MOBILE_SORT_OPTIONS: Array<{ field: AssetsSortField; label: string }> = [
-  { field: "weight", label: "权重" },
-  { field: "price", label: "价格" },
-  { field: "premium", label: "溢价" },
-  { field: "expiry", label: "到期" },
-];
+const TABLE_COLUMNS = [
+  { label: "节点" },
+  { label: "价格", numeric: true },
+  { label: "剩余价值", numeric: true },
+  { label: "溢价", numeric: true },
+  { label: "溢价月摊", numeric: true },
+  { label: "到期", numeric: true },
+] as const;
 
 const ASSETS_MOBILE_QUERY = "(max-width: 720px)";
-
-function sortValue(detail: AssetDetail, field: AssetsSortField): number {
-  switch (field) {
-    case "price":
-      return detail.priceCny;
-    case "remaining":
-      return detail.remainingCny;
-    case "premium":
-      return detail.premiumCny;
-    case "premiumMonthly":
-      return detail.premiumMonthlyCny;
-    case "expiry": {
-      const days = getExpireDaysRemaining(detail.expiredAt);
-      return days == null ? Number.POSITIVE_INFINITY : days;
-    }
-    default:
-      return detail.weight;
-  }
-}
 
 function formatCostExpiry(expiredAt: string) {
   const days = getExpireDaysRemaining(expiredAt);
@@ -118,8 +73,6 @@ function HeroMoney({ value }: { value: number | null }) {
 }
 
 export function Assets() {
-  const [sortField, setSortField] = useState<AssetsSortField>("weight");
-  const [sortDirection, setSortDirection] = useState<AssetsSortDirection>("asc");
   const isMobileLayout = useMediaQuery(ASSETS_MOBILE_QUERY);
   const now = useHourlyClock();
   const themeSettings = useThemeSettings();
@@ -160,21 +113,11 @@ export function Assets() {
         : null,
     [costsVisible, nodes, now, themeSettings.costIgnoredNodes, themeSettings.costPremiums, rateQuery.data],
   );
-  const detailRows = useMemo(() => {
-    const direction = sortDirection === "asc" ? 1 : -1;
-    // 排序键先算好,避免比较器里 O(n log n) 次重复解析到期日。
-    const rows = (summary?.details ?? []).map((detail) => ({
-      detail,
-      key: sortValue(detail, sortField),
-    }));
-    rows.sort((a, b) => {
-      if (a.detail.counted !== b.detail.counted) return a.detail.counted ? -1 : 1;
-      return (
-        (a.key - b.key) * direction || a.detail.name.localeCompare(b.detail.name, "zh-CN")
-      );
-    });
-    return rows.map(({ detail }) => detail);
-  }, [sortDirection, sortField, summary]);
+  const detailRows = useMemo(() =>
+    [...(summary?.details ?? [])].sort((a, b) => {
+      if (a.counted !== b.counted) return a.counted ? -1 : 1;
+      return a.weight - b.weight || a.name.localeCompare(b.name, "zh-CN");
+    }), [summary]);
   const exchangeRateRows = useMemo(() => {
     if (!rateQuery.data?.rates.CNY) return [];
     const rates = rateQuery.data.rates;
@@ -182,15 +125,6 @@ export function Assets() {
       .map((code) => (rates[code] ? { code, value: rates.CNY / rates[code] } : null))
       .filter((item): item is { code: string; value: number } => Boolean(item));
   }, [rateQuery.data]);
-
-  const handleSort = (field: AssetsSortField) => {
-    if (field === sortField) {
-      setSortDirection((value) => (value === "asc" ? "desc" : "asc"));
-    } else {
-      setSortField(field);
-      setSortDirection(NATURAL_DIRECTION[field]);
-    }
-  };
 
   if (!themeSettings.isReady || authPending) {
     return (
@@ -249,9 +183,6 @@ export function Assets() {
         ]
       : []),
   ];
-
-  const directionIcon =
-    sortDirection === "asc" ? <ChevronUp size={12} /> : <ChevronDown size={12} />;
 
   return (
     <div className="assets-page flex flex-col gap-4 py-2">
@@ -312,31 +243,6 @@ export function Assets() {
                 {renewalReminders.length} 台临期
               </span>
             )}
-            <div className="assets-mobile-tools">
-              <div className="cost-summary-sort-tabs" role="group" aria-label="排序字段">
-                {MOBILE_SORT_OPTIONS.map((option) => (
-                  <button
-                    key={option.field}
-                    type="button"
-                    className="cost-summary-sort-tab"
-                    data-active={sortField === option.field}
-                    onClick={() => handleSort(option.field)}
-                    aria-pressed={sortField === option.field}
-                  >
-                    {option.label}
-                  </button>
-                ))}
-              </div>
-              <button
-                type="button"
-                className="cost-summary-action is-direction"
-                onClick={() => setSortDirection((value) => (value === "asc" ? "desc" : "asc"))}
-                aria-label={sortDirection === "asc" ? "切换为倒序" : "切换为正序"}
-                title={sortDirection === "asc" ? "正序" : "倒序"}
-              >
-                {sortDirection === "asc" ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
-              </button>
-            </div>
           </div>
 
           {summary ? (
@@ -348,24 +254,10 @@ export function Assets() {
                     <tr>
                       {TABLE_COLUMNS.map((column) => (
                         <th
-                          key={column.field}
-                          data-numeric={column.numeric || undefined}
-                          aria-sort={
-                            sortField === column.field
-                              ? sortDirection === "asc"
-                                ? "ascending"
-                                : "descending"
-                              : undefined
-                          }
+                          key={column.label}
+                          data-numeric={("numeric" in column && column.numeric) || undefined}
                         >
-                          <button
-                            type="button"
-                            onClick={() => handleSort(column.field)}
-                            data-active={sortField === column.field}
-                          >
-                            {column.label}
-                            {sortField === column.field && directionIcon}
-                          </button>
+                          {column.label}
                         </th>
                       ))}
                     </tr>

@@ -7,24 +7,13 @@ import { isNodeViewMode, type NodeViewMode } from "@/utils/themeSettings";
 const DESKTOP_OVERRIDE_KEY = "komaritheme:node-view-mode-session:desktop";
 const MOBILE_OVERRIDE_KEY = "komaritheme:node-view-mode-session:mobile";
 export const MOBILE_VIEW_MODE_QUERY = MOBILE_VIEWPORT_QUERY;
-// 快捷切换按钮的循环顺序：大卡 → 小卡 → 迷你 → 列表 → 大卡……
-const VIEW_MODE_CYCLE: readonly NodeViewMode[] = ["large", "compact", "mini", "list"];
-// 列表档天生不适合窄屏,仅桌面可用:移动端从循环里剔除,且默认值解析成 list 时兜底回 compact。
-const MOBILE_VIEW_MODES: readonly NodeViewMode[] = ["large", "compact", "mini"];
+const VIEW_MODE_CYCLE: readonly NodeViewMode[] = ["large", "compact"];
 
 export type ViewModeDevice = "desktop" | "mobile";
 
-export function normalizeViewModeForDevice(
-  mode: NodeViewMode,
-  device: ViewModeDevice,
-): NodeViewMode {
-  return device === "mobile" && mode === "list" ? "compact" : mode;
-}
-
-export function getNextViewMode(mode: NodeViewMode, device: ViewModeDevice): NodeViewMode {
-  const cycle = device === "mobile" ? MOBILE_VIEW_MODES : VIEW_MODE_CYCLE;
-  const normalized = normalizeViewModeForDevice(mode, device);
-  return cycle[(cycle.indexOf(normalized) + 1) % cycle.length] ?? cycle[0];
+export function getNextViewMode(mode: NodeViewMode): NodeViewMode {
+  const cycle = VIEW_MODE_CYCLE;
+  return cycle[(cycle.indexOf(mode) + 1) % cycle.length] ?? cycle[0];
 }
 
 interface ViewModeState {
@@ -183,9 +172,8 @@ export function useViewMode() {
     ? themeSettings.mobileNodeViewMode
     : themeSettings.desktopNodeViewMode;
   const resolved = state.override ?? defaultMode;
-  // 移动端若被解析成 list(默认值被强制写成 list 等极端情况),兜底回 compact —— 列表仅桌面可用。
-  const mode = normalizeViewModeForDevice(resolved, state.device);
-  const nextMode = getNextViewMode(mode, state.device);
+  const mode = resolved;
+  const nextMode = getNextViewMode(mode);
 
   const setMode = useCallback(
     (next: NodeViewMode) => {

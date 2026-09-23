@@ -35,6 +35,7 @@ const nodes: NodeInfo[] = [
     public_remark: "东京入口与静态资源",
     traffic_limit: 4 * TIB,
     traffic_limit_type: "sum",
+    traffic_reset_day: 10,
     ipv4: "203.0.113.11",
     ipv6: "2001:db8::11",
     created_at: dateAfter(-420),
@@ -66,6 +67,7 @@ const nodes: NodeInfo[] = [
     public_remark: "东南亚 API 集群",
     traffic_limit: 6 * TIB,
     traffic_limit_type: "sum",
+    traffic_reset_day: 15,
     ipv4: "203.0.113.21",
     ipv6: "2001:db8::21",
     created_at: dateAfter(-310),
@@ -97,6 +99,7 @@ const nodes: NodeInfo[] = [
     public_remark: "主数据库副本",
     traffic_limit: 8 * TIB,
     traffic_limit_type: "sum",
+    traffic_reset_day: 31,
     ipv4: "203.0.113.31",
     ipv6: "2001:db8::31",
     created_at: dateAfter(-260),
@@ -128,6 +131,7 @@ const nodes: NodeInfo[] = [
     public_remark: "北美异步任务",
     traffic_limit: 5 * TIB,
     traffic_limit_type: "sum",
+    traffic_reset_day: 5,
     ipv4: "203.0.113.41",
     ipv6: "2001:db8::41",
     created_at: dateAfter(-180),
@@ -159,6 +163,7 @@ const nodes: NodeInfo[] = [
     public_remark: "香港缓存层",
     traffic_limit: 3 * TIB,
     traffic_limit_type: "sum",
+    traffic_reset_day: 20,
     ipv4: "203.0.113.51",
     ipv6: "2001:db8::51",
     created_at: dateAfter(-150),
@@ -190,6 +195,7 @@ const nodes: NodeInfo[] = [
     public_remark: "离线备份节点",
     traffic_limit: 2 * TIB,
     traffic_limit_type: "sum",
+    traffic_reset_day: 0,
     ipv4: "203.0.113.61",
     ipv6: "2001:db8::61",
     created_at: dateAfter(-120),
@@ -234,8 +240,6 @@ function latestStatus() {
           net_total_down: totalDown,
           uptime: (index + 3) * 864_000,
           process: 96 + index * 21,
-          connections: 180 + index * 44,
-          connections_udp: 12 + index * 3,
           updated_at: now,
         },
       ];
@@ -268,174 +272,29 @@ function loadRecords(uuid: string) {
       net_total_up: Math.max(0, profile[7] - (71 - sample) * (12 + index * 3) * MIB),
       net_total_down: Math.max(0, profile[8] - (71 - sample) * (28 + index * 5) * MIB),
       process: 100 + index * 20,
-      connections: 180 + index * 40,
-      connections_udp: 16,
       time: now - (71 - sample) * 300_000,
       client: node.uuid,
     };
   });
 }
 
-function trafficMetricPayload(params: {
-  metric_keys?: string[];
-  entity_ids?: string[];
-  start?: string;
-  end?: string;
-}) {
-  const start = Number.isFinite(Date.parse(params.start ?? ""))
-    ? Date.parse(params.start ?? "")
-    : new Date().setHours(0, 0, 0, 0);
-  const end = Number.isFinite(Date.parse(params.end ?? ""))
-    ? Date.parse(params.end ?? "")
-    : Date.now();
-  const entityIds = params.entity_ids?.length ? params.entity_ids : nodes.map((node) => node.uuid);
-  const metricKeys = params.metric_keys ?? [];
-  const intervalMs = 5 * 60 * 1000;
-  const pointCount = Math.max(1, Math.ceil((end - start) / intervalMs));
-  const series = entityIds.flatMap((uuid) => {
-    const index = nodes.findIndex((node) => node.uuid === uuid);
-    if (index < 0 || index === nodes.length - 1) return [];
-    return metricKeys.map((metricKey) => ({
-      metric_key: metricKey,
-      entity_id: uuid,
-      interval_seconds: intervalMs / 1000,
-      points: Array.from({ length: pointCount }, (_, pointIndex) => {
-        const phase = pointIndex / 9 + index * 0.8;
-        const time = new Date(start + pointIndex * intervalMs).toISOString();
-        const value =
-          metricKey === "traffic.up"
-            ? (12 + index * 3) * MIB * (0.72 + Math.sin(phase) * 0.24)
-            : metricKey === "traffic.down"
-              ? (28 + index * 5) * MIB * (0.74 + Math.cos(phase) * 0.22)
-              : metricKey === "net.out.rate"
-                ? statusProfiles[index][5] * (0.62 + Math.sin(phase) * 0.34)
-                : statusProfiles[index][6] * (0.66 + Math.cos(phase) * 0.3);
-        return { time, value: Math.max(0, value), count: 1 };
-      }),
-    }));
-  });
-  return {
-    start: new Date(start).toISOString(),
-    end: new Date(end).toISOString(),
-    series,
-    count: series.length,
-  };
-}
-
-// queryMetrics 的 ping 路径:latency/loss 双序列,tags 携带 task_id;丢包桶 latency 为
-// null、loss 为 1,与真实后端聚合语义一致(mergePingMetricSeries 会还原成 -1 记录)。
-function pingMetricPayload(params: {
-  metric_keys?: string[];
-  entity_ids?: string[];
-  hours?: number;
-  tags?: { task_id?: string };
-}) {
-  const end = Date.now();
-  const hours = typeof params.hours === "number" && params.hours > 0 ? params.hours : 6;
-  const intervalMs = 60_000;
-  const pointCount = Math.min(360, Math.max(12, Math.round((hours * 3_600_000) / intervalMs)));
-  const start = end - pointCount * intervalMs;
-  const entityIds = params.entity_ids?.length ? params.entity_ids : nodes.map((node) => node.uuid);
-  const requestedTask = Number(params.tags?.task_id);
-  const tasks =
-    Number.isFinite(requestedTask) && requestedTask > 0
-      ? pingTasks.filter((task) => task.id === requestedTask)
-      : pingTasks;
-  const metricKeys = (params.metric_keys ?? []).filter((key) => key.startsWith("ping."));
-  const series = entityIds.flatMap((uuid) => {
-    const index = nodes.findIndex((node) => node.uuid === uuid);
-    if (index < 0) return [];
-    return tasks.filter((task) => task.clients.includes(uuid)).flatMap((task) =>
-      metricKeys.map((metricKey) => ({
-        metric_key: metricKey,
-        entity_id: uuid,
-        tags: { task_id: String(task.id) },
-        interval_seconds: intervalMs / 1000,
-        points: Array.from({ length: pointCount }, (_, pointIndex) => {
-          const time = new Date(start + (pointIndex + 1) * intervalMs).toISOString();
-          const lost = index === 2 && pointIndex % 17 === 0;
-          if (metricKey === "ping.loss") {
-            return { time, value: lost ? 1 : 0, count: 1 };
-          }
-          const baseline = statusProfiles[index][4] + (task.id - 1) * 18;
-          return {
-            time,
-            value: lost
-              ? null
-              : Math.max(1, baseline + Math.round(Math.sin(pointIndex / 5 + index) * 9)),
-            count: 1,
-          };
-        }),
-      })),
-    );
-  });
-  return {
-    start: new Date(start).toISOString(),
-    end: new Date(end).toISOString(),
-    series,
-    count: series.length,
-  };
-}
-
-// queryMetrics 的负载路径:直接把 loadRecords 的字段转成对应 metric 序列。
-const LOAD_METRIC_RECORD_FIELD = {
-  "cpu.usage": "cpu",
-  "memory.used": "ram",
-  "swap.used": "swap",
-  "load.average": "load",
-  "disk.used": "disk",
-  "net.in.rate": "net_in",
-  "net.out.rate": "net_out",
-  "net.total.up": "net_total_up",
-  "net.total.down": "net_total_down",
-  "process.count": "process",
-  "connections.tcp": "connections",
-  "connections.udp": "connections_udp",
-} as const;
-
-function loadMetricPayload(params: { metric_keys?: string[]; entity_ids?: string[] }) {
-  const entityIds = params.entity_ids?.length ? params.entity_ids : [nodes[0].uuid];
-  const metricKeys = (params.metric_keys ?? []).filter(
-    (key): key is keyof typeof LOAD_METRIC_RECORD_FIELD => key in LOAD_METRIC_RECORD_FIELD,
-  );
-  const series = entityIds.flatMap((uuid) => {
-    const records = loadRecords(uuid);
-    return metricKeys.map((metricKey) => ({
-      metric_key: metricKey,
-      entity_id: uuid,
-      interval_seconds: 300,
-      points: records.map((record) => ({
-        time: new Date(record.time).toISOString(),
-        value: record[LOAD_METRIC_RECORD_FIELD[metricKey]],
-        count: 1,
-      })),
-    }));
-  });
-  const now = Date.now();
-  return {
-    start: new Date(now - 72 * 300_000).toISOString(),
-    end: new Date(now).toISOString(),
-    series,
-    count: series.length,
-  };
-}
-
-function pingRecords(uuid?: string, taskId = 1) {
-  const taskClients = pingTasks.find((task) => task.id === taskId)?.clients ?? [];
-  const clients = uuid ? (taskClients.includes(uuid) ? [uuid] : []) : taskClients;
-  const now = Date.now();
-  return clients.flatMap((client) => {
-    const index = nodes.findIndex((node) => node.uuid === client);
-    const baseline = statusProfiles[Math.max(0, index)][4] + (taskId - 1) * 18;
-    return Array.from({ length: 60 }, (_, sample) => ({
-      task_id: taskId,
-      time: now - (59 - sample) * 60_000,
-      value:
-        index === 2 && sample % 17 === 0
-          ? -1
-          : Math.max(1, baseline + Math.round(Math.sin(sample / 5 + index) * 9)),
-      client,
-    }));
+function pingRecords(uuid?: string, taskId?: number) {
+  return pingTasks.filter((task) => taskId == null || task.id === taskId).flatMap((task) => {
+    const clients = uuid ? (task.clients.includes(uuid) ? [uuid] : []) : task.clients;
+    const now = Date.now();
+    return clients.flatMap((client) => {
+      const index = nodes.findIndex((node) => node.uuid === client);
+      const baseline = statusProfiles[Math.max(0, index)][4] + (task.id - 1) * 18;
+      return Array.from({ length: 60 }, (_, sample) => ({
+        task_id: task.id,
+        time: now - (59 - sample) * 60_000,
+        value:
+          index === 2 && sample % 17 === 0
+            ? -1
+            : Math.max(1, baseline + Math.round(Math.sin(sample / 5 + index) * 9)),
+        client,
+      }));
+    });
   });
 }
 
@@ -536,7 +395,6 @@ export function installDevMockApi() {
         record_enabled: true,
         record_preserve_time: 30,
         ping_record_preserve_time: 30,
-        metric_retention_days: 90,
         custom_head: "",
         custom_body: "",
         theme_settings: savedThemeSettings[theme] ?? {
@@ -546,16 +404,11 @@ export function installDevMockApi() {
           showGroupTabs: true,
           showRegionBar: true,
           showCardGroup: true,
-          enableHomeSort: true,
           showCostSummary: true,
           showCostSummaryFloatingButton: true,
           showCostsToGuests: true,
-          showOverviewRatings: true,
-          showTrafficRating: true,
-          showBandwidthRating: true,
-          showAssetRating: true,
           showPingChart: true,
-          // 单任务刻意和三网首项不同，便于回归验证列表没有误读全局三网数据。
+          // 单任务刻意和三网首项不同，便于回归验证单线路绑定。
           homepagePingBindings: { "2": nodes.map((node) => node.uuid) },
           enableHomepageMultiPing:
             new URLSearchParams(window.location.search).get("multiPing") === "1",
@@ -564,185 +417,6 @@ export function installDevMockApi() {
             ...(nodes[0] ? { [nodes[0].uuid]: [3, 2, 1] } : {}),
             ...(nodes[1] ? { [nodes[1].uuid]: [1, 4, 3] } : {}),
           },
-        },
-      });
-    }
-
-    if (url.pathname === "/api/nodes") {
-      return json(nodes);
-    }
-
-    if (url.pathname === "/api/admin/ip-info/v1/refresh" && request.method === "POST") {
-      if (!adminMode) return json({ message: "unauthorized" }, { status: 401 });
-      const { uuid, ip } = await request.json() as { uuid: string; ip: string };
-      const query = new URLSearchParams({ uuid, ip });
-      const base = await (await window.fetch(new URL(`/api/public/ip-info/v1/lookup?${query}`, url))).json();
-      const latency = await (await window.fetch(new URL(`/api/public/ip-info/v1/latency?${query}`, url))).json();
-      return json({ ...base, related: { latency } });
-    }
-
-    if (url.pathname === "/api/public/ip-info/v1/status") {
-      return json({
-        ok: true,
-        data: {
-          available: true,
-          version: "0.0.1",
-          schema_version: 5,
-          mainland_china_excluded: true,
-          capabilities: {
-            geo: true,
-            network: true,
-            reputation: false,
-            native_classification: true,
-            global_latency: true,
-            media_unlock: false,
-            ai_unlock: false,
-          },
-        },
-      });
-    }
-
-    if (url.pathname === "/api/public/ip-info/v1/lookup") {
-      const ip = url.searchParams.get("ip") ?? "";
-      const uuid = url.searchParams.get("uuid") ?? "";
-      const family = ip.includes(":") ? 6 : 4;
-      const isTokyo = uuid === "tokyo-edge-01";
-      const updatedAt = new Date(Date.now() - 14 * 60_000).toISOString();
-      return json({
-        ok: true,
-        data: {
-          uuid,
-          schema_version: 5,
-          excluded: false,
-          excluded_reason: null,
-          address: { value: ip, family },
-          location: {
-            continent: "Asia",
-            continent_code: "AS",
-            country: isTokyo ? "Japan" : "Singapore",
-            country_code: isTokyo ? "JP" : "SG",
-            registered_country: isTokyo ? "Japan" : "Singapore",
-            registered_country_code: isTokyo ? "JP" : "SG",
-            region: isTokyo ? "Tokyo" : "Singapore",
-            region_code: null,
-            city: isTokyo ? "Tokyo" : "Singapore",
-            postal_code: null,
-            timezone: isTokyo ? "Asia/Tokyo" : "Asia/Singapore",
-            latitude: isTokyo ? 35.6762 : 1.3521,
-            longitude: isTokyo ? 139.6503 : 103.8198,
-            accuracy_radius: 20,
-          },
-          network: {
-            asn: "AS13335",
-            asn_number: 13335,
-            organization: "Cloudflare, Inc.",
-            operator: "Cloudflare, Inc.",
-            network_type: "hosting",
-            company_type: "hosting",
-            route: family === 6 ? "2001:db8::/32" : "203.0.113.0/24",
-            rir: "APNIC",
-            domain: "cloudflare.com",
-            datacenter: null,
-          },
-          classification: {
-            type: family === 4 ? "broadcast" : "native",
-            label: family === 4 ? "广播 IP (DE)" : "原生 IP",
-            geolocated_country_code: family === 4 ? "SG" : "JP",
-            registered_country_code: family === 4 ? "DE" : "JP",
-            confidence: 96,
-            source: "provider_verdict",
-          },
-          reputation: {
-            available: false,
-            purity_score: null,
-            risk_score: null,
-            pollution_score: null,
-            risk_level: null,
-            pollution_level: null,
-            positive_signal_count: 0,
-            valid_signal_count: 0,
-            signals: {
-              proxy: false,
-              tor: false,
-              vpn: false,
-              datacenter: null,
-              abuser: false,
-              crawler: false,
-            },
-            database_scores: {},
-            database_signals: {},
-            available_sources: [],
-            failed_sources: [],
-            method: { id: "not-exposed", status: "unavailable" },
-          },
-          capabilities: { media_unlock: false, ai_unlock: false },
-          provider: {
-            id: "net-coffee",
-            name: "Net.Coffee",
-            homepage: "https://ip.net.coffee",
-            base_source: "net-coffee",
-            quality_sources: [],
-            security_data_available: false,
-          },
-        },
-        meta: {
-          cache: "hit",
-          stale: false,
-          updated_at: updatedAt,
-          expires_at: new Date(Date.now() + 23 * 60 * 60_000).toISOString(),
-          stale_until: new Date(Date.now() + 7 * 86_400_000).toISOString(),
-          warning: null,
-        },
-      });
-    }
-
-    if (url.pathname === "/api/public/ip-info/v1/latency") {
-      const ip = url.searchParams.get("ip") ?? "";
-      const uuid = url.searchParams.get("uuid") ?? "";
-      const family = ip.includes(":") ? 6 : 4;
-      const updatedAt = new Date(Date.now() - 3 * 60_000).toISOString();
-      return json({
-        ok: true,
-        data: {
-          uuid,
-          schema_version: 5,
-          address: { value: ip, family },
-          classification: {
-            type: family === 4 ? "broadcast" : "native",
-            label: family === 4 ? "广播 IP (DE)" : "原生 IP",
-            geolocated_country_code: family === 4 ? "SG" : "JP",
-            registered_country_code: family === 4 ? "DE" : "JP",
-            confidence: 96,
-            source: "provider_verdict",
-          },
-          latency: {
-            nodes: [
-              { id: "n02", name: "香港", city: "香港", country_code: "HK", latency_ms: 19, status: "ok" },
-              { id: "n03", name: "日本", city: "东京", country_code: "JP", latency_ms: 30, status: "ok" },
-              { id: "n04", name: "新加坡", city: "新加坡", country_code: "SG", latency_ms: 51, status: "ok" },
-              { id: "n09", name: "美西", city: "洛杉矶", country_code: "US", latency_ms: 129, status: "ok" },
-              { id: "n11", name: "加拿大", city: "温哥华", country_code: "CA", latency_ms: 140, status: "ok" },
-              { id: "n13", name: "德国", city: "法兰克福", country_code: "DE", latency_ms: 237, status: "ok" },
-            ],
-            available_count: 6,
-            timeout_count: 0,
-            provider_cached: false,
-          },
-          provider: {
-            id: "net-coffee",
-            name: "Net.Coffee",
-            homepage: "https://ip.net.coffee",
-            classification_available: true,
-            latency_available: true,
-          },
-        },
-        meta: {
-          cache: "hit",
-          stale: false,
-          updated_at: updatedAt,
-          expires_at: new Date(Date.now() + 57 * 60_000).toISOString(),
-          stale_until: new Date(Date.now() + 24 * 60 * 60_000).toISOString(),
-          warning: null,
         },
       });
     }
@@ -756,11 +430,8 @@ export function installDevMockApi() {
           type?: string;
           task_id?: number;
           hours?: number;
-          metric_keys?: string[];
-          entity_ids?: string[];
-          tags?: { task_id?: string };
-          start?: string;
-          end?: string;
+          entity_id?: string;
+          maxCount?: number;
         };
       };
       const reply = (result: unknown) => json({ jsonrpc: "2.0", id: payload.id, result });
@@ -772,23 +443,30 @@ export function installDevMockApi() {
         });
 
       switch (payload.method) {
-        case "public:queryMetrics": {
-          // 各类 metric key 都要有响应:任何一类返回 Method not found 都会置位全局
-          // 降级标志,把其余 metrics 路径一并拖下水(dev 与真实后端行为背离)。
-          const metricKeys = payload.params?.metric_keys ?? [];
-          if (metricKeys.some((key) => key.startsWith("ping."))) {
-            return reply(pingMetricPayload(payload.params ?? {}));
-          }
-          if (metricKeys.some((key) => key === "traffic.up" || key === "traffic.down")) {
-            return reply(trafficMetricPayload(payload.params ?? {}));
-          }
-          return reply(loadMetricPayload(payload.params ?? {}));
+        case "public:getPingMetricStats": {
+          const uuid = payload.params?.entity_id ?? "";
+          const records = pingRecords(uuid);
+          return reply({
+            stats: pingTasks.filter((task) => task.clients.includes(uuid)).map((task) => {
+              const samples = records.filter((record) => record.task_id === task.id);
+              const valid = samples.filter((record) => record.value >= 0);
+              return {
+                entity_id: uuid,
+                task_id: String(task.id),
+                name: task.name,
+                type: task.type,
+                interval: task.interval,
+                total: samples.length,
+                valid: valid.length,
+                loss: samples.length ? ((samples.length - valid.length) / samples.length) * 100 : 0,
+                min: valid.length ? Math.min(...valid.map((record) => record.value)) : null,
+                max: valid.length ? Math.max(...valid.map((record) => record.value)) : null,
+                avg: valid.length ? valid.reduce((sum, record) => sum + record.value, 0) / valid.length : null,
+                latest: valid.at(-1)?.value ?? null,
+              };
+            }),
+          });
         }
-        case "public:getPingMetricStats":
-          // 统计接口不实现:api.ts 对它单独 catch 后会用 records 本地计算,足够 dev 用。
-          return methodNotFound();
-        case "public:getPublicPingTasks":
-          return reply(pingTasks);
         case "common:getNodes":
           return reply(Object.fromEntries(nodes.map((node) => [node.uuid, node])));
         case "common:getNodesLatestStatus":
@@ -798,7 +476,13 @@ export function installDevMockApi() {
           const records = isPing
             ? pingRecords(payload.params?.uuid, payload.params?.task_id)
             : loadRecords(payload.params?.uuid ?? nodes[0].uuid);
-          return reply({ count: records.length, records, tasks: isPing ? pingTasks : [] });
+          return reply({
+            count: records.length,
+            records: isPing ? records : { [payload.params?.uuid ?? nodes[0].uuid]: records },
+            tasks: isPing
+              ? pingTasks.filter((task) => payload.params?.task_id == null || task.id === payload.params.task_id)
+              : [],
+          });
         }
         default:
           // 未实现的方法返回标准错误,与真实后端一致——空对象伪装成功会让 dev 测不出接口缺失。

@@ -26,12 +26,6 @@
   transform: scale(0.96);
 }
 
-.cost-summary-action.is-direction {
-  width: 30px;
-  height: 30px;
-  background: color-mix(in srgb, var(--surface-elev) 70%, transparent);
-}
-
 .cost-summary-action.is-spinning svg {
   animation: cost-summary-spin 900ms linear infinite;
 }
@@ -211,62 +205,6 @@
     transform: none;
     filter: none;
   }
-}
-
-.cost-summary-sort-tabs {
-  display: flex;
-  width: min(190px, 100%);
-  min-width: 0;
-  align-items: center;
-  gap: 4px;
-  overflow-x: auto;
-  border: 1px solid color-mix(in srgb, var(--border-strong) 42%, transparent);
-  border-radius: 12px;
-  background: var(--surface);
-  padding: 4px;
-}
-
-.cost-summary-sort-tab {
-  flex: 1 0 auto;
-  min-width: 0;
-  min-height: 26px;
-  overflow: hidden;
-  border: 1px solid transparent;
-  border-radius: 8px;
-  color: var(--text-secondary);
-  padding: 0 9px;
-  font-size: 11px;
-  font-weight: 650;
-  line-height: 1;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  transition:
-    background 160ms ease,
-    border-color 160ms ease,
-    color 160ms ease,
-    box-shadow 160ms ease;
-}
-
-/* 描边+浮起阴影与首页分组 tab 共享,见 home.css 的激活 tab 组选择器;这里只保留
-   本抽屉的背景与文字色(硬编码固定色,暗色沿用共享的浅色阴影,维持既有观感)。 */
-.cost-summary-sort-tab[data-active="true"] {
-  background:
-    linear-gradient(
-      180deg,
-      #ffffff 0%,
-      #f4f4f5 100%
-    );
-  color: #18181b;
-}
-
-[data-appearance="dark"] .cost-summary-sort-tab[data-active="true"] {
-  background:
-    linear-gradient(
-      180deg,
-      #18181b 0%,
-      #111113 100%
-    );
-  color: #e4e4e7;
 }
 
 .cost-summary-detail-item {
@@ -530,13 +468,7 @@
   }
 }
 
-/* 资产页明细:桌面账本表格,≤720px 退化为卡片列表 + 排序工具条。 */
-.assets-mobile-tools {
-  display: none;
-  margin-left: auto;
-  align-items: center;
-  gap: 8px;
-}
+/* 资产页明细：桌面账本表格，窄屏使用卡片布局。 */
 
 .assets-table-wrap {
   overflow-x: auto;
@@ -561,42 +493,27 @@
 }
 
 .assets-table th {
-  padding: 0;
+  color: var(--text-tertiary);
+  padding: 12px 14px;
   text-align: left;
   white-space: nowrap;
+  font-size: 11px;
+  font-weight: 680;
+  letter-spacing: 0.08em;
   /* double 双细线:账本表头签名 */
   border-bottom: 3px double color-mix(in srgb, var(--text-tertiary) 30%, transparent);
 }
 
-.assets-table th button {
-  display: inline-flex;
-  width: 100%;
-  align-items: center;
-  gap: 3px;
-  color: var(--text-tertiary);
-  padding: 12px 14px;
-  font-size: 11px;
-  font-weight: 680;
-  letter-spacing: 0.08em;
-  white-space: nowrap;
-  transition: color 140ms ease;
+.assets-table th[data-numeric] {
+  text-align: right;
 }
 
-.assets-table th[data-numeric] button {
-  justify-content: flex-end;
-}
-
-.assets-table th button:hover,
-.assets-table th button[data-active="true"] {
-  color: var(--text-primary);
-}
-
-.assets-table th:first-child button,
+.assets-table th:first-child,
 .assets-table td:first-child {
   padding-left: 18px;
 }
 
-.assets-table th:last-child button,
+.assets-table th:last-child,
 .assets-table td:last-child {
   padding-right: 18px;
 }
@@ -725,10 +642,6 @@
   }
 
   .assets-card-list {
-    display: flex;
-  }
-
-  .assets-mobile-tools {
     display: flex;
   }
 

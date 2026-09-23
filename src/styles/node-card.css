@@ -1,7 +1,6 @@
-/* 大卡、小卡与迷你卡共用的运维面板基底。层级依赖表面色与描边，不使用阴影、顶光或悬浮位移。 */
+/* 大卡与小卡共用的运维面板基底。层级依赖表面色与描边，不使用阴影、顶光或悬浮位移。 */
 .server-card,
-.compact-node-card,
-.mini-node-card {
+.compact-node-card {
   position: relative;
   background: var(--surface-a);
   border: 1px solid var(--border);
@@ -17,20 +16,17 @@
     background 160ms ease;
 }
 .server-card::before,
-.compact-node-card::before,
-.mini-node-card::before {
+.compact-node-card::before {
   content: none;
 }
 .server-card:hover,
-.compact-node-card:hover,
-.mini-node-card:hover {
+.compact-node-card:hover {
   border-color: var(--border-strong);
   background: color-mix(in srgb, var(--hover-bg-a) 38%, var(--surface-a));
 }
 
 .server-card.is-offline,
-.compact-node-card.is-offline,
-.mini-node-card.is-offline {
+.compact-node-card.is-offline {
   background: color-mix(in srgb, var(--status-offline) 5%, var(--surface-a));
   border-color: color-mix(in srgb, var(--status-offline) 48%, var(--border));
   box-shadow: none;

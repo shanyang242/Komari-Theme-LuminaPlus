@@ -42,69 +42,6 @@ body::after {
   pointer-events: none;
 }
 
-/* 仅桌面端挂载的真实视频层；body::before 在视频失败时承担静态图回退。 */
-.background-video-layer {
-  display: none;
-  position: fixed;
-  top: 0;
-  left: 0;
-  z-index: -1;
-  width: 100vw;
-  height: 100vh;
-  overflow: hidden;
-  pointer-events: none;
-}
-
-.background-video-media,
-.background-video-scrim {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-}
-
-.background-video-media {
-  opacity: 0;
-  transition: opacity 420ms ease;
-}
-
-.background-video-media[data-state="playing"] {
-  opacity: 1;
-}
-
-.background-video-scrim {
-  background: var(--bg-scrim, transparent);
-  opacity: 0;
-  transition: opacity 420ms ease;
-}
-
-.background-video-layer[data-state="playing"] .background-video-scrim {
-  opacity: 1;
-}
-
-/* JS 在设置 src 前拦截窄屏和主触点设备，CSS 用相同条件兜底。 */
-@media (min-width: 721px) {
-  .background-video-layer {
-    display: block;
-  }
-}
-
-@media (hover: none) and (pointer: coarse) {
-  .background-video-layer {
-    display: none;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .background-video-media {
-    transition: none;
-  }
-
-  .background-video-scrim {
-    transition: none;
-  }
-}
-
 /* 可选的主题氛围动效：轻量覆盖普通内容但不拦截交互；菜单和模态层仍按各自
    z-index 绘制在它上方。覆盖而非藏在卡片下，才能让雨滴、樱花等在纯色主题中可见。 */
 .ambient-effect-layer {
@@ -1440,10 +1377,8 @@ body::after {
   background: var(--hover-bg);
 }
 
-/* 弹出菜单共享骨架:实例切换器与首页排序控件(home.css 的 .home-sort-*)是同一套 panel/item
-   视觉,组选择器只定义这一处;差异项(展开方向、宽度、item gap、切换器的可滚动)在各自规则里补充。 */
-.instance-switcher-panel,
-.home-sort-panel {
+/* 实例切换器弹出菜单。 */
+.instance-switcher-panel {
   position: absolute;
   top: calc(100% + 6px);
   z-index: 30;
@@ -1468,8 +1403,7 @@ body::after {
   -webkit-overflow-scrolling: touch;
 }
 
-.instance-switcher-item,
-.home-sort-item {
+.instance-switcher-item {
   display: flex;
   align-items: center;
   width: 100%;
@@ -1488,14 +1422,12 @@ body::after {
   gap: 9px;
 }
 
-.instance-switcher-item:hover,
-.home-sort-item:hover {
+.instance-switcher-item:hover {
   color: var(--text-primary);
   background: var(--hover-bg);
 }
 
-.instance-switcher-item[data-active="true"],
-.home-sort-item[data-active="true"] {
+.instance-switcher-item[data-active="true"] {
   color: var(--text-primary);
   background: color-mix(in srgb, var(--surface-elev-a) 92%, var(--hover-bg-a));
   font-weight: 600;
@@ -1593,55 +1525,6 @@ body::after {
   word-break: break-word;
 }
 
-.instance-info-inline-value {
-  display: inline-flex;
-  min-width: 0;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 6px;
-}
-
-.instance-info-refresh {
-  display: inline-grid;
-  width: 22px;
-  height: 22px;
-  flex: 0 0 auto;
-  place-items: center;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--text-tertiary);
-  transition:
-    background 160ms ease,
-    color 160ms ease;
-}
-
-.instance-info-refresh:hover {
-  background: var(--hover-bg);
-  color: var(--text-primary);
-}
-
-.instance-info-refresh:disabled {
-  cursor: default;
-  opacity: 0.65;
-}
-
-.instance-info-refresh.is-spinning svg {
-  animation: instance-info-refresh-spin 900ms linear infinite;
-}
-
-@keyframes instance-info-refresh-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .instance-info-refresh.is-spinning svg {
-    animation: none;
-  }
-}
-
 /* 流量项带进度条，保留竖排 */
 .instance-info-item.is-stack {
   display: block;
@@ -1735,325 +1618,6 @@ body::after {
 
 .instance-chart-view[hidden] {
   display: none !important;
-}
-
-.ip-info-panel {
-  min-height: 560px;
-}
-
-.ip-info-panel-actions {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-}
-
-.ip-info-updated {
-  display: inline-flex;
-  min-height: 28px;
-  align-items: center;
-  border: 1px solid var(--border-subtle);
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--surface-elev) 84%, transparent);
-  padding: 0 10px;
-  color: var(--text-tertiary);
-  font-size: 11px;
-  font-weight: 600;
-  white-space: nowrap;
-}
-
-.ip-info-refresh {
-  display: inline-flex;
-  min-height: 28px;
-  align-items: center;
-  justify-content: center;
-  gap: 5px;
-  border: 1px solid var(--border-subtle);
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--accent-500) 8%, var(--surface-elev));
-  padding: 0 9px;
-  color: var(--accent-500);
-  font-size: 10px;
-  font-weight: 650;
-  white-space: nowrap;
-  transition: border-color 160ms ease, background 160ms ease, opacity 160ms ease;
-}
-
-.ip-info-refresh:hover:not(:disabled) {
-  border-color: color-mix(in srgb, var(--accent-500) 34%, var(--border-subtle));
-  background: color-mix(in srgb, var(--accent-500) 13%, var(--surface-elev));
-}
-
-.ip-info-refresh:disabled {
-  cursor: wait;
-  opacity: 0.68;
-}
-
-.ip-info-refresh.is-spinning svg {
-  animation: ip-info-refresh-spin 700ms linear infinite;
-}
-
-.ip-info-refresh-error {
-  margin: -3px 0 10px;
-  color: var(--status-error);
-  font-size: 10px;
-}
-
-.ip-info-family-switch {
-  margin-bottom: 12px;
-  padding: 4px;
-}
-
-.ip-info-family-switch button {
-  min-height: 26px;
-  padding: 0 10px;
-}
-
-.ip-info-address {
-  display: flex;
-  flex-wrap: wrap;
-  min-width: 0;
-  align-items: center;
-  gap: 9px;
-  margin-bottom: 12px;
-  border: 1px solid color-mix(in srgb, var(--accent-500) 18%, var(--border-subtle));
-  border-radius: 14px;
-  background: color-mix(in srgb, var(--accent-500) 5%, var(--surface-elev));
-  padding: 11px 13px;
-}
-
-.ip-info-family {
-  flex: none;
-  border-radius: 7px;
-  background: color-mix(in srgb, var(--accent-500) 14%, transparent);
-  padding: 3px 7px;
-  color: var(--accent-500);
-  font-size: 10px;
-  font-weight: 750;
-}
-
-.ip-info-address strong {
-  min-width: 0;
-  overflow-wrap: anywhere;
-  color: var(--text-primary);
-  font-size: 13px;
-  font-weight: 650;
-  font-variant-numeric: tabular-nums;
-}
-
-.ip-info-native-badge {
-  flex: none;
-  border: 1px solid color-mix(in srgb, var(--accent-500) 24%, var(--border-subtle));
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--accent-500) 10%, transparent);
-  padding: 3px 8px;
-  color: var(--accent-500);
-  font-size: 9px;
-  font-weight: 700;
-  white-space: nowrap;
-}
-
-.ip-info-native-badge.is-native {
-  border-color: color-mix(in srgb, var(--status-success) 28%, var(--border-subtle));
-  background: color-mix(in srgb, var(--status-success) 9%, transparent);
-  color: var(--status-success);
-}
-
-.ip-info-native-badge.is-broadcast {
-  border-color: color-mix(in srgb, var(--status-warning) 28%, var(--border-subtle));
-  background: color-mix(in srgb, var(--status-warning) 9%, transparent);
-  color: var(--status-warning);
-}
-
-.ip-info-detail-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-  margin-bottom: 10px;
-}
-
-.ip-info-section {
-  min-width: 0;
-  border: 1px solid var(--border-subtle);
-  border-radius: 16px;
-  background: color-mix(in srgb, var(--surface-elev) 92%, transparent);
-  padding: 11px 13px;
-}
-
-.ip-info-section h3 {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin: 0 0 7px;
-  color: var(--text-primary);
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.ip-info-section h3 svg {
-  color: var(--accent-500);
-}
-
-.ip-info-row {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 14px;
-  border-bottom: 1px solid var(--hairline);
-  padding: 5px 0;
-  font-size: 11px;
-}
-
-.ip-info-row:last-child {
-  border-bottom: 0;
-}
-
-.ip-info-row > span {
-  flex: none;
-  color: var(--text-tertiary);
-}
-
-.ip-info-row > strong {
-  min-width: 0;
-  overflow-wrap: anywhere;
-  text-align: right;
-  color: var(--text-primary);
-  font-weight: 550;
-}
-
-.ip-info-latency {
-  margin-bottom: 10px;
-}
-
-.ip-info-section-heading {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  margin-bottom: 10px;
-}
-
-.ip-info-section-heading h3 {
-  margin-bottom: 0;
-}
-
-.ip-info-section-heading > span {
-  color: var(--text-tertiary);
-  font-size: 10px;
-  font-weight: 600;
-}
-
-.ip-info-latency-grid {
-  display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
-  gap: 8px;
-}
-
-.ip-info-latency-card {
-  display: flex;
-  min-width: 0;
-  min-height: 96px;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 2px;
-  border: 1px solid var(--hairline);
-  border-radius: 13px;
-  background: color-mix(in srgb, var(--surface) 78%, transparent);
-  padding: 10px 8px;
-  text-align: center;
-}
-
-.ip-info-latency-card.is-loading {
-  min-height: 96px;
-  background: linear-gradient(100deg, transparent 20%, color-mix(in srgb, var(--text-primary) 5%, transparent) 50%, transparent 80%);
-  background-size: 220% 100%;
-  animation: ip-info-latency-loading 1.4s ease-in-out infinite;
-}
-
-.ip-info-latency-flag {
-  margin-bottom: 2px;
-  font-size: 17px;
-  line-height: 1;
-}
-
-.ip-info-latency-card strong,
-.ip-info-latency-card small,
-.ip-info-latency-card b {
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.ip-info-latency-card strong {
-  color: var(--text-primary);
-  font-size: 11px;
-  font-weight: 650;
-}
-
-.ip-info-latency-card small {
-  color: var(--text-tertiary);
-  font-size: 9px;
-}
-
-.ip-info-latency-card b {
-  margin-top: 5px;
-  color: var(--accent-500);
-  font-size: 13px;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-}
-
-.ip-info-latency-card.is-good b {
-  color: var(--status-success);
-}
-
-.ip-info-latency-card.is-medium b {
-  color: var(--status-warning);
-}
-
-.ip-info-latency-card.is-slow b {
-  color: var(--status-error);
-}
-
-.ip-info-latency-card.is-unavailable {
-  opacity: 0.6;
-}
-
-.ip-info-latency-empty {
-  display: flex;
-  min-height: 96px;
-  align-items: center;
-  justify-content: center;
-  border: 1px dashed var(--border-subtle);
-  border-radius: 13px;
-  color: var(--text-tertiary);
-  font-size: 10px;
-}
-
-.ip-info-latency-note {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  margin-top: 8px;
-  color: var(--text-tertiary);
-  font-size: 9px;
-}
-
-@keyframes ip-info-latency-loading {
-  from { background-position: 100% 0; }
-  to { background-position: -100% 0; }
-}
-
-@keyframes ip-info-refresh-spin {
-  to { transform: rotate(360deg); }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .ip-info-refresh.is-spinning svg {
-    animation: none;
-  }
 }
 
 .instance-segmented {
@@ -2444,33 +2008,6 @@ body::after {
 
   .instance-chart-stage {
     min-height: 0;
-  }
-
-  .ip-info-panel {
-    min-height: 0;
-  }
-
-  .ip-info-panel .instance-panel-header {
-    flex-direction: column;
-  }
-
-  .ip-info-panel-actions {
-    width: 100%;
-    justify-content: space-between;
-  }
-
-  .ip-info-detail-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .ip-info-latency-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .ip-info-latency-note {
-    align-items: flex-start;
-    flex-direction: column;
-    gap: 2px;
   }
 
   .instance-segmented {

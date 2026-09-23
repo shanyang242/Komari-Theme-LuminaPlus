@@ -7,11 +7,8 @@ import {
   DEFAULT_SURFACE_OPACITY,
   normalizeBackgroundAlignment,
   normalizeBackgroundUrl,
-  normalizeBackgroundVideoUrl,
   normalizeSurfaceOpacity,
   parseBackgroundAlignment,
-  releaseBackgroundVideo,
-  resolveBackgroundVideoSource,
   resolveBackgroundUrl,
   SURFACE_SCRIM_THRESHOLD,
 } from "@/utils/background";
@@ -78,70 +75,6 @@ describe("normalizeBackgroundUrl", () => {
   });
 });
 
-describe("normalizeBackgroundVideoUrl", () => {
-  it("keeps signed query strings, fragments, and encoded delimiters unchanged", () => {
-    const signed =
-      "https://cdn.example/video.mp4?Policy=a%28b%29&Signature=x%2By%3D#scene";
-    const encodedDelimiter = "/media/night%20sky.mp4?token=a%7Cb";
-
-    expect(normalizeBackgroundVideoUrl(`  ${signed}  `)).toBe(signed);
-    expect(normalizeBackgroundVideoUrl(encodedDelimiter)).toBe(encodedDelimiter);
-  });
-
-  it("rejects literal pair delimiters because each appearance has its own field", () => {
-    expect(normalizeBackgroundVideoUrl("/light.mp4|/dark.mp4")).toBe("");
-    expect(normalizeBackgroundVideoUrl("|/dark.mp4")).toBe("");
-  });
-
-  it("allows only HTTP(S) URLs and absolute site paths without credentials", () => {
-    expect(normalizeBackgroundVideoUrl("http://cdn.example/a.mp4")).toBe(
-      "http://cdn.example/a.mp4",
-    );
-    expect(normalizeBackgroundVideoUrl("/media/a.mp4")).toBe("/media/a.mp4");
-
-    for (const unsafe of [
-      "javascript:alert(1)",
-      "data:video/mp4;base64,AAAA",
-      "blob:https://example.test/id",
-      "file:///tmp/a.mp4",
-      "//cdn.example/a.mp4",
-      "media/a.mp4",
-      "https://user:pass@cdn.example/a.mp4",
-      "https://cdn.example/a\n.mp4",
-    ]) {
-      expect(normalizeBackgroundVideoUrl(unsafe)).toBe("");
-    }
-  });
-
-  it("rejects backslash host confusion, incomplete schemes, and ordinary spaces", () => {
-    for (const unsafe of [
-      String.raw`/\evil.example/x.mp4`,
-      String.raw`https:\evil.example/x.mp4`,
-      "https:example.com/v.mp4",
-      "https://cdn.example/a b.mp4",
-      "/media/a b.mp4",
-    ]) {
-      expect(normalizeBackgroundVideoUrl(unsafe)).toBe("");
-    }
-  });
-
-  it("accepts case-insensitive HTTP(S) schemes without rewriting signed URLs", () => {
-    const signed =
-      "HTTPS://CDN.Example/Video.mp4?Policy=a%28b%29&Signature=AbC%2B%3D#Frame";
-
-    expect(normalizeBackgroundVideoUrl(signed)).toBe(signed);
-  });
-
-  it("enforces the URL length limit per appearance without truncating video URLs", () => {
-    const maximum = `/${"a".repeat(2047)}`;
-    const tooLong = `/${"a".repeat(2048)}`;
-
-    expect(normalizeBackgroundVideoUrl(maximum)).toBe(maximum);
-    expect(normalizeBackgroundVideoUrl(tooLong)).toBe("");
-    expect(normalizeBackgroundVideoUrl(undefined)).toBe("");
-  });
-});
-
 describe("resolveBackgroundUrl", () => {
   it("returns the single url for both appearances", () => {
     expect(resolveBackgroundUrl("/a.webp", "light")).toBe("/a.webp");
@@ -160,59 +93,6 @@ describe("resolveBackgroundUrl", () => {
 
   it("returns empty for empty input", () => {
     expect(resolveBackgroundUrl("", "dark")).toBe("");
-  });
-});
-
-describe("resolveBackgroundVideoSource", () => {
-  const desktopVideo = {
-    enabled: true,
-    mediaType: "video" as const,
-    videoUrl: "/light.mp4",
-    videoUrlDark: "/dark.mp4",
-    appearance: "light" as const,
-    isMobile: false,
-    reducedMotion: false,
-    saveData: false,
-  };
-
-  it("selects the current appearance and falls back to light for dark mode", () => {
-    expect(resolveBackgroundVideoSource(desktopVideo)).toBe("/light.mp4");
-    expect(
-      resolveBackgroundVideoSource({ ...desktopVideo, appearance: "dark" }),
-    ).toBe("/dark.mp4");
-    expect(
-      resolveBackgroundVideoSource({
-        ...desktopVideo,
-        videoUrlDark: "",
-        appearance: "dark",
-      }),
-    ).toBe("/light.mp4");
-  });
-
-  it("returns no source before mobile or constrained clients can start a request", () => {
-    expect(resolveBackgroundVideoSource({ ...desktopVideo, isMobile: true })).toBe("");
-    expect(resolveBackgroundVideoSource({ ...desktopVideo, reducedMotion: true })).toBe("");
-    expect(resolveBackgroundVideoSource({ ...desktopVideo, saveData: true })).toBe("");
-    expect(resolveBackgroundVideoSource({ ...desktopVideo, enabled: false })).toBe("");
-    expect(
-      resolveBackgroundVideoSource({ ...desktopVideo, mediaType: "image" }),
-    ).toBe("");
-  });
-});
-
-describe("releaseBackgroundVideo", () => {
-  it("pauses, clears src, then reloads in resource-release order", () => {
-    const calls: string[] = [];
-    const video = {
-      pause: vi.fn(() => calls.push("pause")),
-      removeAttribute: vi.fn((name: string) => calls.push(`remove:${name}`)),
-      load: vi.fn(() => calls.push("load")),
-    };
-
-    releaseBackgroundVideo(video);
-
-    expect(calls).toEqual(["pause", "remove:src", "load"]);
-    expect(video.removeAttribute).toHaveBeenCalledWith("src");
   });
 });
 
@@ -269,11 +149,8 @@ describe("computeBackgroundScrim", () => {
 describe("buildBackgroundCache", () => {
   const base = {
     enableBackgroundImage: true,
-    backgroundMediaType: "image" as const,
     backgroundImage: "",
     backgroundImageMobile: "",
-    backgroundVideo: "",
-    backgroundVideoDark: "",
     backgroundAlignment: DEFAULT_BACKGROUND_ALIGNMENT,
     surfaceOpacity: DEFAULT_SURFACE_OPACITY,
   };
@@ -306,40 +183,6 @@ describe("buildBackgroundCache", () => {
     expect(cache?.darkMobile).toBe('url("/dark.webp")');
   });
 
-  it("keeps video URLs out of the first-frame image cache", () => {
-    const videoUrl = "https://cdn.example/background.mp4?signature=secret";
-    const cache = buildBackgroundCache({
-      ...base,
-      backgroundMediaType: "video",
-      backgroundImage: "/poster.webp",
-      backgroundVideo: videoUrl,
-    });
-
-    expect(cache).not.toBeNull();
-    expect(cache?.v).toBe(2);
-    expect(cache?.desktopVideo).toBe(true);
-    expect(cache?.lightDesktop).toBe('url("/poster.webp")');
-    expect(cache).not.toHaveProperty("backgroundVideo");
-    expect(JSON.stringify(cache)).not.toContain(videoUrl);
-  });
-
-  it("can cache video-only surface settings without caching a video source", () => {
-    const cache = buildBackgroundCache({
-      ...base,
-      backgroundMediaType: "video",
-      backgroundVideo: "/background.mp4",
-      surfaceOpacity: 70,
-    });
-
-    expect(cache).not.toBeNull();
-    expect(cache?.desktopVideo).toBe(true);
-    expect(cache?.lightDesktop).toBe("none");
-    expect(cache?.darkDesktop).toBe("none");
-    expect(cache?.lightMobile).toBe("none");
-    expect(cache?.darkMobile).toBe("none");
-    expect(JSON.stringify(cache)).not.toContain("/background.mp4");
-  });
-
   it("omits the scrim at full opacity but includes it when transparent", () => {
     const solid = buildBackgroundCache({ ...base, backgroundImage: "/a.webp" });
     expect(solid?.scrim).toBe("");
@@ -358,11 +201,8 @@ describe("buildBackgroundCache", () => {
 describe("applyBackgroundCache", () => {
   const base = {
     enableBackgroundImage: true,
-    backgroundMediaType: "image" as const,
     backgroundImage: "",
     backgroundImageMobile: "",
-    backgroundVideo: "",
-    backgroundVideoDark: "",
     backgroundAlignment: "contain,bottom",
     surfaceOpacity: 50,
   };
@@ -408,62 +248,6 @@ describe("applyBackgroundCache", () => {
     expect(properties.get("--bg-image-mobile")).toBe('url("/mobile-dark.webp")');
     expect(properties.get("--bg-size")).toBe("contain");
     expect(properties.get("--bg-position")).toBe("bottom");
-  });
-
-  it("removes stale surface variables when the selected image is none", () => {
-    const cache = buildBackgroundCache({
-      ...base,
-      backgroundMediaType: "video",
-      backgroundVideo: "/background.mp4",
-    });
-    expect(cache).not.toBeNull();
-    const { properties } = installDocumentStyle({
-      "--surface-alpha": "25",
-      "--bg-scrim": "stale-scrim",
-    });
-
-    applyBackgroundCache(cache, "light", { isMobile: false, videoState: "loading" });
-
-    expect(properties.get("--bg-image-desktop")).toBe("none");
-    expect(properties.has("--surface-alpha")).toBe(false);
-    expect(properties.has("--bg-scrim")).toBe(false);
-  });
-
-  it("writes surface variables for an active video without a poster", () => {
-    const cache = buildBackgroundCache({
-      ...base,
-      backgroundMediaType: "video",
-      backgroundVideo: "/background.mp4",
-    });
-    expect(cache).not.toBeNull();
-    const { properties } = installDocumentStyle();
-
-    applyBackgroundCache(cache, "dark", { isMobile: false, videoState: "playing" });
-
-    expect(properties.get("--surface-alpha")).toBe("50");
-    expect(properties.get("--bg-scrim")).toContain("color-mix");
-  });
-
-  it("hides the desktop fallback while loading and restores it after failure", () => {
-    const cache = buildBackgroundCache({
-      ...base,
-      backgroundMediaType: "video",
-      backgroundImage: "/poster.webp",
-      backgroundImageMobile: "/mobile.webp",
-      backgroundVideo: "/background.mp4",
-    });
-    expect(cache).not.toBeNull();
-    const { properties } = installDocumentStyle();
-
-    applyBackgroundCache(cache, "light", { isMobile: false, videoState: "loading" });
-    expect(properties.get("--bg-image-desktop")).toBe("none");
-    expect(properties.get("--bg-image-mobile")).toBe('url("/mobile.webp")');
-    expect(properties.has("--surface-alpha")).toBe(false);
-
-    applyBackgroundCache(cache, "light", { isMobile: false, videoState: "failed" });
-    expect(properties.get("--bg-image-desktop")).toBe('url("/poster.webp")');
-    expect(properties.get("--surface-alpha")).toBe("50");
-    expect(properties.get("--bg-scrim")).toContain("color-mix");
   });
 
   it("clears an old scrim when the active cache has no scrim", () => {

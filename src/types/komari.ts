@@ -131,7 +131,6 @@ export interface ThemeSettings {
   showCardGroup?: boolean;
   showCostsToGuests?: boolean;
   showCostSummary?: boolean;
-  showCostSummaryFloatingButton?: boolean;
   compactShowTrafficTotal?: boolean;
   compactShowBilling?: boolean;
   compactShowUptime?: boolean;
@@ -152,9 +151,6 @@ export interface ThemeSettings {
   ambientEffect?:
     | "sakura"
     | "rain"
-    | "snow"
-    | "leaves"
-    | "confetti"
     | "fireworks";
 }
 

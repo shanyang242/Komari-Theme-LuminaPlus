@@ -27,17 +27,11 @@ export type NodeViewMode = "large" | "compact";
 export type AmbientEffect =
   | "sakura"
   | "rain"
-  | "snow"
-  | "leaves"
-  | "confetti"
   | "fireworks";
 
 export const AMBIENT_EFFECTS: readonly AmbientEffect[] = [
   "sakura",
   "rain",
-  "snow",
-  "leaves",
-  "confetti",
   "fireworks",
 ];
 
@@ -61,7 +55,6 @@ export interface ResolvedThemeSettings {
   showCardGroup: boolean;
   showCostsToGuests: boolean;
   showCostSummary: boolean;
-  showCostSummaryFloatingButton: boolean;
   compactShowTrafficTotal: boolean;
   compactShowBilling: boolean;
   compactShowUptime: boolean;
@@ -98,7 +91,6 @@ export const DEFAULT_THEME_SETTINGS: ResolvedThemeSettings = {
   showCardGroup: true,
   showCostsToGuests: true,
   showCostSummary: true,
-  showCostSummaryFloatingButton: true,
   compactShowTrafficTotal: true,
   compactShowBilling: true,
   compactShowUptime: true,
@@ -167,10 +159,14 @@ export function shouldShowAdminEntry(
 }
 
 export function canViewCosts(
-  settings: Pick<ResolvedThemeSettings, "showCostsToGuests">,
+  settings: Pick<ResolvedThemeSettings, "showCostsToGuests"> & {
+    isReady: boolean;
+    isError: boolean;
+  },
   loggedIn: boolean,
 ) {
-  return loggedIn || settings.showCostsToGuests;
+  // 配置尚未读取或读取失败时，不能用默认的公开值展示费用。
+  return settings.isReady && !settings.isError && (loggedIn || settings.showCostsToGuests);
 }
 
 export function isAmbientEffect(value: unknown): value is AmbientEffect {
@@ -221,7 +217,6 @@ export function normalizeThemeSettings(
     // 默认公开以保持存量站点升级后的展示行为；站长可显式关闭访客费用展示。
     showCostsToGuests: enabledUnlessFalse(settings?.showCostsToGuests),
     showCostSummary: enabledUnlessFalse(settings?.showCostSummary),
-    showCostSummaryFloatingButton: enabledUnlessFalse(settings?.showCostSummaryFloatingButton),
     compactShowTrafficTotal: enabledUnlessFalse(settings?.compactShowTrafficTotal),
     compactShowBilling: enabledUnlessFalse(settings?.compactShowBilling),
     compactShowUptime: enabledUnlessFalse(settings?.compactShowUptime),

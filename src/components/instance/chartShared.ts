@@ -72,20 +72,17 @@ interface TimeRangeOption {
   value: number;
 }
 
-// load 和 ping 共用同一套历史区间预设；唯一区别是是否在前面加 "实时" 选项，这由
-// buildHistoryRangeOptions 的 includeRealtime 标志处理，而非改预设列表本身。
-const TIME_RANGE_OPTIONS: TimeRangeOption[] = [
+// Ping 详情允许查看最长 7 天；负载历史只保留一天范围。
+const LOAD_TIME_RANGE_OPTIONS: TimeRangeOption[] = [
   { label: "1 小时", value: 1 },
   { label: "4 小时", value: 4 },
   { label: "1 天", value: 24 },
-  { label: "7 天", value: 168 },
-  { label: "30 天", value: 720 },
 ];
 
-// Ping 详情只展示一周以内的快捷范围，避免过长时间段的原始记录过于密集。
-const PING_TIME_RANGE_OPTIONS: TimeRangeOption[] = TIME_RANGE_OPTIONS.filter(
-  (option) => option.value <= 168,
-);
+const PING_TIME_RANGE_OPTIONS: TimeRangeOption[] = [
+  ...LOAD_TIME_RANGE_OPTIONS,
+  { label: "7 天", value: 168 },
+];
 
 function formatRangeLabel(hours: number) {
   if (hours % 24 === 0) {
@@ -124,7 +121,7 @@ function buildHistoryRangeOptions(
 }
 
 export function buildLoadTimeRangeOptions(maxHours: number | null | undefined) {
-  return buildHistoryRangeOptions(TIME_RANGE_OPTIONS, maxHours, true);
+  return buildHistoryRangeOptions(LOAD_TIME_RANGE_OPTIONS, maxHours, true);
 }
 
 export function buildPingTimeRangeOptions(maxHours: number | null | undefined) {

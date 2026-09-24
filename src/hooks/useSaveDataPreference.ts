@@ -21,7 +21,7 @@ function subscribe(listener: () => void) {
   return () => connection?.removeEventListener?.("change", listener);
 }
 
-/** 背景视频与氛围动效共用省流模式的读取和订阅逻辑。 */
+/** 氛围动效使用省流模式的读取和订阅逻辑。 */
 export function useSaveDataPreference() {
   return useSyncExternalStore(subscribe, getSnapshot, () => false);
 }

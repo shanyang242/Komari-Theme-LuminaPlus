@@ -76,11 +76,10 @@ export function Assets() {
   const isMobileLayout = useMediaQuery(ASSETS_MOBILE_QUERY);
   const now = useHourlyClock();
   const themeSettings = useThemeSettings();
-  const { data: me, isPending: authPending } = useAuth();
+  const { data: me, isPending: authPending, isError: authError } = useAuth();
   const costsVisible =
-    themeSettings.isReady &&
     !authPending &&
-    canViewCosts(themeSettings, me?.logged_in === true);
+    canViewCosts(themeSettings, !authError && me?.logged_in === true);
   const forceRateRefresh = useRef(false);
   const nodes = useVisibleNodes();
   // 资产详情页是风险核对入口：这里始终按真实到期数据展示，不读取首页的关闭/稍后偏好。
@@ -135,11 +134,6 @@ export function Assets() {
   }
 
   if (!costsVisible) {
-    return <Navigate to="/" replace />;
-  }
-
-  // 两个入口都关闭 = 站长不想暴露资产信息,直连 URL 一并回首页。
-  if (!themeSettings.showCostSummary && !themeSettings.showCostSummaryFloatingButton) {
     return <Navigate to="/" replace />;
   }
 

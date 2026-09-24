@@ -112,12 +112,6 @@ function downsamplePoints(points: ChartPoint[], limit: number) {
   });
 }
 
-function formatRangeSummary(hours: number) {
-  if (hours === 0) return "实时";
-  if (hours % 24 === 0) return `${hours / 24} 天`;
-  return `${hours} 小时`;
-}
-
 function getSeriesLabel(key: string) {
   return SERIES_LABELS[key] ?? key;
 }
@@ -452,7 +446,6 @@ export function LoadChart({
     return historyPoints;
   }, [historyPoints, isRealtime, realtimePoints]);
 
-  const rangeSummary = formatRangeSummary(hours);
   // API 各回退路径不保证返回顺序,最新值必须取自按时间排好序的 historyRecords。
   const latestHistoryRecord = historyRecords[historyRecords.length - 1]?.record;
   const latestHistoryTotals = latestHistoryRecord
@@ -539,7 +532,6 @@ export function LoadChart({
             <RefreshCw size={14} aria-hidden />
             {isFetching ? "刷新中" : "刷新"}
           </button>
-          <span className="instance-chart-range-chip">{rangeSummary}</span>
         </div>
       }
       className="instance-chart-panel"

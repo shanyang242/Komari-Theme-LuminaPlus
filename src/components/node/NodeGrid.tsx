@@ -1,7 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { CircleDollarSign } from "lucide-react";
 import { Flag } from "@/components/ui/Flag";
 import { useAuth } from "@/hooks/useAuth";
 import {
@@ -276,13 +274,13 @@ export function NodeGrid() {
   const nodeOnlineSummaries = useNodeOnlineSummaries();
   const allMeta = useAllNodeMeta();
   const { hydrated: storeHydrated, nodeInfoError } = useNodeStoreStatus();
-  const { data: me } = useAuth();
+  const { data: me, isError: authError } = useAuth();
   const { data: publicConfig } = usePublicConfig();
   const siteName = publicConfig?.sitename?.trim() || "节点概览";
   const themeSettings = useThemeSettings();
   const { mode } = useViewMode();
   const costsVisible =
-    themeSettings.isReady && canViewCosts(themeSettings, me?.logged_in === true);
+    canViewCosts(themeSettings, !authError && me?.logged_in === true);
   const [selectedGroup, setSelectedGroup] = useState(HOME_ALL_GROUP);
   const [selectedRegion, setSelectedRegion] = useState(HOME_ALL_REGION);
   useHomepagePingOverview();
@@ -341,19 +339,12 @@ export function NodeGrid() {
   }, [visibleNodes]);
   const showHomeOverview = themeSettings.isReady && themeSettings.showHomeOverview;
   const hasNodes = visibleMeta.length > 0;
-  // 卡内入口与悬浮入口互斥，避免重复操作入口。
   const costOverviewNeeded = showHomeOverview && costsVisible && hasNodes;
   const showCostDetailButton =
     costOverviewNeeded && themeSettings.isReady && themeSettings.showCostSummary;
-  const showCostFloatingButton =
-    themeSettings.isReady &&
-    costsVisible &&
-    themeSettings.showCostSummaryFloatingButton &&
-    hasNodes &&
-    !showCostDetailButton;
 
   useEffect(() => {
-    if (!showCostDetailButton && !showCostFloatingButton) return;
+    if (!showCostDetailButton) return;
 
     const idleWindow = window as IdleCapableWindow;
     if (idleWindow.requestIdleCallback) {
@@ -364,16 +355,15 @@ export function NodeGrid() {
     // Safari 等无 requestIdleCallback 的浏览器，在首页稳定后再低优先级预取。
     const handle = window.setTimeout(preloadAssetsPage, 1_000);
     return () => window.clearTimeout(handle);
-  }, [showCostDetailButton, showCostFloatingButton]);
+  }, [showCostDetailButton]);
 
-  // 资产入口存在时预热汇率，供概览和资产页复用。
-  const costNeeded = costOverviewNeeded || showCostFloatingButton;
+  // 首页资产概览显示时预热汇率，供概览和资产页复用。
   const rateQuery = useQuery({
     queryKey: ["cost-rates", themeSettings.costRateApiUrl],
     queryFn: ({ signal }) => getExchangeRates(themeSettings.costRateApiUrl, { signal }),
     staleTime: 60 * 60 * 1000,
     // 资产入口可见时预取汇率；空列表无需拉取。
-    enabled: costsVisible && costNeeded && hasNodes,
+    enabled: costOverviewNeeded,
     retry: 1,
   });
   const costSummary = useMemo(
@@ -389,7 +379,7 @@ export function NodeGrid() {
         : null,
     [costsVisible, now, visibleMeta, themeSettings.costIgnoredNodes, themeSettings.costPremiums, rateQuery.data],
   );
-  const costLoading = costNeeded && rateQuery.isLoading;
+  const costLoading = costOverviewNeeded && rateQuery.isLoading;
   const groupOptions = useMemo(() => getHomeGroupOptions(visibleNodes), [visibleNodes]);
   const groupFilteredNodes = useMemo(
     () =>
@@ -490,21 +480,9 @@ export function NodeGrid() {
     );
   }
 
-  // 资产页悬浮入口 + 首页概览卡在「空节点」与正常两个分支里完全一致，提取一次复用。
+  // 首页概览卡在「空节点」与正常两个分支里完全一致，提取一次复用。
   const homeHeader = (
     <>
-      {showCostFloatingButton && (
-        <Link
-          to="/assets"
-          className="cost-summary-ball show"
-          aria-label="打开资产统计页"
-          title="资产统计"
-        >
-          <span className="cost-summary-ball-icon" aria-hidden>
-            <CircleDollarSign size={16} />
-          </span>
-        </Link>
-      )}
       <HomeBrand siteName={siteName} />
       {showHomeOverview && (
         <HomeOverviewCards

@@ -14,11 +14,11 @@ describe("normalizeThemeSettings", () => {
     expect(
       normalizeThemeSettings({
         enableAmbientEffect: true,
-        ambientEffect: "leaves",
+        ambientEffect: "rain",
       }),
     ).toMatchObject({
       enableAmbientEffect: true,
-      ambientEffect: "leaves",
+      ambientEffect: "rain",
     });
     expect(normalizeThemeSettings({ ambientEffect: "unknown" } as never).ambientEffect).toBe(
       "sakura",
@@ -111,11 +111,18 @@ describe("normalizeThemeSettings", () => {
   it("can hide costs from guests without affecting logged-in administrators", () => {
     const defaults = normalizeThemeSettings({});
     expect(defaults.showCostsToGuests).toBe(true);
-    expect(canViewCosts(defaults, false)).toBe(true);
+    expect(canViewCosts({ ...defaults, isReady: true, isError: false }, false)).toBe(true);
 
     const privateCosts = normalizeThemeSettings({ showCostsToGuests: false });
-    expect(canViewCosts(privateCosts, false)).toBe(false);
-    expect(canViewCosts(privateCosts, true)).toBe(true);
+    expect(canViewCosts({ ...privateCosts, isReady: true, isError: false }, false)).toBe(false);
+    expect(canViewCosts({ ...privateCosts, isReady: true, isError: false }, true)).toBe(true);
+  });
+
+  it("keeps costs hidden when public settings are unavailable", () => {
+    const defaults = normalizeThemeSettings({});
+    expect(canViewCosts({ ...defaults, isReady: false, isError: false }, false)).toBe(false);
+    expect(canViewCosts({ ...defaults, isReady: true, isError: true }, false)).toBe(false);
+    expect(canViewCosts({ ...defaults, isReady: true, isError: true }, true)).toBe(false);
   });
 
   it("parses hiddenNodes from a delimited string and dedupes", () => {

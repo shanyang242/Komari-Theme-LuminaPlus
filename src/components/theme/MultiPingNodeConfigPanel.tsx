@@ -117,7 +117,6 @@ export function MultiPingNodeConfigPanel({
     });
     return next;
   }, [clients, globalTaskIds, nodeTaskIds, taskClientsById]);
-  const invalidClientCount = invalidTaskIdsByClient.size;
   const filteredClients = useMemo(() => {
     const keyword = search.trim().toLowerCase();
     return clients.filter((client) => {
@@ -243,14 +242,6 @@ export function MultiPingNodeConfigPanel({
             >
               按服务器配置探测点
             </h2>
-            <p className="mt-1 text-[12px] text-[var(--text-secondary)]">
-              已单独配置 {customCount} / {clients.length} 台，其余继承全局默认
-              {invalidClientCount > 0
-                ? fakePingForUnbound
-                  ? `，${invalidClientCount} 台含未绑定探测点并将显示模拟数据。`
-                  : `，${invalidClientCount} 台含未绑定探测点。`
-                : "。"}
-            </p>
           </div>
           <button
             ref={closeButtonRef}
@@ -368,17 +359,12 @@ export function MultiPingNodeConfigPanel({
                       {invalidIds.length > 0 ? (
                         <span
                           className="multi-ping-config-status is-warning"
-                          title={
-                            fakePingForUnbound
-                              ? `${invalidIds.map((taskId) => taskLabel(taskId, tasksById)).join("、")} 未在后台绑定此服务器，将显示模拟数据`
-                              : `${invalidIds.map((taskId) => taskLabel(taskId, tasksById)).join("、")} 未在后台绑定此服务器`
-                          }
                         >
                           <AlertTriangle size={12} />
                           {fakePingForUnbound ? "将模拟" : "未绑定"}
                         </span>
                       ) : override ? (
-                        <span className="multi-ping-config-status" title="已单独配置">
+                        <span className="multi-ping-config-status">
                           <Check size={12} />
                           已覆盖
                         </span>
@@ -438,9 +424,6 @@ export function MultiPingNodeConfigPanel({
                       <div className="text-[13px] font-medium text-[var(--text-primary)]">
                         探测点来源
                       </div>
-                      <p className="mt-1 text-[11px] leading-relaxed text-[var(--text-tertiary)]">
-                        覆盖只影响当前服务器，并保留线路顺序。
-                      </p>
                     </div>
                     <div className="multi-ping-config-mode" aria-label="探测点来源">
                       <button
@@ -457,11 +440,6 @@ export function MultiPingNodeConfigPanel({
                         disabled={!canEnableOverride}
                         onClick={enableOverride}
                         className={clsx(selectedTaskIds && "is-active")}
-                        title={
-                          canEnableOverride
-                            ? "为当前服务器单独选择探测点"
-                            : "当前可用的 Ping 任务不足 3 个"
-                        }
                       >
                         单独配置
                       </button>
@@ -478,10 +456,7 @@ export function MultiPingNodeConfigPanel({
                         <span>
                           {selectedInvalidTaskIds
                             .map((taskId) => taskLabel(taskId, tasksById))
-                            .join("、")} 未在 Komari 后台绑定到此服务器。
-                          {fakePingForUnbound
-                            ? "模拟数据功能已开启，以上线路会显示模拟数据；模拟数据不代表真实网络质量。"
-                            : "模拟数据功能未开启，以上线路不会生成延迟；仍可改用单独配置并在下方更换探测点。"}
+                            .join("、")} 未绑定到此服务器。
                         </span>
                       </div>
                     </div>
@@ -585,11 +560,7 @@ export function MultiPingNodeConfigPanel({
             >
               {saveError}
             </span>
-          ) : (
-            <span className="multi-ping-config-footer-hint text-[11px] text-[var(--text-tertiary)]">
-              这里的修改会和其他主题设置一起保存。
-            </span>
-          )}
+          ) : null}
           <div className="multi-ping-config-footer-actions flex items-center gap-2">
             <button type="button" onClick={onClose} className="theme-manage-button">
               关闭

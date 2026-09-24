@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import {
   cutPeakValues,
   downsampleAligned,
-  downsampleWeightedAligned,
   fillMissingMetricPoints,
   insertMetricGapSentinels,
   type TimedMetricPoint,
@@ -65,7 +64,6 @@ describe("fillMissingMetricPoints", () => {
     expect(filled[filled.length - 1]).toMatchObject({ time: 20, v: 4 });
   });
 });
-
 describe("cutPeakValues", () => {
   it("preserves genuine loss gaps instead of backfilling them (regression)", () => {
     const points = [
@@ -234,6 +232,18 @@ describe("downsampleAligned", () => {
     expect(out.perTask[0][1]).toBe(15);
   });
 
+  it("keeps the Ping latency trend when one sample in a bucket was lost", () => {
+    const out = downsampleAligned(
+      [0, 10, 20, 30, 40, 50],
+      [[10, null, 14, null, null, null]],
+      2,
+      false,
+      "all",
+    );
+
+    expect(out.perTask[0]).toEqual([12, null]);
+  });
+
   it("keeps off-phase-only buckets undefined", () => {
     const out = downsampleAligned(
       [0, 10, 20, 30],
@@ -259,32 +269,5 @@ describe("downsampleAligned", () => {
     const out = downsampleAligned([0, 10, 20, 30], [[50, null, 14, 16]], 2, true);
     expect(out.perTask[0][0]).toBeNull(); // 桶内有丢包 → 断点优先，不被尖峰逻辑覆盖
     expect(out.perTask[0][1]).toBe(15);
-  });
-});
-
-describe("downsampleWeightedAligned", () => {
-  it("weights loss percentages by represented sample counts", () => {
-    const out = downsampleWeightedAligned(
-      [0, 10, 20, 30],
-      [[100, 0, 0, 0]],
-      [[1, 59, 30, 30]],
-      2,
-    );
-
-    expect(out.times).toHaveLength(2);
-    expect(out.perTask[0][0]).toBeCloseTo(100 / 60, 8);
-    expect(out.perTask[0][1]).toBe(0);
-  });
-
-  it("keeps real gaps and off-phase buckets distinct", () => {
-    const out = downsampleWeightedAligned(
-      [0, 10, 20, 30],
-      [[0, null, undefined, undefined]],
-      [[1, undefined, undefined, undefined]],
-      2,
-    );
-
-    expect(out.perTask[0][0]).toBeNull();
-    expect(out.perTask[0][1]).toBeUndefined();
   });
 });

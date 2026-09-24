@@ -41,10 +41,8 @@ interface EffectScene {
 }
 
 const TAU = Math.PI * 2;
-const CONFETTI_COLORS = ["#f472b6", "#fbbf24", "#38bdf8", "#a78bfa", "#34d399"];
 const FIREWORK_COLORS_DARK = ["#fb7185", "#fbbf24", "#67e8f9", "#c4b5fd", "#86efac"];
 const FIREWORK_COLORS_LIGHT = ["#be123c", "#b45309", "#0369a1", "#6d28d9", "#047857"];
-const LEAF_COLORS = ["#f59e0b", "#ea580c", "#dc2626", "#ca8a04", "#a16207"];
 
 function random(min: number, max: number) {
   return min + Math.random() * (max - min);
@@ -62,9 +60,6 @@ function particleCount(effect: AmbientEffect, width: number, height: number, isM
   const base: Record<AmbientEffect, number> = {
     sakura: 38,
     rain: 116,
-    snow: 64,
-    leaves: 34,
-    confetti: 64,
     fireworks: 0,
   };
   const areaScale = clamp((width * height) / (1440 * 900), 0.58, 1.35);
@@ -105,34 +100,6 @@ function createParticle(effect: AmbientEffect, width: number, height: number): P
         vy: random(7.5, 12.5),
         size: random(10, 25),
         alpha: random(0.16, 0.42),
-      };
-    case "snow":
-      return {
-        ...common,
-        vx: random(-0.18, 0.18),
-        vy: random(0.25, 0.82),
-        size: random(1.2, 4.6),
-        alpha: random(0.3, 0.76),
-      };
-    case "leaves":
-      return {
-        ...common,
-        vx: random(-0.52, 0.2),
-        vy: random(0.42, 0.92),
-        size: random(6, 13),
-        alpha: random(0.34, 0.72),
-        spin: random(-0.045, 0.045),
-        color: randomFrom(LEAF_COLORS),
-      };
-    case "confetti":
-      return {
-        ...common,
-        vx: random(-0.28, 0.28),
-        vy: random(0.62, 1.42),
-        size: random(3, 7),
-        alpha: random(0.42, 0.78),
-        spin: random(-0.08, 0.08),
-        color: randomFrom(CONFETTI_COLORS),
       };
     default:
       return common;
@@ -206,68 +173,6 @@ function drawPetal(context: CanvasRenderingContext2D, particle: Particle) {
   context.bezierCurveTo(-size * 0.82, -size * 0.12, -size * 0.62, -size, 0, -size * 1.18);
   context.bezierCurveTo(size * 0.66, -size * 0.94, size * 0.82, -size * 0.1, 0, size * 0.25);
   context.fill();
-  context.restore();
-}
-
-function drawLeaf(context: CanvasRenderingContext2D, particle: Particle) {
-  const size = particle.size;
-  context.save();
-  context.translate(particle.x, particle.y);
-  context.rotate(particle.rotation);
-  context.scale(1, 0.56 + Math.abs(Math.cos(particle.phase)) * 0.44);
-  context.globalAlpha = particle.alpha;
-  context.fillStyle = particle.color;
-  context.beginPath();
-  context.moveTo(0, -size);
-  context.bezierCurveTo(size * 0.82, -size * 0.56, size * 0.72, size * 0.56, 0, size);
-  context.bezierCurveTo(-size * 0.72, size * 0.56, -size * 0.82, -size * 0.56, 0, -size);
-  context.fill();
-  context.globalAlpha *= 0.55;
-  context.strokeStyle = "#7c2d12";
-  context.lineWidth = 0.6;
-  context.beginPath();
-  context.moveTo(0, -size * 0.82);
-  context.lineTo(0, size * 1.22);
-  context.stroke();
-  context.restore();
-}
-
-function drawSnow(context: CanvasRenderingContext2D, particle: Particle, isDark: boolean) {
-  const color = isDark ? "#ffffff" : "#94a3b8";
-  context.save();
-  context.globalAlpha = particle.alpha;
-  context.fillStyle = color;
-  context.beginPath();
-  context.arc(particle.x, particle.y, particle.size, 0, TAU);
-  context.fill();
-  if (particle.size > 3.5) {
-    context.strokeStyle = color;
-    context.lineWidth = 0.7;
-    for (let index = 0; index < 3; index += 1) {
-      const angle = particle.rotation + (Math.PI / 3) * index;
-      context.beginPath();
-      context.moveTo(
-        particle.x - Math.cos(angle) * particle.size * 1.8,
-        particle.y - Math.sin(angle) * particle.size * 1.8,
-      );
-      context.lineTo(
-        particle.x + Math.cos(angle) * particle.size * 1.8,
-        particle.y + Math.sin(angle) * particle.size * 1.8,
-      );
-      context.stroke();
-    }
-  }
-  context.restore();
-}
-
-function drawConfetti(context: CanvasRenderingContext2D, particle: Particle) {
-  context.save();
-  context.translate(particle.x, particle.y);
-  context.rotate(particle.rotation);
-  context.scale(1, 0.25 + Math.abs(Math.sin(particle.phase)) * 0.75);
-  context.globalAlpha = particle.alpha;
-  context.fillStyle = particle.color;
-  context.fillRect(-particle.size * 0.65, -particle.size * 0.4, particle.size * 1.3, particle.size * 0.8);
   context.restore();
 }
 
@@ -461,15 +366,6 @@ function drawScene(
         context.lineTo(particle.x - particle.size * 0.16, particle.y + particle.size);
         context.stroke();
         context.restore();
-        break;
-      case "snow":
-        drawSnow(context, particle, isDark);
-        break;
-      case "leaves":
-        drawLeaf(context, particle);
-        break;
-      case "confetti":
-        drawConfetti(context, particle);
         break;
       default:
         break;

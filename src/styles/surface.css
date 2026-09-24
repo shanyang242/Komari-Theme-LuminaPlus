@@ -1183,10 +1183,6 @@ body::after {
     padding: 13px 14px;
   }
 
-  .multi-ping-config-footer-hint {
-    display: none;
-  }
-
   .multi-ping-config-footer-error,
   .multi-ping-config-footer-actions {
     width: 100%;
@@ -1719,8 +1715,7 @@ body::after {
   font-weight: 600;
 }
 
-.instance-chart-meta span,
-.instance-chart-range-chip {
+.instance-chart-meta span {
   display: inline-flex;
   min-height: 28px;
   align-items: center;
@@ -1731,8 +1726,7 @@ body::after {
   padding: 0 10px;
 }
 
-.instance-chart-meta strong,
-.instance-chart-range-chip {
+.instance-chart-meta strong {
   color: var(--text-primary);
   font-weight: 700;
 }
@@ -1906,12 +1900,6 @@ body::after {
   margin-bottom: 12px;
 }
 
-.instance-ping-metric-switch {
-  margin-right: auto;
-  padding: 4px;
-  border-radius: 12px;
-}
-
 .instance-ping-tasks {
   display: flex;
   flex-wrap: wrap;
@@ -1960,6 +1948,7 @@ body::after {
   flex: 0 0 auto;
   font-size: 11px;
   font-weight: 600;
+  font-variant-numeric: tabular-nums;
 }
 
 .instance-ping-task[data-visible="false"] {

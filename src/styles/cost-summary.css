@@ -1,4 +1,4 @@
-/* 资产统计(/assets 页 + 首页悬浮入口) */
+/* 资产统计(/assets 页) */
 .cost-summary-action {
   display: grid;
   width: 32px;
@@ -21,8 +21,7 @@
   color: var(--text-primary);
 }
 
-.cost-summary-action:active,
-.cost-summary-ball:active {
+.cost-summary-action:active {
   transform: scale(0.96);
 }
 
@@ -414,54 +413,6 @@
   font-variant-numeric: tabular-nums;
 }
 
-.cost-summary-ball {
-  position: fixed;
-  top: 76px;
-  right: max(20px, env(safe-area-inset-right));
-  z-index: 41;
-  display: flex;
-  width: 36px;
-  height: 36px;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid color-mix(in srgb, var(--border-strong) 50%, transparent);
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--surface-a) 90%, transparent);
-  box-shadow:
-    0 12px 28px -22px rgba(0, 0, 0, 0.74),
-    inset 0 1px 0 color-mix(in srgb, white 14%, transparent);
-  color: var(--status-success);
-  opacity: 0;
-  pointer-events: none;
-  transform: scale(0);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  transition:
-    opacity 220ms ease,
-    color 160ms ease,
-    border-color 160ms ease,
-    background 160ms ease,
-    transform 220ms cubic-bezier(0.32, 0.72, 0, 1);
-}
-
-.cost-summary-ball.show {
-  opacity: 1;
-  pointer-events: auto;
-  transform: scale(1);
-}
-
-.cost-summary-ball:hover {
-  border-color: color-mix(in srgb, var(--status-success) 44%, var(--border-strong));
-  background: color-mix(in srgb, var(--surface-elev-a) 88%, var(--status-success) 8%);
-  color: color-mix(in srgb, var(--status-success) 88%, var(--text-primary) 12%);
-  transform: scale(1.08);
-}
-
-.cost-summary-ball-icon {
-  display: grid;
-  place-items: center;
-}
-
 @keyframes cost-summary-spin {
   to {
     transform: rotate(360deg);
@@ -645,11 +596,6 @@
     display: flex;
   }
 
-  .cost-summary-ball {
-    top: auto;
-    right: max(16px, env(safe-area-inset-right));
-    bottom: max(18px, env(safe-area-inset-bottom));
-  }
 }
 
 @media (max-width: 460px) {

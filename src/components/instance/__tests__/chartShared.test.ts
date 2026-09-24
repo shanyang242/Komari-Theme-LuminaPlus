@@ -14,14 +14,12 @@ describe("detail chart time ranges", () => {
     ]);
   });
 
-  it("keeps load history capped at 30 days even with 90 days retained", () => {
+  it("keeps load history limited to one day even with 90 days retained", () => {
     expect(buildLoadTimeRangeOptions(90 * 24)).toEqual([
       { label: "实时", value: 0 },
       { label: "1 小时", value: 1 },
       { label: "4 小时", value: 4 },
       { label: "1 天", value: 24 },
-      { label: "7 天", value: 168 },
-      { label: "30 天", value: 720 },
     ]);
   });
 });

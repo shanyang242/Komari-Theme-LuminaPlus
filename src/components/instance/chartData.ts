@@ -398,6 +398,7 @@ function downsampleAlignedWith(
   perTask: Array<Array<number | null | undefined>>,
   maxPoints: number,
   createReducer: (seriesCount: number, bucketCount: number) => AlignedBucketReducer,
+  nullBucketMode: "any" | "all",
 ): { times: number[]; perTask: Array<Array<number | null | undefined>> } {
   const length = times.length;
   if (length <= maxPoints || maxPoints <= 0) return { times, perTask };
@@ -437,10 +438,12 @@ function downsampleAlignedWith(
     if (timeCount[bucket] === 0) continue;
     outTimes.push(timeSum[bucket] / timeCount[bucket]);
     for (let seriesIndex = 0; seriesIndex < seriesCount; seriesIndex += 1) {
+      const value = reducer.getValue(seriesIndex, bucket);
       outPerTask[seriesIndex].push(
-        nullCount[seriesIndex][bucket] > 0
+        nullCount[seriesIndex][bucket] > 0 &&
+        (nullBucketMode === "any" || value === undefined)
           ? null
-          : reducer.getValue(seriesIndex, bucket),
+          : value,
       );
     }
   }
@@ -449,7 +452,8 @@ function downsampleAlignedWith(
 }
 
 // 按时间等宽分桶降采样：降到 uPlot 抽稀阈值以下避免尖刺。
-// 三态保留：任何 null→null（断点优先，避免丢包被均值吞掉），有值→见下，全 off-phase→undefined。
+// 三态保留：默认任一 null 都使桶断开；Ping 可用 "all" 模式，仅在桶内没有成功值时断开。
+// 全 off-phase 始终为 undefined。
 // preservePeaks=false（默认）：桶内取均值——平滑，但单点尖峰会被均值吞掉。
 // preservePeaks=true：平坦桶仍取均值（基线干净），但桶内极值偏离均值超过 PEAK_PRESERVE_SPIKE_RATIO
 //   时输出该极值——让真实尖峰/突降穿透降采样显示出来（配合关闭额外滑动平均使用）。
@@ -458,6 +462,7 @@ export function downsampleAligned(
   perTask: Array<Array<number | null | undefined>>,
   maxPoints: number,
   preservePeaks = false,
+  nullBucketMode: "any" | "all" = "any",
 ): { times: number[]; perTask: Array<Array<number | null | undefined>> } {
   return downsampleAlignedWith(times, perTask, maxPoints, (seriesCount, bucketCount) => {
     const valueSum = Array.from({ length: seriesCount }, () =>
@@ -504,39 +509,7 @@ export function downsampleAligned(
         return mean > 0 && extDev > mean * PEAK_PRESERVE_SPIKE_RATIO ? extreme : mean;
       },
     };
-  });
-}
-
-// 与 downsampleAligned 相同的时间分桶规则，但数值按每个点代表的原始样本数加权。
-// Ping 丢包率必须走这条路径：例如 1/1 丢包与 0/59 丢包合并后应为 1/60，
-// 不能把 100% 和 0% 简单平均成 50%。null 仍代表真实断点，undefined 仍是错相采样。
-export function downsampleWeightedAligned(
-  times: number[],
-  perTask: Array<Array<number | null | undefined>>,
-  perTaskWeights: Array<Array<number | null | undefined>>,
-  maxPoints: number,
-): { times: number[]; perTask: Array<Array<number | null | undefined>> } {
-  return downsampleAlignedWith(times, perTask, maxPoints, (seriesCount, bucketCount) => {
-    const weightedValueSum = Array.from({ length: seriesCount }, () =>
-      new Array<number>(bucketCount).fill(0),
-    );
-    const weightSum = Array.from({ length: seriesCount }, () =>
-      new Array<number>(bucketCount).fill(0),
-    );
-
-    return {
-      addValue(seriesIndex, bucket, pointIndex, value) {
-        const weight = perTaskWeights[seriesIndex]?.[pointIndex];
-        if (typeof weight !== "number" || !Number.isFinite(weight) || weight <= 0) return;
-        weightedValueSum[seriesIndex][bucket] += value * weight;
-        weightSum[seriesIndex][bucket] += weight;
-      },
-      getValue(seriesIndex, bucket) {
-        const weight = weightSum[seriesIndex][bucket];
-        return weight > 0 ? weightedValueSum[seriesIndex][bucket] / weight : undefined;
-      },
-    };
-  });
+  }, nullBucketMode);
 }
 
 // 按点数的滑动平均：每个数值点取前后各 floor(window/2) 个点取均值。降采样后各时段点数一致，

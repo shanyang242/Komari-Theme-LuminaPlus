@@ -98,9 +98,6 @@ const AMBIENT_EFFECT_OPTIONS: Array<{
 }> = [
   { value: "sakura", label: "樱花飘落" },
   { value: "rain", label: "细雨" },
-  { value: "snow", label: "缓雪" },
-  { value: "leaves", label: "秋叶飘落" },
-  { value: "confetti", label: "庆典彩纸" },
   { value: "fireworks", label: "烟花" },
 ];
 
@@ -165,19 +162,6 @@ function summarizeNodes(
   return summary.length > 92 ? `${summary.slice(0, 92)}...` : summary;
 }
 
-function pruneBindings(bindings: HomepagePingTaskBindings) {
-  const normalized = normalizeHomepagePingTaskBindings(bindings);
-  const pruned: HomepagePingTaskBindings = {};
-
-  for (const [taskId, clients] of Object.entries(normalized)) {
-    if (clients.length > 0) {
-      pruned[taskId] = clients;
-    }
-  }
-
-  return pruned;
-}
-
 function applyClientAssignment(
   bindings: HomepagePingTaskBindings,
   taskId: number,
@@ -185,7 +169,7 @@ function applyClientAssignment(
   checked: boolean,
 ) {
   const taskKey = String(taskId);
-  const next = pruneBindings(bindings);
+  const next = normalizeHomepagePingTaskBindings(bindings);
 
   for (const [currentTaskId, clients] of Object.entries(next)) {
     const filtered = clients.filter((uuid) => uuid !== clientUuid);
@@ -225,7 +209,7 @@ function applyAvailableClientAssignments(
   clientUuids: string[],
 ) {
   const taskKey = String(taskId);
-  const next = pruneBindings(bindings);
+  const next = normalizeHomepagePingTaskBindings(bindings);
   const assignedTaskByClient = invertBindings(next);
   const selected = new Set(next[taskKey] ?? []);
 
@@ -266,7 +250,6 @@ function pickManagedThemeSettings(settings: ResolvedThemeSettings) {
     showCardGroup: settings.showCardGroup,
     showCostsToGuests: settings.showCostsToGuests,
     showCostSummary: settings.showCostSummary,
-    showCostSummaryFloatingButton: settings.showCostSummaryFloatingButton,
     compactShowTrafficTotal: settings.compactShowTrafficTotal,
     compactShowBilling: settings.compactShowBilling,
     compactShowUptime: settings.compactShowUptime,
@@ -325,26 +308,21 @@ type BooleanDraftKey = {
   [K in keyof ThemeDraft]: ThemeDraft[K] extends boolean ? K : never;
 }[keyof ThemeDraft];
 
-// 统一的「标题 + 说明 + 开关」行。memo + 稳定的 patch 引用:编辑无关字段的击键不再重渲这些行。
+// 统一的开关行。memo + 稳定的 patch 引用:编辑无关字段的击键不再重渲这些行。
 const ToggleRow = memo(function ToggleRow({
   field,
   title,
-  desc,
   checked,
   onPatch,
 }: {
   field: BooleanDraftKey;
   title: string;
-  desc: string;
   checked: boolean;
   onPatch: (key: BooleanDraftKey, value: boolean) => void;
 }) {
   return (
     <label className="surface-inset flex items-center justify-between gap-3 px-4 py-3">
-      <span className="min-w-0">
-        <span className="block text-[13px] font-medium text-[var(--text-primary)]">{title}</span>
-        <span className="mt-1 block text-[11px] text-[var(--text-tertiary)]">{desc}</span>
-      </span>
+      <span className="min-w-0 text-[13px] font-medium text-[var(--text-primary)]">{title}</span>
       <input
         type="checkbox"
         checked={checked}
@@ -359,7 +337,7 @@ const EMPTY_ASSIGNED_CLIENTS: string[] = [];
 const EMPTY_ADMIN_CLIENTS: AdminClient[] = [];
 
 // 单个 Ping 任务的绑定卡片。memo:编辑无关设置的击键不再重渲任务列表;展开态的
-// tasks×clients 复选网格只在绑定/搜索/展开变化时重算。
+// tasks×clients 复选网格只在绑定、筛选或展开变化时重算。
 const TaskBindingSection = memo(function TaskBindingSection({
   task,
   assigned,
@@ -386,7 +364,7 @@ const TaskBindingSection = memo(function TaskBindingSection({
   ) => void;
 }) {
   const assignedSummary = summarizeNodes(assigned, clientsById);
-  // 过滤只有展开的任务需要;收起的卡片跳过,搜索输入不再对每个任务做 O(clients) 扫描。
+  // 节点过滤只有展开的任务需要;收起的卡片跳过,避免对每个任务重复扫描节点。
   const selectableVisibleClients = expanded
     ? visibleClients.filter((client) => {
         const assignedTaskId = assignedTaskByClientUuid.get(client.uuid);
@@ -452,7 +430,7 @@ const TaskBindingSection = memo(function TaskBindingSection({
                 onPatchBindings((prev) => {
                   const next = { ...prev };
                   delete next[String(task.id)];
-                  return pruneBindings(next);
+                  return normalizeHomepagePingTaskBindings(next);
                 });
               }}
               className="theme-manage-button is-compact is-danger"
@@ -533,7 +511,7 @@ const TaskBindingSection = memo(function TaskBindingSection({
 type PremiumDetail = ReturnType<typeof calculateCostSummary>["details"][number];
 
 // 溢价录入列表。memo:编辑其他设置的击键不重渲整表——引用变化只来自
-// costPremiums 切片、搜索结果与汇率加载态。
+// costPremiums 切片与汇率加载态。
 const PremiumList = memo(function PremiumList({
   clients,
   costPremiums,
@@ -579,7 +557,6 @@ const PremiumList = memo(function PremiumList({
               </span>
               <span
                 className="shrink-0 text-[11px] text-[var(--text-tertiary)]"
-                title="该节点当前剩余价值（按账单周期折算，不含溢价）"
               >
                 {referenceLabel}
               </span>
@@ -594,11 +571,6 @@ const PremiumList = memo(function PremiumList({
                           ? "var(--status-success)"
                           : "var(--text-tertiary)",
                   }}
-                  title={
-                    entry.paidCny != null
-                      ? "溢价 = 收购价 − 收购日剩余价值；该折算基准已经固化"
-                      : "旧格式：直接记录的溢价，填写收购价后自动升级"
-                  }
                 >
                   溢价 {formatSignedCny(entry.amount)}
                 </span>
@@ -619,11 +591,6 @@ const PremiumList = memo(function PremiumList({
                 placeholder="收购价"
                 disabled={!canCompute}
                 aria-label={`${client.name} 的收购价`}
-                title={
-                  canCompute
-                    ? "实际收购价（人民币），留空即清除记录"
-                    : "该节点已忽略或汇率缺失，无法折算剩余价值"
-                }
                 className="surface-inset w-24 px-2 py-1 text-right text-[13px] outline-none disabled:opacity-45"
               />
               <input
@@ -635,11 +602,6 @@ const PremiumList = memo(function PremiumList({
                 // 放开输入只会被静默丢弃(受控值弹回旧日期)。
                 disabled={!entry || !canCompute}
                 aria-label={`${client.name} 的收购日期`}
-                title={
-                  canCompute
-                    ? "收购日期：修改后会按当前价格、周期、到期日和汇率回算该日剩余价值，重新计算并固化溢价"
-                    : "该节点已忽略或汇率缺失，无法折算剩余价值"
-                }
                 className="surface-inset w-[8.75rem] px-2 py-1 text-[12px] outline-none disabled:opacity-45"
               />
             </div>
@@ -738,9 +700,7 @@ export function ThemeManage() {
     draftFromSettings(DEFAULT_THEME_SETTINGS),
   );
   const [expandedTaskId, setExpandedTaskId] = useState<number | null>(null);
-  const [taskSearch, setTaskSearch] = useState("");
   const [nodeSearch, setNodeSearch] = useState("");
-  const [premiumSearch, setPremiumSearch] = useState("");
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -845,26 +805,9 @@ export function ThemeManage() {
     [sortedClients],
   );
 
-  const filteredTasks = useMemo(() => {
-    const keyword = taskSearch.trim().toLowerCase();
-    if (!keyword) return sortedTasks;
-    return sortedTasks.filter((task) => {
-      return (
-        task.name.toLowerCase().includes(keyword) ||
-        String(task.id).includes(keyword) ||
-        task.type.toLowerCase().includes(keyword) ||
-        task.target.toLowerCase().includes(keyword)
-      );
-    });
-  }, [sortedTasks, taskSearch]);
-
   const visibleClients = useMemo(
     () => filterClients(sortedClients, nodeSearch),
     [nodeSearch, sortedClients],
-  );
-  const filteredPremiumClients = useMemo(
-    () => filterClients(sortedClients, premiumSearch),
-    [premiumSearch, sortedClients],
   );
 
   // 溢价表格里"当前剩余价值"仅供参考,用已保存的汇率源/忽略名单算(不用草稿里还没保存的
@@ -988,10 +931,6 @@ export function ThemeManage() {
     [premiumBasisAt],
   );
 
-  const draftHiddenNodes = useMemo(
-    () => normalizeNodeIdentityList(draft.hiddenNodesText),
-    [draft.hiddenNodesText],
-  );
   const draftCostRateApiUrlInvalid =
     draft.costRateApiUrl.trim() !== "" && !isCostRateApiUrlValid(draft.costRateApiUrl.trim());
   const draftMultiPingInvalid =
@@ -1004,7 +943,7 @@ export function ThemeManage() {
     const { hiddenNodesText, costIgnoredText, ...rest } = draft;
     return {
       ...rest,
-      homepagePingBindings: pruneBindings(rest.homepagePingBindings),
+      homepagePingBindings: normalizeHomepagePingTaskBindings(rest.homepagePingBindings),
       homepageMultiPingNodeTaskIds: normalizeHomepageMultiPingNodeTaskIds(
         rest.homepageMultiPingNodeTaskIds,
       ),
@@ -1045,14 +984,6 @@ export function ThemeManage() {
     seedDrafts(sourceThemeSettings);
   }, [config, isDirty, sourceSignature, sourceThemeSettings, seedDrafts]);
 
-  const assignedNodeCount = useMemo(
-    () =>
-      Object.values(draft.homepagePingBindings).reduce(
-        (total, clients) => total + clients.length,
-        0,
-      ),
-    [draft.homepagePingBindings],
-  );
   const multiPingConfiguredNodeCount = useMemo(
     () =>
       sortedClients.filter((client) => draft.homepageMultiPingNodeTaskIds[client.uuid])
@@ -1095,6 +1026,7 @@ export function ThemeManage() {
         "trafficRatingLabels", "bandwidthRatingLabels", "assetRatingLabels",
         "showConnections", "showTodayTrafficPopover",
         "backgroundMediaType", "backgroundVideo", "backgroundVideoDark",
+        "showCostSummaryFloatingButton",
       ]) {
         delete nextSettings[key];
       }
@@ -1180,7 +1112,6 @@ export function ThemeManage() {
     (tasksError instanceof Error ? tasksError.message : null) ||
     (clientsError instanceof Error ? clientsError.message : null);
   const noTasksYet = !tasksLoading && !clientsLoading && sortedTasks.length === 0;
-  const noFilteredTaskMatch = !tasksLoading && !clientsLoading && !noTasksYet && filteredTasks.length === 0;
   const draftBgAlignment = parseBackgroundAlignment(draft.backgroundAlignment);
   const setBgSize = (size: BackgroundSize) =>
     patch("backgroundAlignment", `${size},${draftBgAlignment.position}`);
@@ -1226,22 +1157,11 @@ export function ThemeManage() {
           <div className="theme-masthead-headings">
             <span className="theme-masthead-kicker">LUMINAPLUS · 主题控制台</span>
             <h1 className="theme-masthead-title">主题设置</h1>
-            <p className="theme-masthead-desc">
-              集中调整 LuminaPlus 的展示偏好与首页延迟绑定；保存后立即应用到当前站点。
-            </p>
           </div>
           <dl className="theme-masthead-meta">
             <div>
               <dt>主题</dt>
               <dd>{config?.theme || "Komari-Theme-LuminaPlus"}</dd>
-            </div>
-            <div>
-              <dt>已绑定 Ping</dt>
-              <dd>
-                {draft.enableHomepageMultiPing
-                  ? `三网覆盖 ${multiPingConfiguredNodeCount} 台`
-                  : `${assignedNodeCount} / ${sortedClients.length}`}
-              </dd>
             </div>
           </dl>
         </div>
@@ -1278,43 +1198,34 @@ export function ThemeManage() {
       )}
 
       <InstancePanel
-        kicker={<><span className="instance-panel-kicker-num">01</span>外观</>}
-        title="默认外观"
-        description="为首次访问或尚未手动切换外观的用户设置默认显示模式；后续仍可在首页右上角按需切换。"
+        kicker={<><span className="instance-panel-kicker-num">01</span>外观与视图</>}
+        title="默认外观与卡片视图"
         aside={<LayoutTemplate size={16} />}
       >
-        <div className="instance-segmented is-scrollable">
-          {APPEARANCE_OPTIONS.map(({ value, label, icon: Icon }) => (
-            <button
-              key={value}
-              type="button"
-              data-active={draft.defaultAppearance === value ? "true" : "false"}
-              aria-pressed={draft.defaultAppearance === value}
-              onClick={() => patch("defaultAppearance", value)}
-              className="inline-flex items-center justify-center gap-2"
-            >
-              <Icon size={14} />
-              <span>{label}</span>
-            </button>
-          ))}
-        </div>
-      </InstancePanel>
-
-      <InstancePanel
-        kicker={<><span className="instance-panel-kicker-num">02</span>视图</>}
-        title="默认卡片视图"
-        description="分别设置桌面端与移动端的默认卡片尺寸；首页右上角按钮只临时切换当前设备的显示。"
-        aside={<LayoutGrid size={16} />}
-      >
-        <div className="grid gap-4 md:grid-cols-2">
-          <div className="surface-inset flex min-w-0 flex-col gap-3 px-4 py-4">
-            <div>
-              <div className="text-[13px] font-semibold text-[var(--text-primary)]">
-                桌面端默认
-              </div>
-              <div className="mt-1 text-[11px] text-[var(--text-tertiary)]">
-                适用于宽度大于 720px 的浏览器窗口。
-              </div>
+        <div className="grid gap-4 lg:grid-cols-3">
+          <section className="surface-inset flex min-w-0 flex-col gap-3 px-4 py-4">
+            <div className="text-[13px] font-semibold text-[var(--text-primary)]">
+              默认外观
+            </div>
+            <div className="instance-segmented is-scrollable">
+              {APPEARANCE_OPTIONS.map(({ value, label, icon: Icon }) => (
+                <button
+                  key={value}
+                  type="button"
+                  data-active={draft.defaultAppearance === value ? "true" : "false"}
+                  aria-pressed={draft.defaultAppearance === value}
+                  onClick={() => patch("defaultAppearance", value)}
+                  className="inline-flex items-center justify-center gap-2"
+                >
+                  <Icon size={14} />
+                  <span>{label}</span>
+                </button>
+              ))}
+            </div>
+          </section>
+          <section className="surface-inset flex min-w-0 flex-col gap-3 px-4 py-4">
+            <div className="text-[13px] font-semibold text-[var(--text-primary)]">
+              桌面端默认
             </div>
             <div className="instance-segmented is-scrollable">
               {NODE_VIEW_MODE_OPTIONS.map(({ value, label, icon: Icon }) => (
@@ -1331,15 +1242,10 @@ export function ThemeManage() {
                 </button>
               ))}
             </div>
-          </div>
-          <div className="surface-inset flex min-w-0 flex-col gap-3 px-4 py-4">
-            <div>
-              <div className="text-[13px] font-semibold text-[var(--text-primary)]">
-                移动端默认
-              </div>
-              <div className="mt-1 text-[11px] text-[var(--text-tertiary)]">
-                适用于宽度小于等于 720px 的手机或窄屏窗口。
-              </div>
+          </section>
+          <section className="surface-inset flex min-w-0 flex-col gap-3 px-4 py-4">
+            <div className="text-[13px] font-semibold text-[var(--text-primary)]">
+              移动端默认
             </div>
             <div className="instance-segmented is-scrollable">
               {MOBILE_VIEW_MODE_OPTIONS.map(({ value, label, icon: Icon }) => (
@@ -1356,34 +1262,32 @@ export function ThemeManage() {
                 </button>
               ))}
             </div>
-          </div>
+          </section>
         </div>
       </InstancePanel>
 
       <InstancePanel
-        kicker={<><span className="instance-panel-kicker-num">03</span>背景</>}
+        kicker={<><span className="instance-panel-kicker-num">02</span>背景</>}
         title="背景与透明度"
-        description="为站点设置自定义背景图，并调节卡片不透明度。"
         aside={<Wallpaper size={16} />}
       >
         <div className="flex flex-col gap-4">
           <ToggleRow
             field="enableBackgroundImage"
             title="启用自定义背景"
-            desc="关闭后不加载背景图（下方 URL 配置会保留），站点回到纯色主题；再次开启即恢复。"
             checked={draft.enableBackgroundImage}
             onPatch={patch}
           />
 
-          <div className="surface-inset flex flex-col gap-3 px-4 py-4">
+          <div className="grid gap-3 md:grid-cols-2">
             <ToggleRow
               field="enableAmbientEffect"
               title="启用背景动效"
-              desc="默认关闭；开启后在页面上轻量渲染所选氛围效果，不影响点击和滚动。"
               checked={draft.enableAmbientEffect}
               onPatch={patch}
             />
-            <label className="flex min-w-0 flex-col gap-2">
+
+            <label className="surface-inset flex min-w-0 flex-col justify-center gap-2 px-4 py-3">
               <span className="inline-flex items-center gap-2 text-[12px] font-medium text-[var(--text-secondary)]">
                 <Sparkles size={14} />
                 动效选择
@@ -1400,9 +1304,6 @@ export function ThemeManage() {
                   </option>
                 ))}
               </select>
-              <span className="text-[11px] leading-relaxed text-[var(--text-tertiary)]">
-                关闭总开关时保留当前选择且不创建渲染层；移动端会自动降低粒子数量，系统减少动态效果时停止播放。
-              </span>
             </label>
           </div>
 
@@ -1414,12 +1315,8 @@ export function ThemeManage() {
               <input
                 value={draft.backgroundImage}
                 onChange={(event) => patch("backgroundImage", event.target.value)}
-                placeholder="https://example.com/bg.webp"
                 className="surface-inset w-full px-3 py-2 text-[13px] outline-none"
               />
-              <span className="text-[11px] text-[var(--text-tertiary)]">
-                留空则不显示背景图；可用 <code>浅色图|深色图</code> 分别设置两种外观。
-              </span>
             </label>
             <label className="flex min-w-0 flex-col gap-2">
               <span className="text-[12px] font-medium text-[var(--text-secondary)]">
@@ -1428,12 +1325,8 @@ export function ThemeManage() {
               <input
                 value={draft.backgroundImageMobile}
                 onChange={(event) => patch("backgroundImageMobile", event.target.value)}
-                placeholder="留空则沿用桌面端背景图"
                 className="surface-inset w-full px-3 py-2 text-[13px] outline-none"
               />
-              <span className="text-[11px] text-[var(--text-tertiary)]">
-                屏宽不超过 720px 时生效；同样支持 <code>浅色图|深色图</code>。
-              </span>
             </label>
           </div>
 
@@ -1498,39 +1391,24 @@ export function ThemeManage() {
                 <span className="text-[13px] font-medium text-[var(--text-tertiary)]">%</span>
               </span>
             </div>
-            <span className="text-[11px] leading-relaxed text-[var(--text-tertiary)]">
-              输入 0–100 的整数。100 = 完全不透明（与默认主题一致），数值越低卡片越通透、越能透出自定义背景。
-              {draft.enableBackgroundImage && (normalizeBackgroundUrl(draft.backgroundImage) || normalizeBackgroundUrl(draft.backgroundImageMobile))
-                ? " 低于 95 时会自动在背景上叠加可读性遮罩，保证文字清晰；卡片本身保持纯半透明。"
-                : " 需先在上方设置自定义背景后才会生效。"}
-            </span>
           </div>
         </div>
       </InstancePanel>
 
       <InstancePanel
-        kicker={<><span className="instance-panel-kicker-num">04</span>首页</>}
+        kicker={<><span className="instance-panel-kicker-num">03</span>首页</>}
         title="首页巡检"
-        description="控制首页顶部总览和分组筛选；适合节点较多时快速查看状态。"
         aside={<ListFilter size={16} />}
       >
-        <div className="mb-4 grid gap-3 md:grid-cols-2">
+        <div className="grid gap-3 md:grid-cols-3">
           <ToggleRow
             field="enableHomeHeaderAutoHide"
             title="定时隐藏顶部信息"
-            desc="首页加载完成后，同时隐藏站点名称与右上角快捷设置；刷新页面后重新显示。"
             checked={draft.enableHomeHeaderAutoHide}
             onPatch={patch}
           />
           <div className="surface-inset flex items-center justify-between gap-3 px-4 py-3">
-            <span className="min-w-0">
-              <span className="block text-[13px] font-medium text-[var(--text-primary)]">
-                显示时长
-              </span>
-              <span className="mt-1 block text-[11px] text-[var(--text-tertiary)]">
-                可设置 1–3600 秒，默认 10 秒。
-              </span>
-            </span>
+            <span className="text-[13px] font-medium text-[var(--text-primary)]">显示时长</span>
             <span className="inline-flex shrink-0 items-center gap-1.5">
               <input
                 type="number"
@@ -1553,41 +1431,33 @@ export function ThemeManage() {
               <span className="text-[13px] font-medium text-[var(--text-tertiary)]">秒</span>
             </span>
           </div>
-        </div>
-
-        <div className="grid gap-3 md:grid-cols-3">
           <ToggleRow
             field="showHomeOverview"
             title="显示顶部总览"
-            desc="展示时间、在线数、地区、流量和速率。"
             checked={draft.showHomeOverview}
             onPatch={patch}
           />
           <ToggleRow
             field="showGroupTabs"
             title="显示分组筛选"
-            desc="根据后端节点分组生成首页 Tab。"
             checked={draft.showGroupTabs}
             onPatch={patch}
           />
           <ToggleRow
             field="showRegionBar"
             title="显示地区筛选"
-            desc="按节点地区生成国旗筛选栏，点击某地区只看该地区节点。"
             checked={draft.showRegionBar}
             onPatch={patch}
           />
           <ToggleRow
             field="showCardGroup"
             title="卡片显示分组"
-            desc="关闭后卡片内不再显示节点分组名（不影响分组筛选栏与备注）。"
             checked={draft.showCardGroup}
             onPatch={patch}
           />
           <ToggleRow
             field="hideAdminEntryWhenLoggedOut"
             title="未登录时隐藏后台入口"
-            desc="仅隐藏访客看到的“后台登录”；/admin 仍可直接访问，登录后自动显示“管理”。"
             checked={draft.hideAdminEntryWhenLoggedOut}
             onPatch={patch}
           />
@@ -1596,9 +1466,8 @@ export function ThemeManage() {
       </InstancePanel>
 
       <InstancePanel
-        kicker={<><span className="instance-panel-kicker-num">05</span>隐藏</>}
+        kicker={<><span className="instance-panel-kicker-num">04</span>隐藏</>}
         title="隐藏节点"
-        description="在此填写的节点会从首页彻底移除：不显示卡片，也不计入在线数、累计流量、实时带宽与资产等所有统计。对所有访客生效，清空即可恢复。"
         aside={<EyeOff size={16} />}
       >
         <label className="flex min-w-0 flex-col gap-2">
@@ -1608,47 +1477,36 @@ export function ThemeManage() {
           <textarea
             value={draft.hiddenNodesText}
             onChange={(event) => patch("hiddenNodesText", event.target.value)}
-            placeholder="每行一个节点名称 / UUID，也可以用逗号分隔"
             className="surface-inset min-h-[112px] w-full resize-y px-3 py-2 text-[13px] outline-none"
           />
-          <span className="text-[11px] text-[var(--text-tertiary)]">
-            已隐藏 {draftHiddenNodes.length} 个节点。按名称或 UUID 匹配，大小写不敏感。
-          </span>
         </label>
       </InstancePanel>
 
       <InstancePanel
-        kicker={<><span className="instance-panel-kicker-num">06</span>卡片</>}
+        kicker={<><span className="instance-panel-kicker-num">05</span>卡片</>}
         title="卡片显示项"
-        description="管理小卡片专属的信息密度。"
         aside={<Rows3 size={16} />}
       >
         <div className="mt-4">
           <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
             <span className="text-[13px] font-medium text-[var(--text-primary)]">小卡片专属</span>
-            <span className="text-[11px] text-[var(--text-tertiary)]">
-              控制小卡片中间信息块的密度；实时速率始终显示。
-            </span>
           </div>
           <div className="mt-2 grid gap-3 md:grid-cols-2">
             <ToggleRow
               field="compactShowTrafficTotal"
               title="显示累计流量"
-              desc="展示出站与入站累计流量。"
               checked={draft.compactShowTrafficTotal}
               onPatch={patch}
             />
             <ToggleRow
               field="compactShowBilling"
               title="显示费用到期"
-              desc="展示续费价格与剩余天数。"
               checked={draft.compactShowBilling}
               onPatch={patch}
             />
             <ToggleRow
               field="compactShowUptime"
               title="显示在线时间"
-              desc="在小卡片流量栏右侧展示在线时长。默认开启。"
               checked={draft.compactShowUptime}
               onPatch={patch}
             />
@@ -1657,35 +1515,25 @@ export function ThemeManage() {
       </InstancePanel>
 
       <InstancePanel
-        kicker={<><span className="instance-panel-kicker-num">07</span>花费</>}
+        kicker={<><span className="instance-panel-kicker-num">06</span>花费</>}
         title="服务器花费"
-        description="资产统计页（/assets）使用实时汇率计算年化总支出、月均支出与剩余价值；忽略列表中的节点不会计入费用。两个入口开关都关闭时，直接访问资产页也会跳回首页。"
         aside={<CircleDollarSign size={16} />}
       >
-        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(280px,0.8fr)]">
+        <div className="grid gap-4 lg:grid-cols-2">
           <div className="flex flex-col gap-3">
             <ToggleRow
               field="showCostsToGuests"
               title="向未登录访客公开费用"
-              desc="关闭后，续费价格和资产统计仅登录管理员可见；到期时间仍正常显示。"
               checked={draft.showCostsToGuests}
               onPatch={patch}
             />
             <ToggleRow
               field="showCostSummary"
               title="显示资产页入口按钮"
-              desc="在首页资产概览卡右上角显示进入资产统计页的按钮。"
               checked={draft.showCostSummary}
               onPatch={patch}
             />
-            <ToggleRow
-              field="showCostSummaryFloatingButton"
-              title="显示资产悬浮按钮"
-              desc="卡内入口不可用时（总览隐藏或其开关关闭），以悬浮按钮进入资产统计页。"
-              checked={draft.showCostSummaryFloatingButton}
-              onPatch={patch}
-            />
-            <label className="flex flex-col gap-2">
+            <label className="surface-inset flex flex-col gap-2 px-4 py-3">
               <span className="text-[12px] font-medium text-[var(--text-secondary)]">
                 实时汇率接口
               </span>
@@ -1703,24 +1551,22 @@ export function ThemeManage() {
               )}
             </label>
           </div>
-          <label className="flex min-w-0 flex-col gap-2">
+          <label className="surface-inset flex min-w-0 flex-col gap-2 px-4 py-3">
             <span className="text-[12px] font-medium text-[var(--text-secondary)]">
               忽略计费节点
             </span>
             <textarea
               value={draft.costIgnoredText}
               onChange={(event) => patch("costIgnoredText", event.target.value)}
-              placeholder="每行一个节点名称 / UUID，也可以用逗号分隔"
-              className="surface-inset min-h-[112px] w-full resize-y px-3 py-2 text-[13px] outline-none"
+              className="surface-inset min-h-[160px] w-full flex-1 resize-y px-3 py-2 text-[13px] outline-none"
             />
           </label>
         </div>
       </InstancePanel>
 
       <InstancePanel
-        kicker={<><span className="instance-panel-kicker-num">08</span>溢价</>}
+        kicker={<><span className="instance-panel-kicker-num">07</span>溢价</>}
         title="收购溢价"
-        description="填写实际收购价（人民币），系统使用当前价格、周期、到期日和汇率回算收购日的剩余价值，再固化溢价（收购价 − 收购日剩余价值，可正可负）。后续续费和汇率变化不会自动改写；主动修改收购日期时会重新计算并固化。收购日期同时用于溢价月摊与尚未摊销价值；免费节点的收购价全额记为溢价，留空即清除记录。"
         aside={
           <div className="text-[11px] text-[var(--text-tertiary)]">
             {clientsLoading ? "载入中" : `已设置 ${premiumConfiguredCount} 个节点`}
@@ -1728,17 +1574,6 @@ export function ThemeManage() {
         }
       >
         <div className="flex flex-col gap-3">
-          <label className="surface-inset flex items-center gap-2 px-3 py-2">
-            <Search size={14} className="text-[var(--text-tertiary)]" />
-            <input
-              value={premiumSearch}
-              onChange={(event) => setPremiumSearch(event.target.value)}
-              placeholder="搜索节点名称 / UUID / 分组 / 地区"
-              aria-label="搜索节点"
-              className="min-w-0 flex-1 bg-transparent text-[13px] outline-none placeholder:text-[var(--text-tertiary)]"
-            />
-          </label>
-
           {clientsLoading && (
             <div className="flex min-h-[15vh] items-center justify-center">
               <Spinner size={24} />
@@ -1751,15 +1586,9 @@ export function ThemeManage() {
             </div>
           )}
 
-          {!clientsLoading && sortedClients.length > 0 && filteredPremiumClients.length === 0 && (
-            <div className="surface-inset px-4 py-5 text-[13px] text-[var(--text-secondary)]">
-              没有匹配的节点。
-            </div>
-          )}
-
-          {!clientsLoading && filteredPremiumClients.length > 0 && (
+          {!clientsLoading && sortedClients.length > 0 && (
             <PremiumList
-              clients={filteredPremiumClients}
+              clients={sortedClients}
               costPremiums={draft.costPremiums}
               detailByUuid={premiumDetailByUuid}
               rateLoading={premiumRateQuery.isLoading}
@@ -1772,28 +1601,13 @@ export function ThemeManage() {
       </InstancePanel>
 
       <InstancePanel
-        kicker={<><span className="instance-panel-kicker-num">09</span>延迟</>}
+        kicker={<><span className="instance-panel-kicker-num">08</span>延迟</>}
         title="主页延迟检测"
-        description={
-          <>
-            单线路模式为每个节点绑定一项 Ping 任务；开启三网模式后，大卡片和小卡片默认展示三项全局任务，也可以为每台服务器单独覆盖探测点。
-            {" "}
-            如果当前还没有可用任务，请先前往
-            {" "}
-            <a href="/admin/ping" className="theme-manage-inline-link">
-              后台 Ping 管理
-            </a>
-            {" "}
-            创建任务，再回来完成绑定。
-          </>
-        }
         aside={
           <div className="text-[11px] text-[var(--text-tertiary)]">
             {tasksLoading || clientsLoading
               ? "载入中"
-              : draft.enableHomepageMultiPing
-                ? `已覆盖 ${multiPingConfiguredNodeCount} 台`
-                : `${sortedTasks.length} 个任务`}
+              : `${sortedTasks.length} 个任务`}
           </div>
         }
       >
@@ -1809,9 +1623,6 @@ export function ThemeManage() {
               <span className="min-w-0">
                 <span className="block text-[13px] font-medium text-[var(--text-primary)]">
                   开启三网模式
-                </span>
-                <span className="mt-1 block text-[11px] leading-relaxed text-[var(--text-tertiary)]">
-                  大卡片和小卡片使用三网延迟；未单独配置的服务器继承下面的全局默认线路。
                 </span>
               </span>
               <input
@@ -1831,12 +1642,9 @@ export function ThemeManage() {
 
             {draft.enableHomepageMultiPing && (
               <div className="mt-4 border-t border-[var(--hairline)] pt-4">
-                <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+                <div className="mb-3">
                   <span className="text-[12px] font-medium text-[var(--text-primary)]">
                     全局默认线路
-                  </span>
-                  <span className="text-[11px] text-[var(--text-tertiary)]">
-                    按顺序显示在节点卡片中
                   </span>
                 </div>
                 <div className="grid gap-3 md:grid-cols-3">
@@ -1883,19 +1691,14 @@ export function ThemeManage() {
                     },
                   )}
                 </div>
-                <p
-                  className={clsx(
-                    "mt-3 text-[11px] leading-relaxed",
-                    draftMultiPingInvalid
-                      ? "text-[var(--status-error)]"
-                      : "text-[var(--text-tertiary)]",
-                  )}
-                  role={draftMultiPingInvalid ? "alert" : undefined}
-                >
-                  {draftMultiPingInvalid
-                    ? "请选满 3 个不同的 Ping 任务后再保存。"
-                    : "未设置单独覆盖的服务器都会使用这三项任务。"}
-                </p>
+                {draftMultiPingInvalid && (
+                  <p
+                    className="mt-3 text-[11px] leading-relaxed text-[var(--status-error)]"
+                    role="alert"
+                  >
+                    请选满 3 个不同的 Ping 任务后再保存。
+                  </p>
+                )}
 
                 <MultiPingNodeConfigControl
                   clients={sortedClients}
@@ -1910,7 +1713,7 @@ export function ThemeManage() {
                   saveDisabled={
                     !isDirty ||
                     draftCostRateApiUrlInvalid ||
-                        draftMultiPingInvalid
+                    draftMultiPingInvalid
                   }
                   onChange={patchNodeMultiPingTaskIds}
                   onSave={handleSave}
@@ -1919,37 +1722,9 @@ export function ThemeManage() {
             )}
           </div>
 
-          <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(240px,320px)]">
-            <label className="surface-inset flex items-center gap-2 px-3 py-2">
-              <Search size={14} className="text-[var(--text-tertiary)]" />
-              <input
-                value={taskSearch}
-                onChange={(event) => setTaskSearch(event.target.value)}
-                placeholder="搜索 Ping 任务名称 / ID / 类型 / 目标"
-                aria-label="搜索 Ping 任务"
-                className="min-w-0 flex-1 bg-transparent text-[13px] outline-none placeholder:text-[var(--text-tertiary)]"
-              />
-            </label>
-            <div className="surface-inset flex items-center justify-between gap-3 px-3 py-2 text-[12px] text-[var(--text-secondary)]">
-              <span>首页绑定总数</span>
-              <strong className="text-[var(--text-primary)]">
-                {draft.enableHomepageMultiPing
-                  ? `${multiPingConfiguredNodeCount} 台单独覆盖`
-                  : `${assignedNodeCount} / ${sortedClients.length}`}
-              </strong>
-            </div>
-          </div>
-
-          {draft.enableHomepageMultiPing && (
-            <div className="text-[11px] text-[var(--text-tertiary)]">
-              下方单线路绑定继续用于节点详情；大卡片与小卡片使用上方三项任务。
-            </div>
-          )}
-
           <ToggleRow
             field="fakePingForUnbound"
             title="未绑定探测点显示模拟延迟"
-            desc="用户主动开启后，未绑定单线路 Ping 任务的在线节点，以及三网模式中后台未绑定的探测点，都会显示前端生成的模拟数据（延迟 1-10ms、丢包 0%）。模拟数据仅用于视觉统一，不代表真实网络质量。"
             checked={draft.fakePingForUnbound}
             onPatch={patch}
           />
@@ -1969,16 +1744,10 @@ export function ThemeManage() {
             </div>
           )}
 
-          {noFilteredTaskMatch && (
-            <div className="surface-inset px-4 py-5 text-[13px] text-[var(--text-secondary)]">
-              没有匹配的 Ping 任务。
-            </div>
-          )}
-
           {!tasksLoading &&
             !clientsLoading &&
             !noTasksYet &&
-            filteredTasks.map((task) => {
+            sortedTasks.map((task) => {
               const expanded = expandedTaskId === task.id;
               return (
                 <TaskBindingSection

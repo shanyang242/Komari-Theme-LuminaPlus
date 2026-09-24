@@ -19,7 +19,6 @@ import {
   cutPeakValues,
   detectTypicalIntervalSeconds,
   downsampleAligned,
-  downsampleWeightedAligned,
   insertMetricGapSentinels,
   smoothByCount,
 } from "./chartData";
@@ -47,7 +46,6 @@ export function summarizePingRecords(records: PingRecord[]) {
     .map((record) => record.value)
     .sort((a, b) => a - b);
   const total = records.length;
-  const lost = total - valid.length;
 
   let latest: number | null = null;
   for (let index = records.length - 1; index >= 0; index -= 1) {
@@ -65,8 +63,6 @@ export function summarizePingRecords(records: PingRecord[]) {
     p50: percentileFromSorted(valid, 0.5),
     p99: percentileFromSorted(valid, 0.99),
     total,
-    lost,
-    loss: total > 0 ? (lost / total) * 100 : 0,
   };
 }
 
@@ -92,12 +88,11 @@ export function PingChart({
     isLoading,
     refetch: refetchRecords,
   } = usePingRecords(uuid, hours, active);
-  // stats 随 records 同一次请求返回(getPingRecords includeStats),不再单独发起查询。
+  // stats 与 records 并行请求并放入同一个查询结果；stats 保留后端抽样前的完整区间统计。
   const pingStats = data?.stats ?? EMPTY_PING_STATS;
   const { resolvedAppearance } = usePreferences();
   const { w, h, ref: chartSizeRef } = useResponsiveChartSize("wide");
   const [hiddenTasks, setHiddenTasks] = useState<Set<number>>(new Set());
-  const [chartMetric, setChartMetric] = useState<"latency" | "loss">("latency");
   const [connectNulls, setConnectNulls] = useState(false);
   const [cutPeak, setCutPeak] = useState(false);
   const chartRef = useRef<uPlot.AlignedData>([[]]);
@@ -200,9 +195,9 @@ export function PingChart({
     };
   }, [data, sortedRecords, taskKeySet, tasks]);
 
-  // 对齐结果独立缓存；仅对当前指标执行断点处理和降采样，削峰不影响丢包率。
+  // 对齐结果独立缓存；仅执行延迟历史的断点处理和降采样。
   const latencyChart = useMemo(() => {
-    if (!chartPoints || chartMetric !== "latency") return null;
+    if (!chartPoints) return null;
     let points = chartPoints.latencyPoints;
     if (cutPeak && taskKeys.length > 0) {
       points = cutPeakValues(points, taskKeys);
@@ -214,38 +209,18 @@ export function PingChart({
       points.map((point) => point[taskKey]),
     );
 
-    const reduced = downsampleAligned(times, perTask, MAX_RENDER_POINTS, !cutPeak);
+    // 一桶内若仍有成功采样，就显示该桶的延迟趋势；只有整桶丢包才画断点。
+    // 偶发丢包的准确比例由下方任务标签展示，不能将一次丢包画成整桶掉线。
+    const reduced = downsampleAligned(times, perTask, MAX_RENDER_POINTS, !cutPeak, "all");
     const smoothed = smoothByCount(
       reduced.perTask,
       cutPeak ? SMOOTH_WINDOW_POINTS_PEAK : SMOOTH_WINDOW_POINTS,
     );
 
     return [reduced.times, ...smoothed] as uPlot.AlignedData;
-  }, [chartMetric, chartPoints, cutPeak, taskKeys]);
+  }, [chartPoints, cutPeak, taskKeys]);
 
-  const lossChart = useMemo(() => {
-    if (!chartPoints || chartMetric !== "loss") return null;
-    const lossPoints = insertMetricGapSentinels(
-      chartPoints.lossPoints,
-      chartPoints.gapOptions,
-    );
-    const lossTimes = lossPoints.map((point) => point.time);
-    const lossPerTask = taskKeys.map((taskKey) =>
-      lossPoints.map((point) => point[taskKey]),
-    );
-    const lossWeights = taskKeys.map((taskKey) =>
-      lossPoints.map((point) => chartPoints.lossWeightMap.get(point.time)?.[taskKey]),
-    );
-    const reducedLoss = downsampleWeightedAligned(
-      lossTimes,
-      lossPerTask,
-      lossWeights,
-      MAX_RENDER_POINTS,
-    );
-    return [reducedLoss.times, ...reducedLoss.perTask] as uPlot.AlignedData;
-  }, [chartMetric, chartPoints, taskKeys]);
-
-  const chart = chartMetric === "loss" ? lossChart : latencyChart;
+  const chart = latencyChart;
 
   useEffect(() => {
     if (chart) chartRef.current = chart;
@@ -284,13 +259,6 @@ export function PingChart({
         }
       }
     }
-    if (chartMetric === "loss") {
-      if (max === Number.NEGATIVE_INFINITY || max <= 5) return [0, 5];
-      if (max <= 10) return [0, 10];
-      if (max <= 25) return [0, 25];
-      if (max <= 50) return [0, 50];
-      return [0, 100];
-    }
     if (min === Number.POSITIVE_INFINITY) return [0, 100];
     if (min === max) {
       const pad = Math.max(5, min * 0.1);
@@ -298,7 +266,7 @@ export function PingChart({
     }
     const pad = Math.max(5, (max - min) * 0.12);
     return [Math.max(0, min - pad), max + pad];
-  }, [chart, chartMetric, tasks, visibleTaskIds]);
+  }, [chart, tasks, visibleTaskIds]);
 
   const baseOptions = useMemo<Omit<uPlot.Options, "width" | "height"> | null>(() => {
     if (!chart) return null;
@@ -326,12 +294,7 @@ export function PingChart({
           })
           .map(({ label, raw, color }) => ({
             label,
-            value:
-              raw == null
-                ? "—"
-                : chartMetric === "loss"
-                  ? `${raw.toFixed(1)}%`
-                  : `${raw.toFixed(1)} ms`,
+            value: raw == null ? "—" : `${raw.toFixed(1)} ms`,
             color,
           })),
     });
@@ -359,13 +322,7 @@ export function PingChart({
           ticks: { stroke: grid },
           size: 54,
           values: (_self, splits) =>
-            splits.map((value) =>
-              chartMetric === "loss"
-                ? `${Number(value.toFixed(1))}%`
-                : value === 0
-                  ? ""
-                  : `${Math.round(value)} ms`,
-            ),
+            splits.map((value) => (value === 0 ? "" : `${Math.round(value)} ms`)),
         },
       ],
       series: [
@@ -385,7 +342,7 @@ export function PingChart({
             u.root.setAttribute("role", "img");
             u.root.setAttribute(
               "aria-label",
-              `Ping ${chartMetric === "loss" ? "丢包率" : "延迟"}历史图表，共 ${tasks.length} 条线路`,
+              `Ping 延迟历史图表，共 ${tasks.length} 条线路`,
             );
           },
           tooltipHooks.onInit,
@@ -394,7 +351,7 @@ export function PingChart({
         setCursor: [tooltipHooks.onSetCursor],
       },
     };
-  }, [chart, chartMetric, connectNulls, hiddenTasks, hours, isDark, requestedXRange, taskColors, taskIndexById, taskLabels, tasks, visibleTasks, yRange]);
+  }, [chart, connectNulls, hiddenTasks, hours, isDark, requestedXRange, taskColors, taskIndexById, taskLabels, tasks, visibleTasks, yRange]);
 
   const options = useMemo<uPlot.Options | null>(
     () => (baseOptions ? { ...baseOptions, width: w, height: h } : null),
@@ -436,10 +393,8 @@ export function PingChart({
           ? server.p99P50Ratio
           : fallbackVolatility;
       const total = server?.total ?? fallback?.total ?? 0;
-      const lost = server
-        ? Math.max(0, server.total - server.valid)
-        : fallback?.lost ?? 0;
-      const loss = server?.loss ?? (total > 0 ? fallback?.loss ?? 0 : task.loss);
+      // getRecords 的任务摘要在 records 等距抽样前计算，stats 请求失败时仍可用。
+      const loss = server?.loss ?? task.loss;
       return {
         ...task,
         latest,
@@ -450,7 +405,6 @@ export function PingChart({
         p99,
         volatility,
         total,
-        lost,
         loss,
         color: taskColors.get(task.id) ?? colorForSeries(index, tasks.length),
       };
@@ -508,32 +462,12 @@ export function PingChart({
   return (
     <InstancePanel title="Ping 图表" description={coverageLabel ?? undefined}>
       <div className="instance-ping-toolbar">
-        <div className="instance-segmented instance-ping-metric-switch" aria-label="Ping 图表指标">
-          <button
-            type="button"
-            data-active={chartMetric === "latency" ? "true" : "false"}
-            aria-pressed={chartMetric === "latency"}
-            onClick={() => setChartMetric("latency")}
-          >
-            延迟
-          </button>
-          <button
-            type="button"
-            data-active={chartMetric === "loss" ? "true" : "false"}
-            aria-pressed={chartMetric === "loss"}
-            onClick={() => setChartMetric("loss")}
-          >
-            丢包率
-          </button>
-        </div>
-        {chartMetric === "latency" && (
-          <SwitchToggle
-            label="削峰平滑"
-            active={cutPeak}
-            onToggle={() => setCutPeak((value) => !value)}
-            title="对尖峰值做轻度平滑，仅影响图线显示"
-          />
-        )}
+        <SwitchToggle
+          label="削峰平滑"
+          active={cutPeak}
+          onToggle={() => setCutPeak((value) => !value)}
+          title="对尖峰值做轻度平滑，仅影响图线显示"
+        />
         <SwitchToggle
           label="断点连线"
           active={connectNulls}
@@ -588,11 +522,8 @@ export function PingChart({
               >
                 {task.latest != null ? `${task.latest.toFixed(1)} ms` : "—"}
               </span>
-              <span
-                className="instance-ping-task-loss"
-                style={{ color: lossHeatColor(task.loss) }}
-              >
-                {task.loss.toFixed(1)}%
+              <span className="instance-ping-task-loss" style={{ color: lossHeatColor(task.loss) }}>
+                丢包 {task.loss.toFixed(1)}%
               </span>
             </button>
           );
@@ -603,7 +534,7 @@ export function PingChart({
         {chart && options && visibleTasks.length > 0 ? (
           <>
             <UplotReact
-              key={`${uuid}-${hours}-${chartMetric}-${cutPeak ? "smooth" : "raw"}-${connectNulls ? "span" : "gap"}`}
+              key={`${uuid}-${hours}-${cutPeak ? "smooth" : "raw"}-${connectNulls ? "span" : "gap"}`}
               options={options}
               data={chart}
             />

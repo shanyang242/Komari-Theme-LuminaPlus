@@ -15,10 +15,8 @@ describe("summarizePingRecords", () => {
       max: 100,
       p50: 55,
       total: 3,
-      lost: 1,
     });
     expect(summary.avg).toBe(55);
     expect(summary.p99).toBeCloseTo(99.1, 8);
-    expect(summary.loss).toBeCloseTo(100 / 3, 8);
   });
 });

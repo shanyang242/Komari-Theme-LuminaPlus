@@ -405,7 +405,6 @@ export function installDevMockApi() {
           showRegionBar: true,
           showCardGroup: true,
           showCostSummary: true,
-          showCostSummaryFloatingButton: true,
           showCostsToGuests: true,
           showPingChart: true,
           // 单任务刻意和三网首项不同，便于回归验证单线路绑定。

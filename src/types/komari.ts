@@ -118,10 +118,7 @@ export interface ThemeSettings {
   enableAdminButton?: boolean;
   hideAdminEntryWhenLoggedOut?: boolean;
   showPingChart?: boolean;
-  homepagePingBindings?: Record<string, string[]>;
-  enableHomepageMultiPing?: boolean;
-  homepageMultiPingTaskIds?: number[];
-  homepageMultiPingNodeTaskIds?: Record<string, number[]>;
+  homepagePingNodeTaskIds?: Record<string, number | null>;
   fakePingForUnbound?: boolean;
   enableHomeHeaderAutoHide?: boolean;
   homeHeaderVisibleSeconds?: number;
@@ -297,15 +294,6 @@ export interface PingOverviewItem {
   }>;
   max: number;
   loss: number | null;
-}
-
-export interface HomepagePingLine extends PingOverviewItem {
-  taskId: number;
-  taskName: string;
-}
-
-export interface HomepagePingDisplayLine extends HomepagePingLine {
-  buckets: PingOverviewBucket[];
 }
 
 export interface TrafficTrendSample {

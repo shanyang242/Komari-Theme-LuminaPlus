@@ -108,14 +108,18 @@ describe("calculateCostSummary", () => {
     expect(summary.totalCny).toBe(0);
   });
 
-  it("honours the ignored-node list", () => {
+  it("ignores only the next bill while retaining the current remaining value", () => {
     const summary = calculateCostSummary(
       [node({ uuid: "skip", name: "ignored-box", price: 10, expired_at: inDays(10) })],
       ["ignored-box"],
       RATES,
     );
-    expect(noteCount(summary, "已忽略")).toBe(1);
-    expect(paidCount(summary)).toBe(0);
+    expect(noteCount(summary, "忽略下期账单")).toBe(1);
+    expect(paidCount(summary)).toBe(1);
+    expect(summary.totalCny).toBe(0);
+    expect(summary.monthlyCny).toBe(0);
+    expect(summary.remainingCny).toBeGreaterThan(0);
+    expect(summary.details[0].billingIgnored).toBe(true);
   });
 
   it("converts currency into CNY for the total", () => {
@@ -165,17 +169,19 @@ describe("calculateCostSummary — acquisition premiums", () => {
     expect(summary.details[0].premiumCny).toBe(20);
   });
 
-  it("drops premiums for ignored nodes (whole node exits cost stats)", () => {
+  it("keeps acquisition value for next-bill ignored nodes", () => {
     const summary = calculateCostSummary(
       [node({ uuid: "skip", name: "ignored-box", price: 10 })],
       ["ignored-box"],
       RATES,
       { skip: { amount: 99, acquiredAt: agoDays(60) } },
     );
-    expect(noteCount(summary, "已忽略")).toBe(1);
-    expect(summary.premiumTotalCny).toBe(0);
-    expect(summary.details[0].premiumCny).toBe(0);
-    expect(summary.details[0].premiumMonthlyCny).toBe(0);
+    expect(noteCount(summary, "忽略下期账单")).toBe(1);
+    expect(summary.monthlyCny).toBe(0);
+    expect(summary.remainingCny).toBeGreaterThan(0);
+    expect(summary.premiumTotalCny).toBe(99);
+    expect(summary.details[0].premiumCny).toBe(99);
+    expect(summary.details[0].premiumMonthlyCny).toBeGreaterThan(0);
   });
 });
 

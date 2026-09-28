@@ -93,6 +93,8 @@ interface CostSummaryDetail {
   premiumRemainingCny: number;
   billingCycleDays: number;
   counted: boolean;
+  /** 仅从下一期周期支出中排除，当前剩余价值仍参与统计。 */
+  billingIgnored: boolean;
   note: string;
 }
 
@@ -447,6 +449,7 @@ export function calculateCostSummary(
   for (const node of nodes as CostNode[]) {
     const name = node.name || node.display_name || node.remark || node.uuid;
     const cycleDays = billingCycleDays(node.billing_cycle);
+    const billingIgnored = nodeMatchesIdentitySet(node, ignored);
     // 溢价以人民币直接记录、不依赖价格与汇率,免费/汇率缺失节点照样计入 premiumTotalCny,
     // 不能因价格校验不过就静默丢掉;它不参与 remaining/monthly/totalCny。
     const entry = premiums[node.uuid];
@@ -474,21 +477,8 @@ export function calculateCostSummary(
       premiumMonthlyCny: premiumMonthly,
       premiumRemainingCny: premiumRemaining,
       billingCycleDays: cycleDays,
+      billingIgnored,
     };
-
-    if (nodeMatchesIdentitySet(node, ignored)) {
-      // 忽略名单是整节点退出费用统计,溢价一并不计、不展示(premiumCny 归零)。
-      details.push({
-        ...baseDetail,
-        premiumCny: 0,
-        amortMonths: null,
-        premiumMonthlyCny: 0,
-        premiumRemainingCny: 0,
-        counted: false,
-        note: "已忽略",
-      });
-      continue;
-    }
 
     const price = Number(node.price) || 0;
     if (price <= 0) {
@@ -522,8 +512,10 @@ export function calculateCostSummary(
 
     // `totalCny` 是年化支出(月度 ×12),这样不同账单周期的节点能在同一口径上相加;永久/一次性节点
     // (monthly === 0)对这个周期性总额不贡献。
-    totalCny += monthly * 12;
-    monthlyCny += monthly;
+    if (!billingIgnored) {
+      totalCny += monthly * 12;
+      monthlyCny += monthly;
+    }
     remainingCny += remaining;
     premiumTotalCny += premium;
     premiumMonthlyTotalCny += premiumMonthly;
@@ -532,10 +524,10 @@ export function calculateCostSummary(
     details.push({
       ...baseDetail,
       priceCny: converted,
-      monthlyCny: monthly,
+      monthlyCny: billingIgnored ? 0 : monthly,
       remainingCny: remaining,
       counted: true,
-      note: "",
+      note: billingIgnored ? "忽略下期账单" : "",
     });
   }
 

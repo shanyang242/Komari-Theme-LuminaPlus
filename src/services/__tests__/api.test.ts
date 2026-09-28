@@ -5,7 +5,13 @@ vi.mock("@/services/rpc2Client", () => ({
   getRpc2Client: () => ({ call: rpcCallMock }),
 }));
 
-import { getLoadRecords, getNodes, getPingOverview, getPingRecords } from "@/services/api";
+import {
+  getLoadRecords,
+  getNodes,
+  getPingOverview,
+  getPingRecords,
+  getPublicPingTasks,
+} from "@/services/api";
 
 const pingTask = {
   id: 7, name: "探测", type: "icmp", interval: 60, clients: ["node-a"],
@@ -15,6 +21,18 @@ const pingRecord = { task_id: 7, time: "2026-07-15T03:00:00Z", value: 45, client
 beforeEach(() => rpcCallMock.mockReset());
 
 describe("modified backend RPC2", () => {
+  it("loads the public ping task order and bindings", async () => {
+    rpcCallMock.mockResolvedValue([pingTask]);
+    await expect(getPublicPingTasks()).resolves.toEqual([
+      expect.objectContaining({ id: 7, clients: ["node-a"] }),
+    ]);
+    expect(rpcCallMock).toHaveBeenCalledWith(
+      "public:getPublicPingTasks",
+      {},
+      undefined,
+    );
+  });
+
   it("loads nodes from common:getNodes", async () => {
     rpcCallMock.mockResolvedValue({ "node-a": { uuid: "node-a", name: "A", ipv4: "1.2.3.4" } });
     const nodes = await getNodes();
@@ -40,6 +58,9 @@ describe("modified backend RPC2", () => {
     const result = await getPingRecords("node-a", 2);
     expect(result.records).toHaveLength(1);
     expect(result.stats?.[0]).toMatchObject({ client: "node-a", taskId: 7, avg: 45 });
+    expect(rpcCallMock).toHaveBeenCalledWith("common:getRecords", {
+      uuid: "node-a", hours: 2, type: "ping", maxCount: -1,
+    }, undefined);
     expect(rpcCallMock).toHaveBeenCalledWith("public:getPingMetricStats", {
       entity_id: "node-a", hours: 2,
     }, undefined);
@@ -51,7 +72,6 @@ describe("modified backend RPC2", () => {
     ], tasks: [pingTask] });
     const result = await getPingOverview(1, 7, { entityIds: ["node-a"] });
     expect(result.records.map((record) => record.client)).toEqual(["node-a"]);
-    expect(result.taskAssignmentsKnown).toBe(true);
     expect(result.tasks[0].clients).toEqual(["node-a"]);
     expect(rpcCallMock).toHaveBeenCalledWith("common:getRecords", expect.objectContaining({
       type: "ping", task_id: 7,

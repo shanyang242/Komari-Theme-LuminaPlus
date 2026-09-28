@@ -407,15 +407,6 @@ export function installDevMockApi() {
           showCostSummary: true,
           showCostsToGuests: true,
           showPingChart: true,
-          // 单任务刻意和三网首项不同，便于回归验证单线路绑定。
-          homepagePingBindings: { "2": nodes.map((node) => node.uuid) },
-          enableHomepageMultiPing:
-            new URLSearchParams(window.location.search).get("multiPing") === "1",
-          homepageMultiPingTaskIds: [1, 2, 3],
-          homepageMultiPingNodeTaskIds: {
-            ...(nodes[0] ? { [nodes[0].uuid]: [3, 2, 1] } : {}),
-            ...(nodes[1] ? { [nodes[1].uuid]: [1, 4, 3] } : {}),
-          },
         },
       });
     }
@@ -442,6 +433,8 @@ export function installDevMockApi() {
         });
 
       switch (payload.method) {
+        case "public:getPublicPingTasks":
+          return reply(pingTasks);
         case "public:getPingMetricStats": {
           const uuid = payload.params?.entity_id ?? "";
           const records = pingRecords(uuid);

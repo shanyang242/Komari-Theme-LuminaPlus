@@ -118,6 +118,7 @@
   min-width: 0;
   min-height: 24px;
   max-height: 24px;
+  margin-top: -4px;
   flex-wrap: nowrap;
   align-items: center;
   gap: 6px;

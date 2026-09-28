@@ -12,16 +12,14 @@ import {
   RefreshCw,
   Rows3,
   Save,
-  Search,
   SlidersHorizontal,
   Sparkles,
   Sun,
   SunMoon,
   Wallpaper,
 } from "lucide-react";
-import { clsx } from "clsx";
 import { InstancePanel } from "@/components/instance/InstancePanel";
-import { MultiPingNodeConfigPanel } from "@/components/theme/MultiPingNodeConfigPanel";
+import { PingNodeConfigPanel } from "@/components/theme/PingNodeConfigPanel";
 import { Spinner } from "@/components/ui/Spinner";
 import { Flag } from "@/components/ui/Flag";
 import { usePublicConfig } from "@/hooks/usePublicConfig";
@@ -57,12 +55,8 @@ import {
 } from "@/utils/cost";
 import { normalizeNodeIdentityList } from "@/utils/nodeIdentity";
 import {
-  HOMEPAGE_MULTI_PING_TASK_COUNT,
-  normalizeHomepageMultiPingNodeTaskIds,
-  normalizeHomepageMultiPingTaskIds,
-  normalizeHomepagePingTaskBindings,
-  type HomepageMultiPingNodeTaskIds,
-  type HomepagePingTaskBindings,
+  normalizeHomepagePingNodeTaskIds,
+  type HomepagePingNodeTaskIds,
 } from "@/utils/pingTasks";
 import {
   DEFAULT_THEME_SETTINGS,
@@ -137,97 +131,6 @@ function sortClients(clients: AdminClient[]) {
   });
 }
 
-function filterClients(clients: AdminClient[], rawKeyword: string) {
-  const keyword = rawKeyword.trim().toLowerCase();
-  if (!keyword) return clients;
-  return clients.filter((client) => {
-    const group = String(client.group || "").toLowerCase();
-    const region = String(client.region || "").toLowerCase();
-    return (
-      client.name.toLowerCase().includes(keyword) ||
-      client.uuid.toLowerCase().includes(keyword) ||
-      group.includes(keyword) ||
-      region.includes(keyword)
-    );
-  });
-}
-
-function summarizeNodes(
-  uuids: string[],
-  clientsById: Map<string, AdminClient>,
-) {
-  if (uuids.length === 0) return "未绑定节点";
-  const names = uuids.map((uuid) => clientsById.get(uuid)?.name || uuid);
-  const summary = names.join("、");
-  return summary.length > 92 ? `${summary.slice(0, 92)}...` : summary;
-}
-
-function applyClientAssignment(
-  bindings: HomepagePingTaskBindings,
-  taskId: number,
-  clientUuid: string,
-  checked: boolean,
-) {
-  const taskKey = String(taskId);
-  const next = normalizeHomepagePingTaskBindings(bindings);
-
-  for (const [currentTaskId, clients] of Object.entries(next)) {
-    const filtered = clients.filter((uuid) => uuid !== clientUuid);
-    if (filtered.length > 0) {
-      next[currentTaskId] = filtered;
-    } else {
-      delete next[currentTaskId];
-    }
-  }
-
-  if (checked) {
-    const selected = next[taskKey] ?? [];
-    next[taskKey] = Array.from(new Set([...selected, clientUuid])).sort((left, right) =>
-      left.localeCompare(right),
-    );
-  }
-
-  return next;
-}
-
-// 反查:client uuid → 所属 task id(字符串 key)。UI 保证每个 client 最多归属一个
-// task,所以简单的后写覆盖 map 就是精确的。下面的「全选可用」reducer 和每次渲染的
-// 可选节点过滤共用它,把「某 client 归属哪个 task」的推导收在一处。
-function invertBindings(bindings: HomepagePingTaskBindings): Map<string, string> {
-  const assignedTaskByClient = new Map<string, string>();
-  for (const [taskId, clients] of Object.entries(bindings)) {
-    for (const clientUuid of clients) {
-      assignedTaskByClient.set(clientUuid, taskId);
-    }
-  }
-  return assignedTaskByClient;
-}
-
-function applyAvailableClientAssignments(
-  bindings: HomepagePingTaskBindings,
-  taskId: number,
-  clientUuids: string[],
-) {
-  const taskKey = String(taskId);
-  const next = normalizeHomepagePingTaskBindings(bindings);
-  const assignedTaskByClient = invertBindings(next);
-  const selected = new Set(next[taskKey] ?? []);
-
-  for (const clientUuid of clientUuids) {
-    const assignedTaskId = assignedTaskByClient.get(clientUuid);
-    if (assignedTaskId && assignedTaskId !== taskKey) continue;
-    selected.add(clientUuid);
-  }
-
-  if (selected.size > 0) {
-    next[taskKey] = [...selected].sort((left, right) => left.localeCompare(right));
-  } else {
-    delete next[taskKey];
-  }
-
-  return next;
-}
-
 // 本页托管设置的键清单唯一来源:草稿类型(ThemeDraft)、seed(draftFromSettings)与内容签名
 // 都从它派生。新增一项设置只需在这里加一行,再到 JSX 里接 patch()。
 // 刻意不标注返回类型:让推断给出全字段必填的具体类型,ThemeDraft 才能安全地 Omit/扩展。
@@ -237,10 +140,7 @@ function pickManagedThemeSettings(settings: ResolvedThemeSettings) {
     desktopNodeViewMode: settings.desktopNodeViewMode,
     mobileNodeViewMode: settings.mobileNodeViewMode,
     hideAdminEntryWhenLoggedOut: settings.hideAdminEntryWhenLoggedOut,
-    homepagePingBindings: settings.homepagePingBindings,
-    enableHomepageMultiPing: settings.enableHomepageMultiPing,
-    homepageMultiPingTaskIds: settings.homepageMultiPingTaskIds,
-    homepageMultiPingNodeTaskIds: settings.homepageMultiPingNodeTaskIds,
+    homepagePingNodeTaskIds: settings.homepagePingNodeTaskIds,
     fakePingForUnbound: settings.fakePingForUnbound,
     enableHomeHeaderAutoHide: settings.enableHomeHeaderAutoHide,
     homeHeaderVisibleSeconds: settings.homeHeaderVisibleSeconds,
@@ -333,181 +233,6 @@ const ToggleRow = memo(function ToggleRow({
   );
 });
 
-const EMPTY_ASSIGNED_CLIENTS: string[] = [];
-const EMPTY_ADMIN_CLIENTS: AdminClient[] = [];
-
-// 单个 Ping 任务的绑定卡片。memo:编辑无关设置的击键不再重渲任务列表;展开态的
-// tasks×clients 复选网格只在绑定、筛选或展开变化时重算。
-const TaskBindingSection = memo(function TaskBindingSection({
-  task,
-  assigned,
-  expanded,
-  clientsById,
-  visibleClients,
-  assignedTaskByClientUuid,
-  nodeSearch,
-  onNodeSearch,
-  onToggleExpand,
-  onPatchBindings,
-}: {
-  task: PingTask;
-  assigned: string[];
-  expanded: boolean;
-  clientsById: Map<string, AdminClient>;
-  visibleClients: AdminClient[];
-  assignedTaskByClientUuid: Map<string, string>;
-  nodeSearch: string;
-  onNodeSearch: (value: string) => void;
-  onToggleExpand: (taskId: number) => void;
-  onPatchBindings: (
-    updater: (prev: HomepagePingTaskBindings) => HomepagePingTaskBindings,
-  ) => void;
-}) {
-  const assignedSummary = summarizeNodes(assigned, clientsById);
-  // 节点过滤只有展开的任务需要;收起的卡片跳过,避免对每个任务重复扫描节点。
-  const selectableVisibleClients = expanded
-    ? visibleClients.filter((client) => {
-        const assignedTaskId = assignedTaskByClientUuid.get(client.uuid);
-        return !assignedTaskId || assignedTaskId === String(task.id);
-      })
-    : EMPTY_ADMIN_CLIENTS;
-  const allVisibleSelectableAssigned =
-    selectableVisibleClients.length > 0 &&
-    selectableVisibleClients.every((client) => assigned.includes(client.uuid));
-  return (
-    <section className="surface-inset px-4 py-4">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <h3 className="text-[15px] font-semibold text-[var(--text-primary)]">
-              {task.name || `任务 #${task.id}`}
-            </h3>
-            <span className="rounded-full border border-[var(--hairline)] px-2 py-0.5 text-[10px] font-medium uppercase tracking-[0.08em] text-[var(--text-tertiary)]">
-              {task.type || "icmp"}
-            </span>
-            <span className="rounded-full border border-[var(--hairline)] px-2 py-0.5 text-[10px] font-medium text-[var(--text-tertiary)]">
-              {task.interval}s
-            </span>
-            <span className="rounded-full border border-[var(--hairline)] px-2 py-0.5 text-[10px] font-medium text-[var(--text-tertiary)]">
-              ID {task.id}
-            </span>
-          </div>
-          <div className="mt-2 text-[12px] text-[var(--text-secondary)]">
-            <span className="font-medium text-[var(--text-primary)]">
-              已绑定 {assigned.length} 个节点
-            </span>
-            <span className="mx-2 text-[var(--text-tertiary)]">·</span>
-            <span title={task.target || ""}>{task.target || "未填写目标"}</span>
-          </div>
-          <p className="mt-2 text-[12px] text-[var(--text-tertiary)]" title={assignedSummary}>
-            {assignedSummary}
-          </p>
-        </div>
-
-        <div className="flex items-center gap-2">
-          {expanded && (
-            <button
-              type="button"
-              disabled={selectableVisibleClients.length === 0 || allVisibleSelectableAssigned}
-              onClick={() => {
-                onPatchBindings((prev) =>
-                  applyAvailableClientAssignments(
-                    prev,
-                    task.id,
-                    selectableVisibleClients.map((client) => client.uuid),
-                  ),
-                );
-              }}
-              className="theme-manage-button is-compact"
-            >
-              {allVisibleSelectableAssigned ? "已全选可用" : "全选可用"}
-            </button>
-          )}
-          {assigned.length > 0 && (
-            <button
-              type="button"
-              onClick={() => {
-                onPatchBindings((prev) => {
-                  const next = { ...prev };
-                  delete next[String(task.id)];
-                  return normalizeHomepagePingTaskBindings(next);
-                });
-              }}
-              className="theme-manage-button is-compact is-danger"
-            >
-              清空节点
-            </button>
-          )}
-          <button
-            type="button"
-            aria-expanded={expanded}
-            onClick={() => onToggleExpand(task.id)}
-            className="theme-manage-button is-compact"
-          >
-            {expanded ? "收起节点" : "编辑节点"}
-          </button>
-        </div>
-      </div>
-
-      {expanded && (
-        <div className="mt-4 border-t border-[var(--hairline)] pt-4">
-          <label className="surface-inset flex items-center gap-2 px-3 py-2">
-            <Search size={14} className="text-[var(--text-tertiary)]" />
-            <input
-              value={nodeSearch}
-              onChange={(event) => onNodeSearch(event.target.value)}
-              placeholder="搜索节点名称 / UUID / 分组 / 地区"
-              aria-label="搜索节点"
-              className="min-w-0 flex-1 bg-transparent text-[13px] outline-none placeholder:text-[var(--text-tertiary)]"
-            />
-          </label>
-
-          <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
-            {visibleClients.map((client) => {
-              const checked = assigned.includes(client.uuid);
-              const subtitle = [client.group, client.uuid].filter(Boolean).join(" · ");
-              return (
-                <label
-                  key={client.uuid}
-                  className={clsx(
-                    "flex cursor-pointer items-start gap-3 rounded-[12px] border px-3 py-3 transition-colors",
-                    checked
-                      ? "border-[var(--border-strong)] bg-[color-mix(in_srgb,var(--hover-bg)_72%,transparent)]"
-                      : "border-[var(--hairline)] bg-transparent hover:bg-[var(--hover-bg)]",
-                  )}
-                >
-                  <input
-                    type="checkbox"
-                    checked={checked}
-                    onChange={(event) => {
-                      const nextChecked = event.target.checked;
-                      onPatchBindings((prev) =>
-                        applyClientAssignment(prev, task.id, client.uuid, nextChecked),
-                      );
-                    }}
-                    className="mt-1 h-4 w-4 shrink-0 accent-[var(--accent-500)]"
-                  />
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <Flag region={client.region} size={14} />
-                      <span className="truncate text-[13px] font-medium text-[var(--text-primary)]">
-                        {client.name}
-                      </span>
-                    </div>
-                    <div className="mt-1 text-[11px] text-[var(--text-tertiary)]">
-                      {subtitle || client.region || "未设置分组"}
-                    </div>
-                  </div>
-                </label>
-              );
-            })}
-          </div>
-        </div>
-      )}
-    </section>
-  );
-});
-
 type PremiumDetail = ReturnType<typeof calculateCostSummary>["details"][number];
 
 // 溢价录入列表。memo:编辑其他设置的击键不重渲整表——引用变化只来自
@@ -530,7 +255,7 @@ const PremiumList = memo(function PremiumList({
   onPatchAcquiredAt: (uuid: string, rawValue: string) => void;
 }) {
   return (
-    <div className="surface-inset max-h-[320px] overflow-y-auto">
+    <div className="theme-premium-list surface-inset">
       {clients.map((client) => {
         const entry = costPremiums[client.uuid];
         const detail = detailByUuid.get(client.uuid);
@@ -545,38 +270,37 @@ const PremiumList = memo(function PremiumList({
         return (
           <div
             key={client.uuid}
-            className="flex items-center justify-between gap-3 border-b border-[var(--hairline)] px-3 py-2 last:border-b-0"
+            className="theme-premium-row"
           >
-            <div className="flex min-w-0 items-center gap-2">
-              <Flag region={client.region ?? ""} size={13} />
-              <span
-                className="truncate text-[13px] text-[var(--text-primary)]"
-                title={client.name}
-              >
-                {client.name}
-              </span>
-              <span
-                className="shrink-0 text-[11px] text-[var(--text-tertiary)]"
-              >
-                {referenceLabel}
-              </span>
-              {entry && (
-                <span
-                  className="shrink-0 text-[11px] font-medium"
-                  style={{
-                    color:
-                      entry.amount > 0
-                        ? "var(--status-error)"
-                        : entry.amount < 0
-                          ? "var(--status-success)"
-                          : "var(--text-tertiary)",
-                  }}
-                >
-                  溢价 {formatSignedCny(entry.amount)}
+            <div className="theme-premium-node">
+              <div className="theme-premium-name">
+                <Flag region={client.region ?? ""} size={13} />
+                <span title={client.name}>{client.name}</span>
+              </div>
+              <div className="theme-premium-summary">
+                <span className="theme-premium-reference">
+                  <span>剩余</span>
+                  <strong>{referenceLabel}</strong>
                 </span>
-              )}
+                {entry && (
+                  <span
+                    className="theme-premium-delta"
+                    data-tone={
+                      entry.amount > 0
+                        ? "positive"
+                        : entry.amount < 0
+                          ? "negative"
+                          : "neutral"
+                    }
+                  >
+                    溢价 {formatSignedCny(entry.amount)}
+                  </span>
+                )}
+              </div>
             </div>
-            <div className="flex shrink-0 items-center gap-2">
+            <div className="theme-premium-fields">
+              <label className="theme-premium-field">
+                <span className="theme-premium-field-label">收购价</span>
               <input
                 type="number"
                 inputMode="decimal"
@@ -591,19 +315,23 @@ const PremiumList = memo(function PremiumList({
                 placeholder="收购价"
                 disabled={!canCompute}
                 aria-label={`${client.name} 的收购价`}
-                className="surface-inset w-24 px-2 py-1 text-right text-[13px] outline-none disabled:opacity-45"
+                className="theme-premium-input surface-inset"
               />
-              <input
-                type="date"
-                max={acquiredAtMax}
-                value={entry?.acquiredAt ?? ""}
-                onChange={(event) => onPatchAcquiredAt(client.uuid, event.target.value)}
-                // 与收购价同门槛:汇率/基准未就绪时 patchPremiumAcquiredAt 无法回算,
-                // 放开输入只会被静默丢弃(受控值弹回旧日期)。
-                disabled={!entry || !canCompute}
-                aria-label={`${client.name} 的收购日期`}
-                className="surface-inset w-[8.75rem] px-2 py-1 text-[12px] outline-none disabled:opacity-45"
-              />
+              </label>
+              <label className="theme-premium-field is-date">
+                <span className="theme-premium-field-label">收购日期</span>
+                <input
+                  type="date"
+                  max={acquiredAtMax}
+                  value={entry?.acquiredAt ?? ""}
+                  onChange={(event) => onPatchAcquiredAt(client.uuid, event.target.value)}
+                  // 与收购价同门槛:汇率/基准未就绪时 patchPremiumAcquiredAt 无法回算,
+                  // 放开输入只会被静默丢弃(受控值弹回旧日期)。
+                  disabled={!entry || !canCompute}
+                  aria-label={`${client.name} 的收购日期`}
+                  className="theme-premium-input surface-inset"
+                />
+              </label>
             </div>
           </div>
         );
@@ -613,11 +341,10 @@ const PremiumList = memo(function PremiumList({
 });
 
 // 弹窗开关留在这个小组件内，打开面板时不再让整个设置页跟着重渲染。
-const MultiPingNodeConfigControl = memo(function MultiPingNodeConfigControl({
+const PingNodeConfigControl = memo(function PingNodeConfigControl({
   clients,
   tasks,
-  globalTaskIds,
-  nodeTaskIds,
+  overrides,
   configuredNodeCount,
   fakePingForUnbound,
   disabled,
@@ -629,15 +356,14 @@ const MultiPingNodeConfigControl = memo(function MultiPingNodeConfigControl({
 }: {
   clients: AdminClient[];
   tasks: PingTask[];
-  globalTaskIds: number[];
-  nodeTaskIds: HomepageMultiPingNodeTaskIds;
+  overrides: HomepagePingNodeTaskIds;
   configuredNodeCount: number;
   fakePingForUnbound: boolean;
   disabled: boolean;
   saving: boolean;
   saveDisabled: boolean;
   saveError: string | null;
-  onChange: (next: HomepageMultiPingNodeTaskIds) => void;
+  onChange: (next: HomepagePingNodeTaskIds) => void;
   onSave: () => Promise<boolean>;
 }) {
   const [open, setOpen] = useState(false);
@@ -645,14 +371,14 @@ const MultiPingNodeConfigControl = memo(function MultiPingNodeConfigControl({
 
   return (
     <>
-      <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-[var(--hairline)] pt-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="min-w-0">
           <div className="flex items-center gap-2 text-[12px] font-medium text-[var(--text-primary)]">
             <SlidersHorizontal size={14} />
-            按服务器覆盖
+            单网探测点
           </div>
           <p className="mt-1 text-[11px] text-[var(--text-tertiary)]">
-            已单独配置 {configuredNodeCount} / {clients.length} 台服务器
+            {configuredNodeCount} / {clients.length} 台实例使用手动或不绑定设置
           </p>
         </div>
         <button
@@ -662,17 +388,16 @@ const MultiPingNodeConfigControl = memo(function MultiPingNodeConfigControl({
           className="theme-manage-button is-compact"
         >
           <SlidersHorizontal size={13} />
-          配置服务器探测点
+          配置实例探测点
         </button>
       </div>
 
       {open && (
-        <MultiPingNodeConfigPanel
+        <PingNodeConfigPanel
           open
           clients={clients}
           tasks={tasks}
-          globalTaskIds={globalTaskIds}
-          nodeTaskIds={nodeTaskIds}
+          overrides={overrides}
           fakePingForUnbound={fakePingForUnbound}
           saving={saving}
           saveDisabled={saveDisabled}
@@ -699,8 +424,6 @@ export function ThemeManage() {
   const [draft, setDraft] = useState<ThemeDraft>(() =>
     draftFromSettings(DEFAULT_THEME_SETTINGS),
   );
-  const [expandedTaskId, setExpandedTaskId] = useState<number | null>(null);
-  const [nodeSearch, setNodeSearch] = useState("");
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -717,45 +440,14 @@ export function ThemeManage() {
     },
     [],
   );
-  // 绑定关系的三个入口(勾选/全选/清空)都是基于前值的函数式更新,单独收口。
-  const patchBindings = useCallback(
-    (updater: (prev: HomepagePingTaskBindings) => HomepagePingTaskBindings) => {
+  const patchPingNodeTaskIds = useCallback(
+    (next: HomepagePingNodeTaskIds) => {
       editVersionRef.current += 1;
-      setDraft((prev) => ({
-        ...prev,
-        homepagePingBindings: updater(prev.homepagePingBindings),
-      }));
-    },
-    [],
-  );
-  const toggleTaskExpanded = useCallback((taskId: number) => {
-    setExpandedTaskId((current) => (current === taskId ? null : taskId));
-    setNodeSearch("");
-  }, []);
-  const patchMultiPingTask = useCallback((slot: number, rawValue: string) => {
-    editVersionRef.current += 1;
-    setDraft((prev) => {
-      const nextIds = [...prev.homepageMultiPingTaskIds];
-      if (rawValue === "") {
-        nextIds.splice(slot, 1);
-      } else {
-        nextIds[slot] = Number(rawValue);
-      }
-      const homepageMultiPingTaskIds = normalizeHomepageMultiPingTaskIds(nextIds);
-      return JSON.stringify(homepageMultiPingTaskIds) ===
-        JSON.stringify(prev.homepageMultiPingTaskIds)
-        ? prev
-        : { ...prev, homepageMultiPingTaskIds };
-    });
-  }, []);
-  const patchNodeMultiPingTaskIds = useCallback(
-    (next: HomepageMultiPingNodeTaskIds) => {
-      editVersionRef.current += 1;
-      const normalized = normalizeHomepageMultiPingNodeTaskIds(next);
+      const normalized = normalizeHomepagePingNodeTaskIds(next);
       setDraft((prev) =>
-        JSON.stringify(prev.homepageMultiPingNodeTaskIds) === JSON.stringify(normalized)
+        JSON.stringify(prev.homepagePingNodeTaskIds) === JSON.stringify(normalized)
           ? prev
-          : { ...prev, homepageMultiPingNodeTaskIds: normalized },
+          : { ...prev, homepagePingNodeTaskIds: normalized },
       );
     },
     [],
@@ -800,15 +492,6 @@ export function ThemeManage() {
 
   const sortedTasks = useMemo(() => sortTasks(pingTasks ?? []), [pingTasks]);
   const sortedClients = useMemo(() => sortClients(adminClients ?? []), [adminClients]);
-  const clientsById = useMemo(
-    () => new Map(sortedClients.map((client) => [client.uuid, client])),
-    [sortedClients],
-  );
-
-  const visibleClients = useMemo(
-    () => filterClients(sortedClients, nodeSearch),
-    [nodeSearch, sortedClients],
-  );
 
   // 溢价表格里"当前剩余价值"仅供参考,用已保存的汇率源/忽略名单算(不用草稿里还没保存的
   // 编辑),口径与资产统计页完全一致(同一个 calculateCostSummary),但不叠加溢价本身。
@@ -933,9 +616,6 @@ export function ThemeManage() {
 
   const draftCostRateApiUrlInvalid =
     draft.costRateApiUrl.trim() !== "" && !isCostRateApiUrlValid(draft.costRateApiUrl.trim());
-  const draftMultiPingInvalid =
-    draft.enableHomepageMultiPing &&
-    draft.homepageMultiPingTaskIds.length !== HOMEPAGE_MULTI_PING_TASK_COUNT;
 
   // 由当前草稿拼出的设置 payload,保存请求和 dirty 判断都用它。草稿字段与设置同名,这里只做
   // 「编辑态 → 存储态」的换形与归一化;文本域解构出来换回存储字段。
@@ -943,9 +623,8 @@ export function ThemeManage() {
     const { hiddenNodesText, costIgnoredText, ...rest } = draft;
     return {
       ...rest,
-      homepagePingBindings: normalizeHomepagePingTaskBindings(rest.homepagePingBindings),
-      homepageMultiPingNodeTaskIds: normalizeHomepageMultiPingNodeTaskIds(
-        rest.homepageMultiPingNodeTaskIds,
+      homepagePingNodeTaskIds: normalizeHomepagePingNodeTaskIds(
+        rest.homepagePingNodeTaskIds,
       ),
       hiddenNodes: normalizeNodeIdentityList(hiddenNodesText),
       costIgnoredNodes: normalizeCostIgnoredNodes(costIgnoredText),
@@ -984,27 +663,19 @@ export function ThemeManage() {
     seedDrafts(sourceThemeSettings);
   }, [config, isDirty, sourceSignature, sourceThemeSettings, seedDrafts]);
 
-  const multiPingConfiguredNodeCount = useMemo(
+  const pingConfiguredNodeCount = useMemo(
     () =>
-      sortedClients.filter((client) => draft.homepageMultiPingNodeTaskIds[client.uuid])
-        .length,
-    [draft.homepageMultiPingNodeTaskIds, sortedClients],
-  );
-
-  // 每个 client 归属哪个 task 的反查,只在绑定草稿变化时重建。与「全选可用」reducer
-  // 共用 invertBindings() 避免推导漂移,并把可选节点过滤保持在 O(tasks × clients),
-  // 而不是每个 client 都重扫一遍 bindings。
-  const assignedTaskByClientUuid = useMemo(
-    () => invertBindings(draft.homepagePingBindings),
-    [draft.homepagePingBindings],
+      sortedClients.filter((client) =>
+        Object.prototype.hasOwnProperty.call(draft.homepagePingNodeTaskIds, client.uuid),
+      ).length,
+    [draft.homepagePingNodeTaskIds, sortedClients],
   );
 
   const handleSave = async (): Promise<boolean> => {
     if (
       !config?.theme ||
       savingDraftRef.current ||
-      draftCostRateApiUrlInvalid ||
-      draftMultiPingInvalid
+      draftCostRateApiUrlInvalid
     ) {
       return false;
     }
@@ -1018,8 +689,9 @@ export function ThemeManage() {
         ...(config.theme_settings ?? {}),
         ...draftThemeSettings,
       };
-      delete nextSettings.homepagePingTask;
       for (const key of [
+        "homepagePingTask", "homepagePingBindings",
+        "enableHomepageMultiPing", "homepageMultiPingTaskIds", "homepageMultiPingNodeTaskIds",
         "enableHomeSort", "homeSortField", "homeSortDirection",
         "homeGroupOrder",
         "showOverviewRatings", "showTrafficRating", "showBandwidthRating", "showAssetRating",
@@ -1143,8 +815,7 @@ export function ThemeManage() {
               disabled={
                 !isDirty ||
                 saving ||
-                draftCostRateApiUrlInvalid ||
-                draftMultiPingInvalid
+                draftCostRateApiUrlInvalid
               }
               className="theme-manage-button is-primary"
             >
@@ -1553,7 +1224,10 @@ export function ThemeManage() {
           </div>
           <label className="surface-inset flex min-w-0 flex-col gap-2 px-4 py-3">
             <span className="text-[12px] font-medium text-[var(--text-secondary)]">
-              忽略计费节点
+              忽略下期账单节点
+            </span>
+            <span className="text-[11px] leading-relaxed text-[var(--text-tertiary)]">
+              每行填写节点名称或 UUID。仅排除后续周期支出，当前已付周期的剩余价值仍会计入资产。
             </span>
             <textarea
               value={draft.costIgnoredText}
@@ -1612,114 +1286,24 @@ export function ThemeManage() {
         }
       >
         <div className="flex flex-col gap-4">
-          <div
-            className={clsx(
-              "surface-inset px-4 py-4",
-              draft.enableHomepageMultiPing &&
-                "border-[color-mix(in_srgb,var(--accent-500)_32%,var(--hairline))]",
-            )}
-          >
-            <label className="flex items-start justify-between gap-4">
-              <span className="min-w-0">
-                <span className="block text-[13px] font-medium text-[var(--text-primary)]">
-                  开启三网模式
-                </span>
-              </span>
-              <input
-                type="checkbox"
-                checked={draft.enableHomepageMultiPing}
-                disabled={
-                  !draft.enableHomepageMultiPing &&
-                  !tasksLoading &&
-                  sortedTasks.length < HOMEPAGE_MULTI_PING_TASK_COUNT
-                }
-                onChange={(event) =>
-                  patch("enableHomepageMultiPing", event.target.checked)
-                }
-                className="mt-0.5 h-4 w-4 shrink-0 accent-[var(--accent-500)]"
-              />
-            </label>
-
-            {draft.enableHomepageMultiPing && (
-              <div className="mt-4 border-t border-[var(--hairline)] pt-4">
-                <div className="mb-3">
-                  <span className="text-[12px] font-medium text-[var(--text-primary)]">
-                    全局默认线路
-                  </span>
-                </div>
-                <div className="grid gap-3 md:grid-cols-3">
-                  {Array.from(
-                    { length: HOMEPAGE_MULTI_PING_TASK_COUNT },
-                    (_, slot) => {
-                      const selectedTaskId =
-                        draft.homepageMultiPingTaskIds[slot];
-                      return (
-                        <label key={slot} className="min-w-0">
-                          <span className="mb-1.5 block text-[11px] font-medium text-[var(--text-secondary)]">
-                            线路 {slot + 1}
-                          </span>
-                          <select
-                            value={selectedTaskId ?? ""}
-                            onChange={(event) =>
-                              patchMultiPingTask(slot, event.target.value)
-                            }
-                            aria-label={`三网线路 ${slot + 1}`}
-                            className="surface-inset w-full px-3 py-2 text-[13px] text-[var(--text-primary)] outline-none"
-                          >
-                            <option value="">选择 Ping 任务</option>
-                            {selectedTaskId != null &&
-                              !sortedTasks.some((task) => task.id === selectedTaskId) && (
-                                <option value={selectedTaskId}>
-                                  任务 #{selectedTaskId}（当前不可用）
-                                </option>
-                              )}
-                            {sortedTasks.map((task) => (
-                              <option
-                                key={task.id}
-                                value={task.id}
-                                disabled={
-                                  task.id !== selectedTaskId &&
-                                  draft.homepageMultiPingTaskIds.includes(task.id)
-                                }
-                              >
-                                {task.name || `任务 #${task.id}`}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-                      );
-                    },
-                  )}
-                </div>
-                {draftMultiPingInvalid && (
-                  <p
-                    className="mt-3 text-[11px] leading-relaxed text-[var(--status-error)]"
-                    role="alert"
-                  >
-                    请选满 3 个不同的 Ping 任务后再保存。
-                  </p>
-                )}
-
-                <MultiPingNodeConfigControl
-                  clients={sortedClients}
-                  tasks={sortedTasks}
-                  globalTaskIds={draft.homepageMultiPingTaskIds}
-                  nodeTaskIds={draft.homepageMultiPingNodeTaskIds}
-                  configuredNodeCount={multiPingConfiguredNodeCount}
-                  fakePingForUnbound={draft.fakePingForUnbound}
-                  disabled={draftMultiPingInvalid || clientsLoading || tasksLoading}
-                  saving={saving}
-                  saveError={error}
-                  saveDisabled={
-                    !isDirty ||
-                    draftCostRateApiUrlInvalid ||
-                    draftMultiPingInvalid
-                  }
-                  onChange={patchNodeMultiPingTaskIds}
-                  onSave={handleSave}
-                />
-              </div>
-            )}
+          <div className="surface-inset px-4 py-4">
+            <p className="mb-4 text-[12px] leading-relaxed text-[var(--text-secondary)]">
+              默认自动读取 Komari 后台绑定：单个探测点直接显示；多个探测点按任务权重顺序显示最前项。
+              仅在个别实例需要例外时使用手动配置。
+            </p>
+            <PingNodeConfigControl
+              clients={sortedClients}
+              tasks={sortedTasks}
+              overrides={draft.homepagePingNodeTaskIds}
+              configuredNodeCount={pingConfiguredNodeCount}
+              fakePingForUnbound={draft.fakePingForUnbound}
+              disabled={clientsLoading || tasksLoading}
+              saving={saving}
+              saveError={error}
+              saveDisabled={!isDirty || draftCostRateApiUrlInvalid}
+              onChange={patchPingNodeTaskIds}
+              onSave={handleSave}
+            />
           </div>
 
           <ToggleRow
@@ -1737,37 +1321,12 @@ export function ThemeManage() {
 
           {noTasksYet && (
             <div className="theme-manage-empty-state">
-              <span>当前还没有可用于首页展示的 Ping 任务。</span>
+              <span>当前还没有 Ping 任务；在线实例会显示未配置或模拟延迟。</span>
               <a href="/admin/ping" className="theme-manage-inline-link">
                 前往后台 Ping 管理创建任务
               </a>
             </div>
           )}
-
-          {!tasksLoading &&
-            !clientsLoading &&
-            !noTasksYet &&
-            sortedTasks.map((task) => {
-              const expanded = expandedTaskId === task.id;
-              return (
-                <TaskBindingSection
-                  key={task.id}
-                  task={task}
-                  assigned={
-                    draft.homepagePingBindings[String(task.id)] ?? EMPTY_ASSIGNED_CLIENTS
-                  }
-                  expanded={expanded}
-                  clientsById={clientsById}
-                  // 收起的卡片收到稳定空值:节点搜索的每次击键只重渲展开的那一张。
-                  visibleClients={expanded ? visibleClients : EMPTY_ADMIN_CLIENTS}
-                  assignedTaskByClientUuid={assignedTaskByClientUuid}
-                  nodeSearch={expanded ? nodeSearch : ""}
-                  onNodeSearch={setNodeSearch}
-                  onToggleExpand={toggleTaskExpanded}
-                  onPatchBindings={patchBindings}
-                />
-              );
-            })}
         </div>
       </InstancePanel>
 

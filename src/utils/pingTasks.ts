@@ -1,187 +1,105 @@
-export type HomepagePingTaskBindings = Record<string, string[]>;
-export type HomepageMultiPingNodeTaskIds = Record<string, number[]>;
-export const HOMEPAGE_MULTI_PING_TASK_COUNT = 3;
+import type { PingRecord, PingTask } from "@/types/komari";
 
-const invertedBindingsCache = new WeakMap<HomepagePingTaskBindings, Map<string, number>>();
+/**
+ * 首页单线路的逐节点覆盖：
+ * - 缺少键：继承后端绑定并按任务权重自动选择；
+ * - 正整数：手动指定任务；
+ * - null：明确不绑定任务。
+ */
+export type HomepagePingNodeTaskIds = Record<string, number | null>;
 
-function parseTaskId(taskId: string) {
-  if (!/^\d+$/.test(taskId)) return null;
-  const parsed = Number(taskId);
+function parseTaskId(value: unknown) {
+  if (typeof value === "number") {
+    return Number.isSafeInteger(value) && value > 0 ? value : null;
+  }
+  if (typeof value !== "string" || !/^\d+$/.test(value.trim())) return null;
+  const parsed = Number(value.trim());
   return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : null;
 }
 
-export function normalizeHomepageMultiPingTaskIds(value: unknown): number[] {
-  if (!Array.isArray(value)) return [];
-
-  const normalized: number[] = [];
-  for (const raw of value) {
-    const taskId =
-      typeof raw === "number" && Number.isSafeInteger(raw) && raw > 0
-        ? raw
-        : typeof raw === "string"
-          ? parseTaskId(raw)
-          : null;
-    if (taskId == null || normalized.includes(taskId)) continue;
-    normalized.push(taskId);
-    if (normalized.length === HOMEPAGE_MULTI_PING_TASK_COUNT) break;
-  }
-  return normalized;
-}
-
-export function normalizeHomepageMultiPingNodeTaskIds(
+export function normalizeHomepagePingNodeTaskIds(
   value: unknown,
-): HomepageMultiPingNodeTaskIds {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    return {};
-  }
+): HomepagePingNodeTaskIds {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
 
-  const normalized: HomepageMultiPingNodeTaskIds = {};
-  const entries = Object.entries(value).sort(([left], [right]) =>
-    left.trim().localeCompare(right.trim()),
+  const result: HomepagePingNodeTaskIds = {};
+  const entries = Object.entries(value as Record<string, unknown>).sort(
+    ([left], [right]) => left.trim().localeCompare(right.trim()),
   );
-  for (const [rawUuid, rawTaskIds] of entries) {
+  for (const [rawUuid, rawTaskId] of entries) {
     const uuid = rawUuid.trim();
-    const taskIds = normalizeHomepageMultiPingTaskIds(rawTaskIds);
-    if (!uuid || taskIds.length !== HOMEPAGE_MULTI_PING_TASK_COUNT) continue;
-    normalized[uuid] = taskIds;
-  }
-  return normalized;
-}
-
-export function resolveHomepageMultiPingTaskIds(
-  clientUuid: string,
-  globalTaskIds: number[],
-  nodeTaskIds: HomepageMultiPingNodeTaskIds = {},
-): number[] {
-  const overrideTaskIds = normalizeHomepageMultiPingTaskIds(nodeTaskIds[clientUuid]);
-  if (overrideTaskIds.length === HOMEPAGE_MULTI_PING_TASK_COUNT) {
-    return overrideTaskIds;
-  }
-
-  const normalizedGlobalTaskIds = normalizeHomepageMultiPingTaskIds(globalTaskIds);
-  return normalizedGlobalTaskIds.length === HOMEPAGE_MULTI_PING_TASK_COUNT
-    ? normalizedGlobalTaskIds
-    : [];
-}
-
-export function createHomepageMultiPingTaskOverride(
-  currentTaskIds: number[] | undefined,
-  globalTaskIds: number[],
-  availableTaskIds: number[],
-): number[] | null {
-  if (currentTaskIds) return null;
-
-  const available = new Set(
-    availableTaskIds.filter(
-      (taskId) => Number.isSafeInteger(taskId) && taskId > 0,
-    ),
-  );
-  const nextTaskIds = normalizeHomepageMultiPingTaskIds([
-    ...globalTaskIds.filter((taskId) => available.has(taskId)),
-    ...available,
-  ]);
-  return nextTaskIds.length === HOMEPAGE_MULTI_PING_TASK_COUNT
-    ? nextTaskIds
-    : null;
-}
-
-export function normalizeHomepagePingTaskBindings(
-  value: unknown,
-): HomepagePingTaskBindings {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    return {};
-  }
-
-  const normalized: HomepagePingTaskBindings = {};
-  for (const [taskId, clients] of Object.entries(value)) {
-    const numericTaskId = parseTaskId(taskId);
-    if (numericTaskId == null || !Array.isArray(clients)) continue;
-
-    const uniqueClients = Array.from(
-      new Set(
-        clients
-          .map((client) => (typeof client === "string" ? client.trim() : ""))
-          .filter(Boolean),
-      ),
-    );
-    if (uniqueClients.length === 0) {
-      continue;
-    }
-
-    const normalizedTaskId = String(numericTaskId);
-    normalized[normalizedTaskId] = Array.from(
-      new Set([...(normalized[normalizedTaskId] ?? []), ...uniqueClients]),
-    );
-  }
-
-  return normalized;
-}
-
-export function invertHomepagePingTaskBindings(
-  bindings: HomepagePingTaskBindings,
-): Map<string, number> {
-  const cached = invertedBindingsCache.get(bindings);
-  if (cached) return cached;
-
-  const selectedTaskByClient = new Map<string, number>();
-  const entries = Object.entries(normalizeHomepagePingTaskBindings(bindings)).sort(
-    ([left], [right]) => Number(left) - Number(right),
-  );
-
-  for (const [taskId, clients] of entries) {
-    const numericTaskId = parseTaskId(taskId);
-    if (numericTaskId == null) continue;
-    for (const client of clients) {
-      if (!selectedTaskByClient.has(client)) {
-        selectedTaskByClient.set(client, numericTaskId);
-      }
-    }
-  }
-
-  invertedBindingsCache.set(bindings, selectedTaskByClient);
-  return selectedTaskByClient;
-}
-
-export function hasHomepagePingTaskBinding(
-  clientUuid: string,
-  bindings: HomepagePingTaskBindings,
-): boolean {
-  return Boolean(clientUuid) && invertHomepagePingTaskBindings(bindings).has(clientUuid);
-}
-
-export function resolveHomepagePingSelections(
-  clientUuids: string[],
-  bindings: HomepagePingTaskBindings,
-  multiTaskIds: number[] = [],
-  nodeMultiTaskIds: HomepageMultiPingNodeTaskIds = {},
-) {
-  const singleTaskByClient = invertHomepagePingTaskBindings(bindings);
-  const singleTaskIdsByClient = new Map<string, number[]>();
-  const multiTaskIdsByClient = new Map<string, number[]>();
-
-  for (const uuid of clientUuids) {
     if (!uuid) continue;
-    const selectedTaskIds = resolveHomepageMultiPingTaskIds(
-      uuid,
-      multiTaskIds,
-      nodeMultiTaskIds,
-    );
-    if (selectedTaskIds.length === HOMEPAGE_MULTI_PING_TASK_COUNT) {
-      multiTaskIdsByClient.set(uuid, selectedTaskIds);
+    if (rawTaskId === null) {
+      result[uuid] = null;
       continue;
     }
-    const singleTaskId = singleTaskByClient.get(uuid);
-    if (singleTaskId != null) singleTaskIdsByClient.set(uuid, [singleTaskId]);
+    const taskId = parseTaskId(rawTaskId);
+    if (taskId != null) result[uuid] = taskId;
+  }
+  return result;
+}
+
+/** 把旧版「任务 → 节点」单线路配置迁移成逐节点覆盖。 */
+export function migrateLegacyHomepagePingBindings(
+  value: unknown,
+): HomepagePingNodeTaskIds {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+
+  const result: HomepagePingNodeTaskIds = {};
+  const entries = Object.entries(value as Record<string, unknown>)
+    .map(([rawTaskId, clients]) => [parseTaskId(rawTaskId), clients] as const)
+    .filter((entry): entry is readonly [number, unknown] => entry[0] != null)
+    .sort(([left], [right]) => left - right);
+
+  for (const [taskId, rawClients] of entries) {
+    if (!Array.isArray(rawClients)) continue;
+    for (const rawClient of rawClients) {
+      const uuid = typeof rawClient === "string" ? rawClient.trim() : "";
+      if (uuid && !(uuid in result)) result[uuid] = taskId;
+    }
+  }
+  return result;
+}
+
+export function sortHomepagePingTasks(tasks: PingTask[]) {
+  // 公开接口在旧版 Komari 中不返回 weight，但数组本身已按 weight、id 排序。
+  // 此时 schema 会把所有 weight 补成 0，必须保留后台顺序；只要存在明确权重，
+  // 就按 Komari 的 weight、id 规则重排。
+  if (tasks.every((task) => task.weight === 0)) return [...tasks];
+  return [...tasks].sort((left, right) =>
+    left.weight - right.weight || left.id - right.id,
+  );
+}
+
+/**
+ * 解析节点最终使用的单个探测任务。自动模式优先使用后端 clients 绑定；若旧后端没有
+ * 返回绑定列表，则从该节点实际存在的记录反推候选任务，并仍按任务权重排序。
+ */
+export function resolveHomepagePingTaskId(
+  clientUuid: string,
+  tasks: PingTask[],
+  overrides: HomepagePingNodeTaskIds,
+  records: Array<Pick<PingRecord, "client" | "task_id">> = [],
+  allowRecordFallback = true,
+): number | null {
+  if (!clientUuid) return null;
+  if (Object.prototype.hasOwnProperty.call(overrides, clientUuid)) {
+    return overrides[clientUuid] ?? null;
   }
 
-  const requestedTaskIdsByClient = new Map([
-    ...singleTaskIdsByClient,
-    ...multiTaskIdsByClient,
-  ]);
+  const orderedTasks = sortHomepagePingTasks(tasks);
+  const boundTask = orderedTasks.find((task) => task.clients.includes(clientUuid));
+  if (boundTask) return boundTask.id;
 
-  return {
-    singleTaskIdsByClient,
-    multiTaskIdsByClient,
-    requestedTaskIdsByClient,
-  };
+  if (!allowRecordFallback) return null;
+
+  const recordedTaskIds = new Set(
+    records
+      .filter((record) => record.client === clientUuid)
+      .map((record) => record.task_id)
+      .filter((taskId) => Number.isSafeInteger(taskId) && taskId > 0),
+  );
+  const recordedTask = orderedTasks.find((task) => recordedTaskIds.has(task.id));
+  if (recordedTask) return recordedTask.id;
+  return [...recordedTaskIds].sort((left, right) => left - right)[0] ?? null;
 }

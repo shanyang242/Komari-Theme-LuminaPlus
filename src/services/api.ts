@@ -63,7 +63,6 @@ const PingMetricStatsResponseSchema = z
   .passthrough();
 
 const LOAD_RECORDS_PER_HOUR = 12;
-const PING_RECORDS_PER_HOUR = 240;
 const MAX_RPC_RECORDS = 20_000;
 const OVERVIEW_PING_MAX_COUNT = 4_000;
 // HTTP 接口统一设置传输超时，避免连接半开时无限等待。
@@ -78,8 +77,6 @@ interface RpcRecordsPayload {
 interface PingOverviewResponse {
   records: PingRecordsResponse["records"];
   tasks: PingTask[];
-  /** 按任务查询时，后端会返回该任务的节点分配列表。 */
-  taskAssignmentsKnown?: boolean;
   rangeStartMs?: number;
   rangeEndMs?: number;
 }
@@ -259,14 +256,12 @@ function normalizeRpcPingRecords(
 function normalizeRpcPingOverview(
   payload: RpcRecordsPayload,
   range?: RequestRange,
-  taskAssignmentsKnown = false,
 ): PingOverviewResponse {
   const records = parseArrayLenient(PingRecordSchema, extractRpcRecords(payload));
   const parsedTasks = z.array(PingTaskSchema).safeParse(payload.tasks);
   return {
     records,
     tasks: parsedTasks.success ? parsedTasks.data : derivePingTasks(records),
-    taskAssignmentsKnown: taskAssignmentsKnown && parsedTasks.success,
     ...range,
   };
 }
@@ -366,7 +361,8 @@ export async function getPingRecords(
         uuid,
         hours,
         type: "ping",
-        maxCount: getRecordsMaxCount(hours, PING_RECORDS_PER_HOUR),
+        // 图表在浏览器内降采样；保留原始丢包记录供时间标记使用。
+        maxCount: -1,
       },
       RpcRecordsSchema,
       options,
@@ -390,6 +386,16 @@ export async function getPingRecords(
 
 export async function getAdminPingTasks(options?: ApiCallOptions): Promise<PingTask[]> {
   return (await apiGet("/api/admin/ping", z.array(PingTaskSchema), options)) as PingTask[];
+}
+
+/** 公开任务列表由 Komari 后端按 weight、id 排好，并包含真实 clients 绑定。 */
+export async function getPublicPingTasks(options?: ApiCallOptions): Promise<PingTask[]> {
+  return rpcCall(
+    "public:getPublicPingTasks",
+    {},
+    z.array(PingTaskSchema),
+    options,
+  );
 }
 
 export async function saveThemeSettings(
@@ -443,7 +449,6 @@ export async function getPingOverview(
   const overview = normalizeRpcPingOverview(
     payload,
     createRequestRange(hours),
-    taskId != null,
   );
   if (!options?.entityIds?.length) return overview;
   const visible = new Set(options.entityIds);

@@ -17,13 +17,19 @@ import {
   formatByteRate,
   formatByteRateLabel,
 } from "@/utils/format";
-import { calculateCostSummary, formatCnyMoney, getExchangeRates } from "@/utils/cost";
+import {
+  calculateCostSummary,
+  formatCnyMoney,
+  formatSignedCny,
+  getExchangeRates,
+} from "@/utils/cost";
 import { useHiddenNodeUuids } from "@/hooks/useVisibleNodes";
 import { speedRateColor } from "@/utils/metricTone";
 import {
   getHomeGroupLabel,
   getHomeGroupOptions,
   getHomeRegionOptions,
+  moveOfflineHomeNodesLast,
   HOME_ALL_GROUP,
   HOME_ALL_REGION,
   type HomeRegionOption,
@@ -86,7 +92,7 @@ function HomeOverviewCards({
   renewalNodes,
 }: {
   overview: HomeOverview;
-  costSummary: { remainingCny: number } | null;
+  costSummary: { remainingCny: number; premiumTotalCny: number } | null;
   costLoading: boolean;
   showCosts: boolean;
   showDetailButton: boolean;
@@ -107,6 +113,16 @@ function HomeOverviewCards({
       : costLoading
         ? "计算中"
         : "—";
+  const premiumValue = showCosts && costSummary
+    ? formatSignedCny(costSummary.premiumTotalCny)
+    : null;
+  const premiumTone = costSummary
+    ? costSummary.premiumTotalCny > 0
+      ? "positive"
+      : costSummary.premiumTotalCny < 0
+        ? "negative"
+        : "neutral"
+    : undefined;
   const trafficDetailLabel = `↑ ${formatBytes(overview.trafficUp)} · ↓ ${formatBytes(overview.trafficDown)}`;
   const trafficCompactLabel = `↑${formatCompactBytes(overview.trafficUp)} ↓${formatCompactBytes(overview.trafficDown)}`;
   const bandwidthDetailLabel = `↑ ${formatByteRateLabel(overview.netUp)} · ↓ ${formatByteRateLabel(overview.netDown)}`;
@@ -185,8 +201,17 @@ function HomeOverviewCards({
           <span className="overview-card-label">资产概览</span>
           {showDetailButton && <RenewalReminder nodes={renewalNodes} />}
         </div>
-        <div className="overview-card-main">
+        <div className="overview-card-main overview-card-asset-main">
           <p className="overview-card-value">{remainingValue}</p>
+          {premiumValue && (
+            <span
+              className="overview-card-premium"
+              data-tone={premiumTone}
+              title="全部节点收购溢价合计"
+            >
+              <strong>{premiumValue}</strong>
+            </span>
+          )}
         </div>
         <div className="overview-card-footer">
           <p className="overview-card-caption">实时汇率计算</p>
@@ -289,8 +314,10 @@ export function NodeGrid() {
   const hiddenUuids = useHiddenNodeUuids();
   const visibleNodes = useMemo(
     () =>
-      nodes.filter(
-        (node) => (me?.logged_in === true || !node.hidden) && !hiddenUuids.has(node.uuid),
+      moveOfflineHomeNodesLast(
+        nodes.filter(
+          (node) => (me?.logged_in === true || !node.hidden) && !hiddenUuids.has(node.uuid),
+        ),
       ),
     [me?.logged_in, nodes, hiddenUuids],
   );

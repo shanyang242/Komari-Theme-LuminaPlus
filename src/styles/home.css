@@ -72,7 +72,7 @@
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 12px;
-  margin-bottom: 16px;
+  margin-bottom: 12px;
 }
 
 .overview-card {
@@ -508,6 +508,39 @@
   letter-spacing: 0;
 }
 
+.overview-card-asset-main {
+  justify-content: flex-start;
+  gap: 9px;
+}
+
+.overview-card-premium {
+  display: inline-flex;
+  min-width: 0;
+  flex: 0 1 auto;
+  align-items: baseline;
+  color: var(--text-tertiary);
+  font-size: 9px;
+  font-weight: 620;
+  line-height: 1;
+  letter-spacing: 0;
+  white-space: nowrap;
+}
+
+.overview-card-premium strong {
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 680;
+  font-variant-numeric: tabular-nums;
+}
+
+.overview-card-premium[data-tone="positive"] strong {
+  color: color-mix(in srgb, var(--status-error) 62%, var(--text-secondary));
+}
+
+.overview-card-premium[data-tone="negative"] strong {
+  color: color-mix(in srgb, var(--status-success) 68%, var(--text-secondary));
+}
+
 /* 在线数量是首卡的辅助状态，略小于流量、带宽等核心指标。 */
 .overview-card[data-metric="online"] .overview-card-value {
   font-size: 24px;
@@ -724,6 +757,21 @@
     font-size: 24px;
   }
 
+  .overview-card-asset-main {
+    flex-wrap: wrap;
+    align-content: center;
+    column-gap: 7px;
+    row-gap: 4px;
+  }
+
+  .overview-card-premium {
+    font-size: 8.5px;
+  }
+
+  .overview-card-premium strong {
+    font-size: 10px;
+  }
+
   .overview-card[data-metric="online"] .overview-card-value {
     font-size: 21px;
   }
@@ -771,7 +819,7 @@
 /* 地区筛选栏:与分组栏同一套面板视觉(surface-a + 描边 + 圆角 + 浮起阴影);国旗 chip 换行铺开。
    chip 的悬停/选中态与分组 tab、费用抽屉排序 tab 共用同一组样式。 */
 .home-region-bar {
-  margin-bottom: 16px;
+  margin-bottom: 12px;
   padding: 10px 12px;
   border: 1px solid color-mix(in srgb, var(--border-strong) 54%, transparent);
   border-radius: 16px;

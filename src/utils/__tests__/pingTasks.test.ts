@@ -1,148 +1,91 @@
 import { describe, expect, it } from "vitest";
+import type { PingTask } from "@/types/komari";
 import {
-  createHomepageMultiPingTaskOverride,
-  normalizeHomepageMultiPingNodeTaskIds,
-  normalizeHomepageMultiPingTaskIds,
-  invertHomepagePingTaskBindings,
-  hasHomepagePingTaskBinding,
-  normalizeHomepagePingTaskBindings,
-  resolveHomepagePingSelections,
-  resolveHomepageMultiPingTaskIds,
+  migrateLegacyHomepagePingBindings,
+  normalizeHomepagePingNodeTaskIds,
+  resolveHomepagePingTaskId,
+  sortHomepagePingTasks,
 } from "@/utils/pingTasks";
 
-describe("homepage ping task bindings", () => {
-  it("accepts only positive decimal safe integers", () => {
-    expect(
-      normalizeHomepagePingTaskBindings({
-        "1e3": ["exponent"],
-        "1.5": ["fraction"],
-        "0x10": ["hex"],
-        "9007199254740992": ["unsafe"],
-        "42": ["valid"],
-      }),
-    ).toEqual({ "42": ["valid"] });
+function task(id: number, weight: number, clients: string[] = []): PingTask {
+  return {
+    id,
+    weight,
+    clients,
+    name: `Task ${id}`,
+    interval: 60,
+    loss: 0,
+    type: "icmp",
+    target: "",
+  };
+}
+
+describe("homepage single-ping selection", () => {
+  it("normalizes manual and explicit-unbound node overrides", () => {
+    expect(normalizeHomepagePingNodeTaskIds({
+      " node-b ": null,
+      "node-a": "7",
+      "node-c": 0,
+      "": 3,
+    })).toEqual({ "node-a": 7, "node-b": null });
   });
 
-  it("merges IDs that normalize to the same decimal integer", () => {
-    expect(
-      normalizeHomepagePingTaskBindings({
-        "01": ["node-a", "node-b"],
-        "1": ["node-b", "node-c"],
-      }),
-    ).toEqual({ "1": ["node-b", "node-c", "node-a"] });
+  it("migrates legacy task-to-node bindings with the lowest task id winning", () => {
+    expect(migrateLegacyHomepagePingBindings({
+      "9": ["node-a"],
+      "2": ["node-a", "node-b"],
+    })).toEqual({ "node-a": 2, "node-b": 2 });
   });
 
-  it("inverts normalized bindings and gives the lowest task ID precedence", () => {
-    expect(
-      invertHomepagePingTaskBindings({
-        "02": ["node-a"],
-        "1": ["node-a", "node-b"],
-      }),
-    ).toEqual(
-      new Map([
-        ["node-a", 1],
-        ["node-b", 1],
-      ]),
-    );
+  it("orders tasks by Komari weight and then id", () => {
+    expect(sortHomepagePingTasks([
+      task(8, 20),
+      task(4, 10),
+      task(2, 10),
+    ]).map((item) => item.id)).toEqual([2, 4, 8]);
   });
 
-  it("reuses the inverted binding index for a stable bindings object", () => {
-    const bindings = { "8": ["node-a"], "9": ["node-b"] };
-    expect(invertHomepagePingTaskBindings(bindings)).toBe(
-      invertHomepagePingTaskBindings(bindings),
-    );
+  it("preserves the backend order when the public API omits weights", () => {
+    expect(sortHomepagePingTasks([
+      task(8, 0),
+      task(2, 0),
+      task(4, 0),
+    ]).map((item) => item.id)).toEqual([8, 2, 4]);
   });
 
-  it("reports a binding before overview data has loaded", () => {
-    const bindings = { "8": ["node-a"], "9": ["node-b"] };
-    expect(hasHomepagePingTaskBinding("node-a", bindings)).toBe(true);
-    expect(hasHomepagePingTaskBinding("node-c", bindings)).toBe(false);
+  it("automatically selects the first backend-bound task by weight", () => {
+    expect(resolveHomepagePingTaskId("node-a", [
+      task(1, 30, ["node-a"]),
+      task(9, 5, ["node-a"]),
+      task(3, 10, ["node-a"]),
+    ], {})).toBe(9);
   });
 
-  it("normalizes the global three-task selection in display order", () => {
-    expect(normalizeHomepageMultiPingTaskIds(["3", 1, 3, 2, 4])).toEqual([3, 1, 2]);
+  it("honours manual and explicit-unbound overrides without backend validation", () => {
+    const tasks = [task(1, 1, ["node-a"])];
+    expect(resolveHomepagePingTaskId("node-a", tasks, { "node-a": 99 })).toBe(99);
+    expect(resolveHomepagePingTaskId("node-a", tasks, { "node-a": null })).toBeNull();
   });
 
-  it("keeps only complete per-node three-task overrides", () => {
-    expect(
-      normalizeHomepageMultiPingNodeTaskIds({
-        " node-a ": [3, 1, 2],
-        "node-b": [1, 1, 2],
-        "node-c": ["4", "5", "6", "7"],
-        "": [1, 2, 3],
-      }),
-    ).toEqual({
-      "node-a": [3, 1, 2],
-      "node-c": [4, 5, 6],
-    });
+  it("falls back to actual records when an older backend omits task clients", () => {
+    expect(resolveHomepagePingTaskId(
+      "node-a",
+      [task(7, 20), task(3, 5)],
+      {},
+      [
+        { client: "node-a", task_id: 7 },
+        { client: "node-a", task_id: 3 },
+      ],
+    )).toBe(3);
   });
 
-  it("prefers a node override and otherwise inherits the global order", () => {
-    const overrides = { "node-a": [7, 8, 9] };
-    expect(resolveHomepageMultiPingTaskIds("node-a", [1, 2, 3], overrides)).toEqual([
-      7, 8, 9,
-    ]);
-    expect(resolveHomepageMultiPingTaskIds("node-b", [1, 2, 3], overrides)).toEqual([
-      1, 2, 3,
-    ]);
-  });
-
-  it("initializes an override once without replacing an existing selection", () => {
-    expect(
-      createHomepageMultiPingTaskOverride(undefined, [1, 2, 3], [2, 3, 4, 5]),
-    ).toEqual([2, 3, 4]);
-    expect(
-      createHomepageMultiPingTaskOverride([4, 5, 6], [1, 2, 3], [1, 2, 3, 4, 5, 6]),
-    ).toBeNull();
-    expect(
-      createHomepageMultiPingTaskOverride(undefined, [1, 2, 3], [1, 2]),
-    ).toBeNull();
-  });
-
-  it("uses multi-ping when available and falls back to each node's single binding", () => {
-    const multiSelections = resolveHomepagePingSelections(
-      ["node-a", "node-b"],
-      { "8": ["node-a"], "9": ["node-b"] },
-      [3, 1, 2],
-    );
-
-    expect(multiSelections.singleTaskIdsByClient).toEqual(new Map());
-    expect(multiSelections.multiTaskIdsByClient).toEqual(
-      new Map([
-        ["node-a", [3, 1, 2]],
-        ["node-b", [3, 1, 2]],
-      ]),
-    );
-    expect(multiSelections.requestedTaskIdsByClient).toEqual(
-      multiSelections.multiTaskIdsByClient,
-    );
-
-    const singleSelections = resolveHomepagePingSelections(
-      ["node-a", "node-b"],
-      { "8": ["node-a"], "9": ["node-b"] },
-    );
-    expect(singleSelections.singleTaskIdsByClient).toEqual(
-      new Map([
-        ["node-a", [8]],
-        ["node-b", [9]],
-      ]),
-    );
-    expect(singleSelections.multiTaskIdsByClient).toEqual(new Map());
-    expect(singleSelections.requestedTaskIdsByClient).toEqual(
-      singleSelections.singleTaskIdsByClient,
-    );
-
-    const mixedSelections = resolveHomepagePingSelections(
-      ["node-a", "node-b"],
-      { "8": ["node-a"], "9": ["node-b"] },
-      [],
-      { "node-a": [3, 1, 2] },
-    );
-    expect(mixedSelections.multiTaskIdsByClient).toEqual(
-      new Map([["node-a", [3, 1, 2]]]),
-    );
-    expect(mixedSelections.singleTaskIdsByClient).toEqual(
-      new Map([["node-b", [9]]]),
-    );
+  it("does not infer a binding from records when current backend bindings are known", () => {
+    expect(resolveHomepagePingTaskId(
+      "node-a",
+      [task(3, 5)],
+      {},
+      [{ client: "node-a", task_id: 3 }],
+      false,
+    )).toBeNull();
   });
 });

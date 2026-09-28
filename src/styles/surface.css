@@ -871,7 +871,238 @@ body::after {
   font-size: 13px;
 }
 
-.multi-ping-config-backdrop {
+.theme-premium-list {
+  min-width: 0;
+  max-height: 320px;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.theme-premium-row {
+  box-sizing: border-box;
+  display: flex;
+  min-width: 0;
+  max-width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.theme-premium-row:last-child {
+  border-bottom: 0;
+}
+
+.theme-premium-node,
+.theme-premium-name,
+.theme-premium-summary,
+.theme-premium-fields {
+  display: flex;
+  align-items: center;
+}
+
+.theme-premium-node {
+  min-width: 0;
+  flex: 1 1 auto;
+  gap: 10px;
+}
+
+.theme-premium-name {
+  min-width: 0;
+  flex: 1 1 auto;
+  gap: 8px;
+}
+
+.theme-premium-name > span {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 590;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.theme-premium-summary {
+  flex: 0 0 auto;
+  gap: 7px;
+}
+
+.theme-premium-reference {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  color: var(--text-tertiary);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.theme-premium-reference > span {
+  display: none;
+}
+
+.theme-premium-reference strong {
+  font-weight: 580;
+  font-variant-numeric: tabular-nums;
+}
+
+.theme-premium-delta {
+  flex: 0 0 auto;
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: var(--fill-tertiary);
+  color: var(--text-tertiary);
+  font-size: 10px;
+  font-weight: 650;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.theme-premium-delta[data-tone="positive"] {
+  background: color-mix(in srgb, var(--status-error) 8%, transparent);
+  color: color-mix(in srgb, var(--status-error) 72%, var(--text-secondary));
+}
+
+.theme-premium-delta[data-tone="negative"] {
+  background: color-mix(in srgb, var(--status-success) 8%, transparent);
+  color: color-mix(in srgb, var(--status-success) 72%, var(--text-secondary));
+}
+
+.theme-premium-fields {
+  flex: 0 0 auto;
+  gap: 8px;
+}
+
+.theme-premium-field {
+  display: block;
+  width: 96px;
+  min-width: 0;
+}
+
+.theme-premium-field.is-date {
+  width: 140px;
+}
+
+.theme-premium-field-label {
+  display: none;
+}
+
+.theme-premium-input {
+  width: 100%;
+  min-width: 0;
+  padding: 4px 8px;
+  color: var(--text-primary);
+  font-size: 13px;
+  text-align: right;
+  outline: none;
+  font-variant-numeric: tabular-nums;
+}
+
+.theme-premium-field.is-date .theme-premium-input {
+  font-size: 12px;
+  text-align: left;
+}
+
+.theme-premium-input:disabled {
+  opacity: 0.45;
+}
+
+@media (max-width: 720px) {
+  .theme-premium-list {
+    max-height: min(58dvh, 460px);
+  }
+
+  .theme-premium-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+    padding: 13px 11px;
+  }
+
+  .theme-premium-node {
+    display: grid;
+    width: 100%;
+    max-width: 100%;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: flex-start;
+    gap: 10px;
+  }
+
+  .theme-premium-name {
+    padding-top: 2px;
+  }
+
+  .theme-premium-name > span {
+    font-size: 13.5px;
+    font-weight: 680;
+  }
+
+  .theme-premium-summary {
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 4px;
+    min-width: 0;
+  }
+
+  .theme-premium-reference > span {
+    display: inline;
+  }
+
+  .theme-premium-fields {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    gap: 7px;
+  }
+
+  .theme-premium-field,
+  .theme-premium-field.is-date {
+    box-sizing: border-box;
+    display: flex;
+    width: 100%;
+    min-width: 0;
+    align-items: center;
+    gap: 9px;
+  }
+
+  .theme-premium-field-label {
+    display: block;
+    width: 58px;
+    flex: 0 0 58px;
+    margin: 0;
+    color: var(--text-tertiary);
+    font-size: 11px;
+    font-weight: 650;
+    letter-spacing: 0.03em;
+    white-space: nowrap;
+  }
+
+  .theme-premium-input,
+  .theme-premium-field.is-date .theme-premium-input {
+    box-sizing: border-box;
+    width: 0;
+    min-width: 0;
+    max-width: none;
+    flex: 1 1 0;
+    min-height: 38px;
+    padding: 7px 10px;
+    font-size: 13px;
+  }
+
+  .theme-premium-reference {
+    padding: 2px 6px;
+    border-radius: 6px;
+    background: color-mix(in srgb, var(--text-tertiary) 8%, transparent);
+    font-size: 10px;
+    font-weight: 650;
+    line-height: 1.2;
+  }
+}
+
+.ping-config-backdrop {
   position: fixed;
   inset: 0;
   z-index: 100;
@@ -882,7 +1113,7 @@ body::after {
   background: rgba(7, 10, 18, 0.72);
 }
 
-.multi-ping-config-panel {
+.ping-config-panel {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
   width: min(1120px, calc(100vw - 32px));
@@ -895,8 +1126,8 @@ body::after {
   color: var(--text-primary);
 }
 
-.multi-ping-config-header,
-.multi-ping-config-footer {
+.ping-config-header,
+.ping-config-footer {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -905,22 +1136,22 @@ body::after {
   background: color-mix(in srgb, var(--surface-elev) 96%, transparent);
 }
 
-.multi-ping-config-header {
+.ping-config-header {
   border-bottom: 1px solid var(--hairline);
 }
 
-.multi-ping-config-footer {
+.ping-config-footer {
   flex-wrap: wrap;
   border-top: 1px solid var(--hairline);
 }
 
-.multi-ping-config-footer-error {
+.ping-config-footer-error {
   min-width: 0;
   flex: 1;
   overflow-wrap: anywhere;
 }
 
-.multi-ping-config-icon-button {
+.ping-config-icon-button {
   display: inline-flex;
   width: 36px;
   height: 36px;
@@ -934,19 +1165,19 @@ body::after {
   transition: background 160ms ease, color 160ms ease, border-color 160ms ease;
 }
 
-.multi-ping-config-icon-button:hover {
+.ping-config-icon-button:hover {
   border-color: var(--border-strong);
   background: var(--hover-bg);
   color: var(--text-primary);
 }
 
-.multi-ping-config-body {
+.ping-config-body {
   display: grid;
   min-height: 0;
   grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
 }
 
-.multi-ping-config-sidebar {
+.ping-config-sidebar {
   display: flex;
   min-width: 0;
   min-height: 0;
@@ -955,7 +1186,7 @@ body::after {
   background: color-mix(in srgb, var(--surface) 84%, transparent);
 }
 
-.multi-ping-config-sidebar-tools {
+.ping-config-sidebar-tools {
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -963,8 +1194,8 @@ body::after {
   border-bottom: 1px solid var(--hairline);
 }
 
-.multi-ping-config-filters,
-.multi-ping-config-mode {
+.ping-config-filters,
+.ping-config-mode {
   display: grid;
   gap: 3px;
   padding: 3px;
@@ -973,16 +1204,16 @@ body::after {
   background: color-mix(in srgb, var(--surface) 78%, transparent);
 }
 
-.multi-ping-config-filters {
+.ping-config-filters {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
-.multi-ping-config-mode {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+.ping-config-mode {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
-.multi-ping-config-filters button,
-.multi-ping-config-mode button {
+.ping-config-filters button,
+.ping-config-mode button {
   min-width: 0;
   min-height: 30px;
   padding: 0 8px;
@@ -993,40 +1224,34 @@ body::after {
   white-space: nowrap;
 }
 
-.multi-ping-config-filters button:hover,
-.multi-ping-config-mode button:hover {
+.ping-config-filters button:hover,
+.ping-config-mode button:hover {
   background: var(--hover-bg);
   color: var(--text-primary);
 }
 
-.multi-ping-config-filters button.is-active,
-.multi-ping-config-mode button.is-active {
+.ping-config-filters button.is-active,
+.ping-config-mode button.is-active {
   background: var(--surface-elev);
   box-shadow: 0 5px 16px -12px rgba(0, 0, 0, 0.55);
   color: var(--text-primary);
 }
 
-.multi-ping-config-mode button:disabled {
+.ping-config-mode button:disabled {
   cursor: not-allowed;
   opacity: 0.45;
 }
 
-.multi-ping-config-node-list {
+.ping-config-node-list {
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
 }
 
-.multi-ping-config-node-list-window {
-  position: relative;
-}
-
-.multi-ping-config-node {
-  position: absolute;
-  inset: 0 0 auto;
+.ping-config-node {
   display: flex;
   width: 100%;
-  height: 64px;
+  min-height: 64px;
   align-items: center;
   gap: 10px;
   padding: 10px 12px 10px 14px;
@@ -1036,16 +1261,16 @@ body::after {
   transition: background 150ms ease, box-shadow 150ms ease;
 }
 
-.multi-ping-config-node:hover {
+.ping-config-node:hover {
   background: var(--hover-bg);
 }
 
-.multi-ping-config-node.is-active {
+.ping-config-node.is-active {
   background: color-mix(in srgb, var(--accent-500) 9%, var(--surface-elev));
   box-shadow: inset 3px 0 0 var(--accent-500);
 }
 
-.multi-ping-config-status {
+.ping-config-status {
   display: inline-flex;
   flex: 0 0 auto;
   align-items: center;
@@ -1055,11 +1280,7 @@ body::after {
   font-weight: 650;
 }
 
-.multi-ping-config-status.is-warning {
-  color: color-mix(in srgb, var(--status-warning) 84%, var(--text-primary));
-}
-
-.multi-ping-config-editor {
+.ping-config-editor {
   display: flex;
   min-width: 0;
   min-height: 0;
@@ -1067,12 +1288,12 @@ body::after {
   background: color-mix(in srgb, var(--surface-elev) 92%, transparent);
 }
 
-.multi-ping-config-editor-head {
+.ping-config-editor-head {
   padding: 20px 24px;
   border-bottom: 1px solid var(--hairline);
 }
 
-.multi-ping-config-editor-content {
+.ping-config-editor-content {
   display: flex;
   min-height: 0;
   flex: 1;
@@ -1082,40 +1303,7 @@ body::after {
   padding: 24px;
 }
 
-.multi-ping-config-warning {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  padding: 11px 12px;
-  border: 1px solid color-mix(in srgb, var(--status-warning) 28%, var(--hairline));
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--status-warning) 8%, var(--surface));
-  color: color-mix(in srgb, var(--status-warning) 82%, var(--text-primary));
-  font-size: 11px;
-  line-height: 1.55;
-}
-
-.multi-ping-config-warning > svg {
-  flex: 0 0 auto;
-  margin-top: 1px;
-}
-
-.multi-ping-config-warning strong,
-.multi-ping-config-warning span {
-  display: block;
-}
-
-.multi-ping-config-warning span {
-  margin-top: 2px;
-  color: var(--text-secondary);
-}
-
-.multi-ping-config-lines {
-  display: grid;
-  gap: 10px;
-}
-
-.multi-ping-config-line {
+.ping-config-line {
   display: flex;
   min-width: 0;
   align-items: center;
@@ -1127,36 +1315,28 @@ body::after {
   background: color-mix(in srgb, var(--surface) 70%, transparent);
 }
 
-.multi-ping-config-line.is-invalid {
-  border-color: color-mix(in srgb, var(--status-warning) 32%, var(--hairline));
+.ping-config-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 14px;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--surface) 70%, transparent);
+  font-size: 12px;
 }
 
-.multi-ping-config-inline-warning {
-  flex: 0 0 auto;
-  padding: 2px 5px;
-  border-radius: 4px;
-  background: color-mix(in srgb, var(--status-warning) 12%, transparent);
-  color: color-mix(in srgb, var(--status-warning) 84%, var(--text-primary));
-  font-size: 9px;
-  font-weight: 680;
+.ping-config-summary strong {
+  color: var(--text-primary);
+  font-weight: 650;
 }
 
-.multi-ping-config-line-number {
-  display: inline-flex;
-  width: 28px;
-  height: 28px;
-  flex: 0 0 auto;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid color-mix(in srgb, var(--accent-500) 24%, var(--hairline));
-  border-radius: 50%;
-  background: color-mix(in srgb, var(--accent-500) 8%, transparent);
-  color: var(--accent-500);
-  font-size: 11px;
-  font-weight: 700;
+.ping-config-summary span {
+  color: var(--text-tertiary);
+  line-height: 1.55;
 }
 
-.multi-ping-config-mobile-back {
+.ping-config-mobile-back {
   display: none;
   align-items: center;
   gap: 6px;
@@ -1167,62 +1347,62 @@ body::after {
 }
 
 @media (max-width: 767px) {
-  .multi-ping-config-backdrop {
+  .ping-config-backdrop {
     padding: 0;
   }
 
-  .multi-ping-config-panel {
+  .ping-config-panel {
     width: 100vw;
     height: 100dvh;
     border: 0;
     border-radius: 0;
   }
 
-  .multi-ping-config-header,
-  .multi-ping-config-footer {
+  .ping-config-header,
+  .ping-config-footer {
     padding: 13px 14px;
   }
 
-  .multi-ping-config-footer-error,
-  .multi-ping-config-footer-actions {
+  .ping-config-footer-error,
+  .ping-config-footer-actions {
     width: 100%;
   }
 
-  .multi-ping-config-footer-actions {
+  .ping-config-footer-actions {
     justify-content: flex-end;
   }
 
-  .multi-ping-config-body {
+  .ping-config-body {
     display: block;
     overflow: hidden;
   }
 
-  .multi-ping-config-sidebar,
-  .multi-ping-config-editor {
+  .ping-config-sidebar,
+  .ping-config-editor {
     width: 100%;
     height: 100%;
     border-right: 0;
   }
 
-  .multi-ping-config-sidebar.is-mobile-hidden,
-  .multi-ping-config-editor {
+  .ping-config-sidebar.is-mobile-hidden,
+  .ping-config-editor {
     display: none;
   }
 
-  .multi-ping-config-editor.is-mobile-open {
+  .ping-config-editor.is-mobile-open {
     display: flex;
   }
 
-  .multi-ping-config-editor-head,
-  .multi-ping-config-editor-content {
+  .ping-config-editor-head,
+  .ping-config-editor-content {
     padding: 16px;
   }
 
-  .multi-ping-config-mobile-back {
+  .ping-config-mobile-back {
     display: inline-flex;
   }
 
-  .multi-ping-config-mode {
+  .ping-config-mode {
     width: 100%;
   }
 }
@@ -1898,6 +2078,13 @@ body::after {
   justify-content: flex-end;
   gap: 8px;
   margin-bottom: 12px;
+}
+
+.instance-ping-loss-key {
+  align-self: center;
+  margin-right: auto;
+  color: var(--text-tertiary);
+  font-size: 11px;
 }
 
 .instance-ping-tasks {

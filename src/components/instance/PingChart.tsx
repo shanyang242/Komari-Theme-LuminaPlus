@@ -14,7 +14,7 @@ import {
   type ChartTooltipState,
 } from "./chartShared";
 import { ChartTooltip, SwitchToggle } from "./ChartParts";
-import { alignPingChartRecords } from "./pingChartData";
+import { alignPingChartRecords, pingLossMarkers } from "./pingChartData";
 import {
   cutPeakValues,
   detectTypicalIntervalSeconds,
@@ -162,6 +162,10 @@ export function PingChart({
         .filter(({ time }) => time > 0)
         .sort((left, right) => left.time - right.time),
     [data],
+  );
+  const lossMarkers = useMemo(
+    () => pingLossMarkers(sortedRecords, visibleTaskIds),
+    [sortedRecords, visibleTaskIds],
   );
 
   const chartPoints = useMemo(() => {
@@ -337,12 +341,53 @@ export function PingChart({
         })),
       ],
       hooks: {
+        draw: [(u) => {
+          if (lossMarkers.length === 0) return;
+          const { ctx, bbox } = u;
+          const ratio = u.width > 0 ? ctx.canvas.width / u.width : 1;
+          const minTime = u.scales.x.min ?? Number.NEGATIVE_INFINITY;
+          const maxTime = u.scales.x.max ?? Number.POSITIVE_INFINITY;
+          const columns = new Map<number, Set<number>>();
+          for (const { time, taskId } of lossMarkers) {
+            if (time < minTime || time > maxTime) continue;
+            const x = Math.max(
+              bbox.left + ratio / 2,
+              Math.min(bbox.left + bbox.width - ratio / 2,
+                Math.round(u.valToPos(time, "x", true))),
+            );
+            const taskIds = columns.get(x) ?? new Set<number>();
+            taskIds.add(taskId);
+            columns.set(x, taskIds);
+          }
+
+          ctx.save();
+          ctx.beginPath();
+          ctx.rect(bbox.left, bbox.top, bbox.width, bbox.height);
+          ctx.clip();
+          ctx.globalAlpha = 0.68;
+          ctx.lineWidth = ratio;
+          for (const [x, taskIds] of columns) {
+            const orderedIds = [...taskIds].sort((a, b) =>
+              (taskIndexById.get(a) ?? 0) - (taskIndexById.get(b) ?? 0));
+            orderedIds.forEach((taskId, index) => {
+              ctx.strokeStyle = taskColors.get(taskId)
+                ?? colorForSeries(taskIndexById.get(taskId) ?? 0, tasks.length);
+              ctx.setLineDash([4 * ratio, (8 * orderedIds.length - 4) * ratio]);
+              ctx.lineDashOffset = -index * 8 * ratio;
+              ctx.beginPath();
+              ctx.moveTo(x, bbox.top);
+              ctx.lineTo(x, bbox.top + bbox.height);
+              ctx.stroke();
+            });
+          }
+          ctx.restore();
+        }],
         init: [
           (u) => {
             u.root.setAttribute("role", "img");
             u.root.setAttribute(
               "aria-label",
-              `Ping 延迟历史图表，共 ${tasks.length} 条线路`,
+              `Ping 延迟历史图表，共 ${tasks.length} 条线路；同色竖虚线表示丢包`,
             );
           },
           tooltipHooks.onInit,
@@ -351,7 +396,7 @@ export function PingChart({
         setCursor: [tooltipHooks.onSetCursor],
       },
     };
-  }, [chart, connectNulls, hiddenTasks, hours, isDark, requestedXRange, taskColors, taskIndexById, taskLabels, tasks, visibleTasks, yRange]);
+  }, [chart, connectNulls, hiddenTasks, hours, isDark, lossMarkers, requestedXRange, taskColors, taskIndexById, taskLabels, tasks, visibleTasks, yRange]);
 
   const options = useMemo<uPlot.Options | null>(
     () => (baseOptions ? { ...baseOptions, width: w, height: h } : null),
@@ -462,6 +507,7 @@ export function PingChart({
   return (
     <InstancePanel title="Ping 图表" description={coverageLabel ?? undefined}>
       <div className="instance-ping-toolbar">
+        {lossMarkers.length > 0 && <span className="instance-ping-loss-key">同色竖虚线表示丢包</span>}
         <SwitchToggle
           label="削峰平滑"
           active={cutPeak}
@@ -472,7 +518,7 @@ export function PingChart({
           label="断点连线"
           active={connectNulls}
           onToggle={() => setConnectNulls((value) => !value)}
-          title="关闭：如实显示中断/丢包断点；开启：跨过所有空缺连成完整曲线（更好看，但看不出掉线）。注：偶尔漏一两次采样的小空缺始终自动桥接，不受此开关影响。"
+          title="关闭：显示延迟曲线的断点；开启：跨过空缺连接曲线。丢包虚线始终保留。"
         />
         <button type="button" className="instance-toggle-button" onClick={toggleAll}>
           {hiddenTasks.size === 0 ? <EyeOff size={14} aria-hidden /> : <Eye size={14} aria-hidden />}

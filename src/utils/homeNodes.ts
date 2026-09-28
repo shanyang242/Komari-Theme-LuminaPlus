@@ -71,3 +71,13 @@ export function dedupeGroupLabels(groups: Iterable<string | null | undefined>): 
 export function getHomeGroupOptions(nodes: HomeNodeSummary[]) {
   return dedupeGroupLabels(nodes.map((node) => node.group));
 }
+
+/** 保留 Komari 原始权重顺序，仅把明确离线的实例稳定移到列表末尾。 */
+export function moveOfflineHomeNodesLast(nodes: HomeNodeSummary[]) {
+  const available: HomeNodeSummary[] = [];
+  const offline: HomeNodeSummary[] = [];
+  for (const node of nodes) {
+    (node.online === false ? offline : available).push(node);
+  }
+  return [...available, ...offline];
+}

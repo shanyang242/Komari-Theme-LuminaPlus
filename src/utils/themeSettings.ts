@@ -15,11 +15,9 @@ import {
 } from "@/utils/cost";
 import { normalizeNodeIdentityList } from "@/utils/nodeIdentity";
 import {
-  normalizeHomepageMultiPingTaskIds,
-  normalizeHomepageMultiPingNodeTaskIds,
-  normalizeHomepagePingTaskBindings,
-  type HomepageMultiPingNodeTaskIds,
-  type HomepagePingTaskBindings,
+  migrateLegacyHomepagePingBindings,
+  normalizeHomepagePingNodeTaskIds,
+  type HomepagePingNodeTaskIds,
 } from "@/utils/pingTasks";
 
 export type Appearance = "system" | "light" | "dark";
@@ -42,10 +40,7 @@ export interface ResolvedThemeSettings {
   enableAdminButton: boolean;
   hideAdminEntryWhenLoggedOut: boolean;
   showPingChart: boolean;
-  homepagePingBindings: HomepagePingTaskBindings;
-  enableHomepageMultiPing: boolean;
-  homepageMultiPingTaskIds: number[];
-  homepageMultiPingNodeTaskIds: HomepageMultiPingNodeTaskIds;
+  homepagePingNodeTaskIds: HomepagePingNodeTaskIds;
   fakePingForUnbound: boolean;
   enableHomeHeaderAutoHide: boolean;
   homeHeaderVisibleSeconds: number;
@@ -78,10 +73,7 @@ export const DEFAULT_THEME_SETTINGS: ResolvedThemeSettings = {
   enableAdminButton: true,
   hideAdminEntryWhenLoggedOut: false,
   showPingChart: true,
-  homepagePingBindings: {},
-  enableHomepageMultiPing: false,
-  homepageMultiPingTaskIds: [],
-  homepageMultiPingNodeTaskIds: {},
+  homepagePingNodeTaskIds: {},
   fakePingForUnbound: false,
   enableHomeHeaderAutoHide: false,
   homeHeaderVisibleSeconds: 10,
@@ -180,8 +172,8 @@ function normalizeAmbientEffect(value: unknown): AmbientEffect {
 export function normalizeThemeSettings(
   settings: (ThemeSettings & Record<string, unknown>) | null | undefined,
 ): ResolvedThemeSettings {
-  const homepageMultiPingTaskIds = normalizeHomepageMultiPingTaskIds(
-    settings?.homepageMultiPingTaskIds,
+  const hasSinglePingOverrides = Boolean(
+    settings && Object.prototype.hasOwnProperty.call(settings, "homepagePingNodeTaskIds"),
   );
   return {
     defaultAppearance: normalizeAppearance(settings?.defaultAppearance),
@@ -197,13 +189,9 @@ export function normalizeThemeSettings(
     hideAdminEntryWhenLoggedOut:
       settings?.hideAdminEntryWhenLoggedOut === true,
     showPingChart: enabledUnlessFalse(settings?.showPingChart),
-    homepagePingBindings: normalizeHomepagePingTaskBindings(settings?.homepagePingBindings),
-    // 保留开关原值，让管理页能呈现并修复不完整配置；首页消费方仅在任务恰好为三项时启用。
-    enableHomepageMultiPing: settings?.enableHomepageMultiPing === true,
-    homepageMultiPingTaskIds,
-    homepageMultiPingNodeTaskIds: normalizeHomepageMultiPingNodeTaskIds(
-      settings?.homepageMultiPingNodeTaskIds,
-    ),
+    homepagePingNodeTaskIds: hasSinglePingOverrides
+      ? normalizeHomepagePingNodeTaskIds(settings?.homepagePingNodeTaskIds)
+      : migrateLegacyHomepagePingBindings(settings?.homepagePingBindings),
     // 默认关闭(需手动开启):给访客展示的是模拟数据,必须由站长显式决定。
     fakePingForUnbound: settings?.fakePingForUnbound === true,
     enableHomeHeaderAutoHide: settings?.enableHomeHeaderAutoHide === true,

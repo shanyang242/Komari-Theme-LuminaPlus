@@ -24,3 +24,21 @@ export function alignPingChartRecords(
 
   return { latencyPoints: [...latencyPointMap.values()] };
 }
+
+/** 独立于延迟曲线的降采样，提取每条可见线路的丢包时刻。 */
+export function pingLossMarkers(
+  records: Array<{ record: PingRecord; time: number }>,
+  visibleTaskIds: Set<number>,
+) {
+  const markers = new Map<string, { time: number; taskId: number }>();
+  for (const { record, time } of records) {
+    if (!Number.isFinite(time) || time <= 0 || !visibleTaskIds.has(record.task_id)) continue;
+    const aggregateLoss = record.loss;
+    if (record.value >= 0 &&
+      !(typeof aggregateLoss === "number" && Number.isFinite(aggregateLoss) && aggregateLoss > 0)) {
+      continue;
+    }
+    markers.set(`${record.task_id}:${time}`, { time, taskId: record.task_id });
+  }
+  return [...markers.values()];
+}

@@ -49,7 +49,7 @@ export function Instance() {
   const themeSettings = useThemeSettings();
   const meta = useNodeMeta(uuid ?? "");
   const storeStatus = useNodeStoreStatus(Boolean(uuid));
-  const [chartType, setChartType] = useState<"load" | "ping">("load");
+  const [chartType, setChartType] = useState<"load" | "ping">("ping");
   const [loadHours, setLoadHours] = useState(0);
   const [pingHours, setPingHours] = useState(DEFAULT_PING_HOURS);
   const chartControlsRef = useRef<HTMLDivElement | null>(null);
@@ -92,10 +92,10 @@ export function Instance() {
   }, [pingHours, pingRanges]);
 
   useEffect(() => {
-    if (!showPingChart && chartType === "ping") {
+    if (themeSettings.isReady && !showPingChart && chartType === "ping") {
       setChartType("load");
     }
-  }, [chartType, showPingChart]);
+  }, [chartType, showPingChart, themeSettings.isReady]);
 
   if (!uuid) return null;
 

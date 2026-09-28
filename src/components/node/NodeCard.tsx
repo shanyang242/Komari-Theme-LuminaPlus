@@ -18,7 +18,6 @@ import { useNodeCardModel } from "@/hooks/useNodeCardModel";
 import { usePreferences } from "@/hooks/usePreferences";
 import { useMetricColorsVersion } from "@/hooks/useMetricColors";
 import { formatBytes } from "@/utils/format";
-import { HOMEPAGE_MULTI_PING_TASK_COUNT } from "@/utils/pingTasks";
 import {
   speedRateColor,
   trafficQuotaSegmentColor,
@@ -39,7 +38,6 @@ import {
 } from "./nodeCardShared";
 import { IpStackBadges } from "./IpStackBadges";
 import { HealthBucketTooltip } from "./HealthBucketTooltip";
-import { MultiPingStatus } from "./MultiPingStatus";
 import { formatHealthBucketTooltip } from "./pingBucketText";
 import { clsx } from "clsx";
 import type { NodeInfo, NodeMetrics, PingOverviewBucket, PingOverviewItem, TrafficTrendSample } from "@/types/komari";
@@ -60,7 +58,7 @@ export const NodeCard = memo(function NodeCard({
   // 自定义配色改动时 version 自增，拼进 redrawKey 让 canvas 进度条即时重画（含离线静态卡）。
   const colorsVersion = useMetricColorsVersion();
   const redrawKey = `${resolvedAppearance}:${colorsVersion}`;
-  const model = useNodeCardModel(uuid, { includeMultiPing: true });
+  const model = useNodeCardModel(uuid);
 
   if (!model.node) {
     return (
@@ -79,7 +77,6 @@ export const NodeCard = memo(function NodeCard({
     trafficTrend,
     ping,
     pingBuckets,
-    homepagePingLines,
     footerTags,
     subtitle,
     expire,
@@ -135,25 +132,17 @@ export const NodeCard = memo(function NodeCard({
             reset={trafficReset}
           />
 
-          {homepagePingLines.length === HOMEPAGE_MULTI_PING_TASK_COUNT ? (
-            <MultiPingStatus
-              lines={homepagePingLines}
-              density="large"
-              className="card-metric-section"
-            />
-          ) : (
-            <NodeHealthSection
-              ping={ping}
-              pingBuckets={pingBuckets}
-              redrawKey={redrawKey}
-              hasRealHomepagePingBinding={hasRealHomepagePingBinding}
-              shouldRenderPingBars={shouldRenderPingBars}
-              pingLoading={pingLoading}
-              pingError={pingError}
-              latencyColor={latencyColor}
-              lossColor={lossColor}
-            />
-          )}
+          <NodeHealthSection
+            ping={ping}
+            pingBuckets={pingBuckets}
+            redrawKey={redrawKey}
+            hasRealHomepagePingBinding={hasRealHomepagePingBinding}
+            shouldRenderPingBars={shouldRenderPingBars}
+            pingLoading={pingLoading}
+            pingError={pingError}
+            latencyColor={latencyColor}
+            lossColor={lossColor}
+          />
         </div>
 
         <NodeCardFooter

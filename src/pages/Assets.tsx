@@ -1,4 +1,4 @@
-import { useMemo, useRef } from "react";
+import { useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import { Link, Navigate } from "react-router-dom";
 import { CalendarClock, ChevronLeft, RefreshCw } from "lucide-react";
@@ -25,12 +25,16 @@ import { canViewCosts } from "@/utils/themeSettings";
 
 const TABLE_COLUMNS = [
   { label: "节点" },
-  { label: "价格", numeric: true },
-  { label: "剩余价值", numeric: true },
+  { label: "价格", numeric: true, sortKey: "price" },
+  { label: "剩余价值", numeric: true, sortKey: "remaining" },
   { label: "溢价", numeric: true },
   { label: "溢价月摊", numeric: true },
   { label: "到期", numeric: true },
 ] as const;
+
+type AssetSort =
+  | { key: "weight"; direction: "asc" }
+  | { key: "price" | "remaining"; direction: "asc" | "desc" };
 
 const ASSETS_MOBILE_QUERY = "(max-width: 720px)";
 
@@ -81,6 +85,7 @@ export function Assets() {
     !authPending &&
     canViewCosts(themeSettings, !authError && me?.logged_in === true);
   const forceRateRefresh = useRef(false);
+  const [sort, setSort] = useState<AssetSort>({ key: "weight", direction: "asc" });
   const nodes = useVisibleNodes();
   // 资产详情页是风险核对入口：这里始终按真实到期数据展示，不读取首页的关闭/稍后偏好。
   const renewalReminders = useMemo(() => getRenewalReminders(nodes, now), [nodes, now]);
@@ -112,11 +117,22 @@ export function Assets() {
         : null,
     [costsVisible, nodes, now, themeSettings.costIgnoredNodes, themeSettings.costPremiums, rateQuery.data],
   );
-  const detailRows = useMemo(() =>
-    [...(summary?.details ?? [])].sort((a, b) => {
-      if (a.counted !== b.counted) return a.counted ? -1 : 1;
-      return a.weight - b.weight || a.name.localeCompare(b.name, "zh-CN");
-    }), [summary]);
+  const detailRows = useMemo(() => {
+    const rows = [...(summary?.details ?? [])];
+    if (sort.key === "weight") {
+      return rows.sort((left, right) => left.weight - right.weight);
+    }
+    const field = sort.key === "price" ? "priceCny" : "remainingCny";
+    const direction = sort.direction === "asc" ? 1 : -1;
+    return rows.sort((left, right) => (left[field] - right[field]) * direction);
+  }, [sort, summary]);
+  const cycleSort = (key: "price" | "remaining") => {
+    setSort((current) => {
+      if (current.key !== key) return { key, direction: "asc" };
+      if (current.direction === "asc") return { key, direction: "desc" };
+      return { key: "weight", direction: "asc" };
+    });
+  };
   const exchangeRateRows = useMemo(() => {
     if (!rateQuery.data?.rates.CNY) return [];
     const rates = rateQuery.data.rates;
@@ -154,25 +170,6 @@ export function Assets() {
             tone: premiumTone(summary.premiumTotalCny),
             title:
               "所有节点「收购溢价」的加总（正数=溢价多花钱，负数=折价少花钱），只反映溢价本身的赚亏，不叠加到剩余价值/年化/月均里",
-          },
-        ]
-      : []),
-    ...(summary != null && summary.premiumMonthlyTotalCny !== 0
-      ? [
-          {
-            label: "真实月均",
-            value: formatCnyMoney(summary.effectiveMonthlyCny),
-            title:
-              "月均支出 + 溢价月摊（各节点溢价 ÷ 收购日至到期日的月数，无到期按已持有月数；仅计入填写了收购日期的节点），仅作参考，不改变月均支出口径",
-          },
-        ]
-      : []),
-    ...(summary != null && hasPremium
-      ? [
-          {
-            label: "实际剩余价值",
-            value: formatCnyMoney(summary.actualRemainingCny),
-            title: "剩余价值 + 尚未摊销的溢价；固定期限节点的溢价随到期临近衰减，到期后归零",
           },
         ]
       : []),
@@ -250,8 +247,28 @@ export function Assets() {
                         <th
                           key={column.label}
                           data-numeric={("numeric" in column && column.numeric) || undefined}
+                          aria-sort={
+                            "sortKey" in column && sort.key === column.sortKey
+                              ? sort.direction === "asc" ? "ascending" : "descending"
+                              : undefined
+                          }
                         >
-                          {column.label}
+                          {"sortKey" in column ? (
+                            <button
+                              type="button"
+                              className="assets-sort-button"
+                              data-active={sort.key === column.sortKey || undefined}
+                              onClick={() => cycleSort(column.sortKey)}
+                              title="点击切换升序、降序与 Komari 权重顺序"
+                            >
+                              <span>{column.label}</span>
+                              <span aria-hidden className="assets-sort-indicator">
+                                {sort.key === column.sortKey
+                                  ? sort.direction === "asc" ? "↑" : "↓"
+                                  : "↕"}
+                              </span>
+                            </button>
+                          ) : column.label}
                         </th>
                       ))}
                     </tr>
@@ -269,6 +286,7 @@ export function Assets() {
                         <tr
                           key={detail.uuid}
                           data-counted={detail.counted}
+                          data-billing-ignored={detail.billingIgnored || undefined}
                           data-renewal-tone={renewalTone}
                         >
                         <td>
@@ -279,6 +297,11 @@ export function Assets() {
                           >
                             <Flag region={detail.region} size={12} />
                             <span>{detail.name}</span>
+                            {detail.billingIgnored && (
+                              <small className="assets-note-chip is-billing-ignored">
+                                忽略下期
+                              </small>
+                            )}
                           </Link>
                         </td>
                         <td data-numeric>
@@ -341,14 +364,15 @@ export function Assets() {
                   const renewalLabel = reminder
                     ? assetsRenewalLabel(reminder.daysRemaining)
                     : undefined;
-                  const priceLabel =
-                    detail.note ||
-                    `${formatCnyMoney(detail.priceCny)}/${formatBillingCycle(detail.billingCycleDays)}`;
+                  const priceLabel = detail.counted
+                    ? `${formatCnyMoney(detail.priceCny)}/${formatBillingCycle(detail.billingCycleDays)}`
+                    : detail.note || "—";
                   return (
                     <div
                       key={detail.uuid}
                       className="cost-summary-detail-item"
                       data-counted={detail.counted}
+                      data-billing-ignored={detail.billingIgnored || undefined}
                       data-renewal-tone={renewalTone}
                       title={detail.name}
                     >
@@ -359,6 +383,11 @@ export function Assets() {
                         >
                           <Flag region={detail.region} size={12} />
                           <span className="cost-summary-detail-title">{detail.name}</span>
+                          {detail.billingIgnored && (
+                            <small className="assets-note-chip is-billing-ignored">
+                              忽略下期
+                            </small>
+                          )}
                         </Link>
                         <strong title="剩余价值">
                           {detail.counted ? formatCnyMoney(detail.remainingCny) : "—"}

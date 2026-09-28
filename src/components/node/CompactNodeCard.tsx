@@ -19,11 +19,9 @@ import { OsLogo } from "@/components/ui/OsLogo";
 import { useNodeCardModel } from "@/hooks/useNodeCardModel";
 import { useThemeSettings } from "@/hooks/useThemeSettings";
 import { formatBytes } from "@/utils/format";
-import { HOMEPAGE_MULTI_PING_TASK_COUNT } from "@/utils/pingTasks";
 import { speedRateColor, speedRateColorFromBytes } from "@/utils/metricTone";
 import { supportsFineHover } from "@/utils/mediaQuery";
 import { formatHealthBucketTooltip } from "./pingBucketText";
-import { MultiPingStatus } from "./MultiPingStatus";
 import {
   formatCompactExpire,
   formatCompactPercent,
@@ -643,7 +641,6 @@ export const CompactNodeCard = memo(function CompactNodeCard({
 }) {
   const model = useNodeCardModel(uuid, {
     pingBucketCount: HEALTH_BAR_COUNT,
-    includeMultiPing: true,
   });
   const themeSettings = useThemeSettings();
 
@@ -658,7 +655,6 @@ export const CompactNodeCard = memo(function CompactNodeCard({
     trafficTrend,
     ping,
     pingBuckets,
-    homepagePingLines,
     compactFooterTags: footerTags,
     subtitle,
     renewalPrice,
@@ -702,23 +698,15 @@ export const CompactNodeCard = memo(function CompactNodeCard({
         renewalPrice={renewalPrice}
       />
       <CompactTrafficBar traffic={traffic} uptimeLabel={uptimeLabel} reset={trafficReset} />
-      {homepagePingLines.length === HOMEPAGE_MULTI_PING_TASK_COUNT ? (
-        <MultiPingStatus
-          lines={homepagePingLines}
-          density="compact"
-          className="compact-node-bottom"
-        />
-      ) : (
-        <CompactNodeHealth
-          ping={ping}
-          pingBuckets={pingBuckets}
-          latencyColor={latencyColor}
-          lossColor={lossColor}
-          hasRealHomepagePingBinding={hasRealHomepagePingBinding}
-          pingLoading={pingLoading}
-          pingError={pingError}
-        />
-      )}
+      <CompactNodeHealth
+        ping={ping}
+        pingBuckets={pingBuckets}
+        latencyColor={latencyColor}
+        lossColor={lossColor}
+        hasRealHomepagePingBinding={hasRealHomepagePingBinding}
+        pingLoading={pingLoading}
+        pingError={pingError}
+      />
     </article>
   );
 });

@@ -31,35 +31,30 @@ describe("normalizeThemeSettings", () => {
     );
   });
 
-  it("normalizes homepage multi-ping tasks while preserving an enabled draft for repair", () => {
-    expect(normalizeThemeSettings({}).enableHomepageMultiPing).toBe(false);
-    expect(
-      normalizeThemeSettings({
-        enableHomepageMultiPing: true,
-        homepageMultiPingTaskIds: [3, 1],
-      }).enableHomepageMultiPing,
-    ).toBe(true);
-
+  it("normalizes per-node single-ping overrides", () => {
     const resolved = normalizeThemeSettings({
-      enableHomepageMultiPing: true,
-      homepageMultiPingTaskIds: [3, 1, 3, 2, 4],
-    });
-    expect(resolved.enableHomepageMultiPing).toBe(true);
-    expect(resolved.homepageMultiPingTaskIds).toEqual([3, 1, 2]);
-  });
-
-  it("normalizes complete per-node multi-ping overrides and drops malformed entries", () => {
-    const resolved = normalizeThemeSettings({
-      homepageMultiPingNodeTaskIds: {
-        "node-a": [4, 2, 3],
-        "node-b": [1, 1, 2],
+      homepagePingNodeTaskIds: {
+        "node-a": 4,
+        "node-b": null,
+        "node-c": -1,
       },
     });
 
-    expect(resolved.homepageMultiPingNodeTaskIds).toEqual({
-      "node-a": [4, 2, 3],
+    expect(resolved.homepagePingNodeTaskIds).toEqual({
+      "node-a": 4,
+      "node-b": null,
     });
-    expect(normalizeThemeSettings({}).homepageMultiPingNodeTaskIds).toEqual({});
+    expect(normalizeThemeSettings({}).homepagePingNodeTaskIds).toEqual({});
+  });
+
+  it("migrates legacy single bindings unless the new setting is explicitly present", () => {
+    expect(normalizeThemeSettings({
+      homepagePingBindings: { "7": ["node-a"] },
+    } as never).homepagePingNodeTaskIds).toEqual({ "node-a": 7 });
+    expect(normalizeThemeSettings({
+      homepagePingNodeTaskIds: {},
+      homepagePingBindings: { "7": ["node-a"] },
+    } as never).homepagePingNodeTaskIds).toEqual({});
   });
 
   it("keeps fake ping off unless explicitly enabled", () => {

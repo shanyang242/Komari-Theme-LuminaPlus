@@ -85,6 +85,8 @@ interface CostSummaryDetail {
   monthlyCny: number;
   remainingCny: number;
   premiumCny: number;
+  regularPriceCny: number | null;
+  paybackMonths: number | null;
   // 摊销月数(见 premiumAmortMonths);未填收购日期时为 null,该节点不参与摊销。
   amortMonths: number | null;
   // 溢价月摊 = 溢价 ÷ 摊销月数。
@@ -108,11 +110,12 @@ type CostNode = NodeInfo & Record<string, unknown>;
 // 与「隐藏节点」共用同一套名称/UUID 解析(见 utils/nodeIdentity)。
 export const normalizeCostIgnoredNodes = normalizeNodeIdentityList;
 
-// amount = 溢价(录入时固化),paidCny = 收购价原始输入,acquiredAt = 收购日期(YYYY-MM-DD)。
+// 所有手动价格都以人民币记录。
 export interface CostPremiumEntry {
   amount: number;
   paidCny?: number;
   acquiredAt?: string;
+  regularPriceCny?: number;
 }
 
 function localDateKey(date = new Date()) {
@@ -161,12 +164,21 @@ export function normalizeCostPremiums(value: unknown): Record<string, CostPremiu
     let amount: number;
     let paidCny: number | undefined;
     let acquiredAt: string | undefined;
+    let regularPriceCny: number | undefined;
     if (raw && typeof raw === "object" && !Array.isArray(raw)) {
       const entry = raw as Record<string, unknown>;
       amount = Number(entry.amount);
       const rawPaid = Number(entry.paidCny);
       if (entry.paidCny != null && Number.isFinite(rawPaid) && rawPaid >= 0) paidCny = rawPaid;
       acquiredAt = normalizeAcquiredAt(entry.acquiredAt);
+      const rawRegularPrice = Number(entry.regularPriceCny);
+      if (
+        entry.regularPriceCny != null &&
+        Number.isFinite(rawRegularPrice) &&
+        rawRegularPrice >= 0
+      ) {
+        regularPriceCny = rawRegularPrice;
+      }
     } else {
       amount = Number(raw);
     }
@@ -177,6 +189,7 @@ export function normalizeCostPremiums(value: unknown): Record<string, CostPremiu
       amount,
       ...(paidCny != null ? { paidCny } : {}),
       ...(acquiredAt ? { acquiredAt } : {}),
+      ...(regularPriceCny != null ? { regularPriceCny } : {}),
     };
   }
   return result;
@@ -287,6 +300,41 @@ function cycleMonths(days: number) {
   if (days > 0 && days % 365 === 0) return (days / 365) * 12;
   if (days > 0) return days / 30;
   return 0;
+}
+
+function paybackCycleMonths(days: number) {
+  if (days === 30) return 1;
+  if (days === 90) return 3;
+  if (days === 180) return 6;
+  if (days === 360 || days === 365) return 12;
+  if (days > 0 && days % 365 === 0) return (days / 365) * 12;
+  return days > 0 ? (days * 12) / 365 : 0;
+}
+
+export function calculateCostPaybackMonths(
+  premiumCny: number,
+  renewalPriceCny: number,
+  regularPriceCny: number | undefined,
+  cycleDays: number,
+) {
+  if (premiumCny <= 0) return 0;
+  if (regularPriceCny == null) return null;
+  const savingsPerCycle = regularPriceCny - renewalPriceCny;
+  const monthsPerCycle = paybackCycleMonths(cycleDays);
+  if (savingsPerCycle <= 0 || monthsPerCycle <= 0) return null;
+  return (premiumCny / savingsPerCycle) * monthsPerCycle;
+}
+
+export function formatCostPayback(
+  paybackMonths: number | null,
+  premiumCny: number,
+  regularPriceCny: number | null | undefined,
+) {
+  if (premiumCny <= 0) return "无需回本";
+  if (regularPriceCny == null) return "—";
+  if (paybackMonths == null) return "无法回本";
+  if (paybackMonths < 0.05) return "< 0.1 个月回本";
+  return `${paybackMonths.toFixed(1)} 个月回本`;
 }
 
 function remainingCycleValue(
@@ -454,6 +502,7 @@ export function calculateCostSummary(
     // 不能因价格校验不过就静默丢掉;它不参与 remaining/monthly/totalCny。
     const entry = premiums[node.uuid];
     const premium = entry?.amount ?? 0;
+    const regularPrice = entry?.regularPriceCny;
     const amortMonths =
       premium !== 0 ? premiumAmortMonths(entry?.acquiredAt, node.expired_at, now) : null;
     const premiumMonthly = amortMonths != null ? premium / amortMonths : 0;
@@ -473,6 +522,8 @@ export function calculateCostSummary(
       monthlyCny: 0,
       remainingCny: 0,
       premiumCny: premium,
+      regularPriceCny: regularPrice ?? null,
+      paybackMonths: premium <= 0 ? 0 : null,
       amortMonths,
       premiumMonthlyCny: premiumMonthly,
       premiumRemainingCny: premiumRemaining,
@@ -487,6 +538,7 @@ export function calculateCostSummary(
       premiumRemainingTotalCny += premiumRemaining;
       details.push({
         ...baseDetail,
+        paybackMonths: calculateCostPaybackMonths(premium, 0, regularPrice, cycleDays),
         counted: false,
         note: "免费",
       });
@@ -524,6 +576,12 @@ export function calculateCostSummary(
     details.push({
       ...baseDetail,
       priceCny: converted,
+      paybackMonths: calculateCostPaybackMonths(
+        premium,
+        converted,
+        regularPrice,
+        cycleDays,
+      ),
       monthlyCny: billingIgnored ? 0 : monthly,
       remainingCny: remaining,
       counted: true,

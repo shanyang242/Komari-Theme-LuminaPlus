@@ -133,10 +133,15 @@ export interface ThemeSettings {
   compactShowUptime?: boolean;
   hiddenNodes?: string[];
   costIgnoredNodes?: string[];
-  // 值支持旧版纯数字(自动升格)或 { amount, paidCny?, acquiredAt? } 条目,见 normalizeCostPremiums。
+  // 值支持旧版纯数字(自动升格)或结构化条目,见 normalizeCostPremiums。
   costPremiums?: Record<
     string,
-    number | { amount?: number; paidCny?: number; acquiredAt?: string }
+    number | {
+      amount?: number;
+      paidCny?: number;
+      acquiredAt?: string;
+      regularPriceCny?: number;
+    }
   >;
   costRateApiUrl?: string;
   enableBackgroundImage?: boolean;

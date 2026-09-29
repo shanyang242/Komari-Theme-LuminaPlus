@@ -13,6 +13,7 @@ import { useVisibleNodes } from "@/hooks/useVisibleNodes";
 import {
   calculateCostSummary,
   formatCnyMoney,
+  formatCostPayback,
   formatSignedCny,
   getExchangeRates,
 } from "@/utils/cost";
@@ -28,7 +29,7 @@ const TABLE_COLUMNS = [
   { label: "价格", numeric: true, sortKey: "price" },
   { label: "剩余价值", numeric: true, sortKey: "remaining" },
   { label: "溢价", numeric: true },
-  { label: "溢价月摊", numeric: true },
+  { label: "回本周期", numeric: true },
   { label: "到期", numeric: true },
 ] as const;
 
@@ -324,15 +325,14 @@ export function Assets() {
                           )}
                         </td>
                         <td data-numeric>
-                          {detail.premiumCny !== 0 && detail.amortMonths != null ? (
-                            <span
-                              title={`摊销 ${Math.round(detail.amortMonths)} 个月（收购日 → 到期日；无到期按已持有）`}
-                            >
-                              {formatSignedCny(detail.premiumMonthlyCny)}/月
-                            </span>
-                          ) : (
-                            "—"
-                          )}
+                          {detail.premiumCny !== 0 &&
+                          (detail.counted || detail.note === "免费")
+                            ? formatCostPayback(
+                                detail.paybackMonths,
+                                detail.premiumCny,
+                                detail.regularPriceCny,
+                              )
+                            : "—"}
                         </td>
                         <td data-numeric>
                           {reminder ? (
@@ -406,12 +406,18 @@ export function Assets() {
                             {formatSignedCny(detail.premiumCny)} 溢价
                           </span>
                         )}
-                        {detail.premiumCny !== 0 && detail.amortMonths != null && (
+                        {detail.premiumCny !== 0 &&
+                          (detail.regularPriceCny != null || detail.premiumCny < 0) &&
+                          (detail.counted || detail.note === "免费") && (
                           <span
                             className="cost-summary-premium-chip"
-                            title="溢价月摊 = 收购溢价 ÷ 摊销月数（收购日 → 到期日；无到期按已持有）"
+                            title="按正价与当前续费价的周期价差计算"
                           >
-                            月摊 {formatSignedCny(detail.premiumMonthlyCny)} · 摊 {Math.round(detail.amortMonths)} 月
+                            {formatCostPayback(
+                              detail.paybackMonths,
+                              detail.premiumCny,
+                              detail.regularPriceCny,
+                            )}
                           </span>
                         )}
                         <span

@@ -41,10 +41,12 @@ import {
   parseBackgroundAlignment,
 } from "@/utils/background";
 import {
+  calculateCostPaybackMonths,
   calculateCostSummary,
   calculateCostPremiumAmount,
   calculateCostPremiumBasisAt,
   formatCnyMoney,
+  formatCostPayback,
   formatSignedCny,
   getExchangeRates,
   isCostRateApiUrlValid,
@@ -116,11 +118,13 @@ function buildPremiumEntry(
   amount: number,
   paidCny?: number,
   acquiredAt?: string,
+  regularPriceCny?: number,
 ): CostPremiumEntry {
   return {
     amount,
     ...(paidCny != null ? { paidCny } : {}),
     ...(acquiredAt ? { acquiredAt } : {}),
+    ...(regularPriceCny != null ? { regularPriceCny } : {}),
   };
 }
 
@@ -245,6 +249,7 @@ const PremiumList = memo(function PremiumList({
   acquiredAtMax,
   onPatchPaid,
   onPatchAcquiredAt,
+  onPatchRegularPrice,
 }: {
   clients: AdminClient[];
   costPremiums: ThemeDraft["costPremiums"];
@@ -253,6 +258,7 @@ const PremiumList = memo(function PremiumList({
   acquiredAtMax: string;
   onPatchPaid: (uuid: string, rawValue: string) => void;
   onPatchAcquiredAt: (uuid: string, rawValue: string) => void;
+  onPatchRegularPrice: (uuid: string, rawValue: string) => void;
 }) {
   return (
     <div className="theme-premium-list surface-inset">
@@ -267,6 +273,14 @@ const PremiumList = memo(function PremiumList({
               : detail.note || "--"
             : "--";
         const canCompute = detail != null && (detail.counted || detail.note === "免费");
+        const paybackMonths = entry && detail && canCompute
+          ? calculateCostPaybackMonths(
+              entry.amount,
+              detail.priceCny,
+              entry.regularPriceCny,
+              detail.billingCycleDays,
+            )
+          : null;
         return (
           <div
             key={client.uuid}
@@ -296,6 +310,11 @@ const PremiumList = memo(function PremiumList({
                     溢价 {formatSignedCny(entry.amount)}
                   </span>
                 )}
+                {entry?.regularPriceCny != null && canCompute && (
+                  <span className="theme-premium-delta">
+                    {formatCostPayback(paybackMonths, entry.amount, entry.regularPriceCny)}
+                  </span>
+                )}
               </div>
             </div>
             <div className="theme-premium-fields">
@@ -317,6 +336,24 @@ const PremiumList = memo(function PremiumList({
                 aria-label={`${client.name} 的收购价`}
                 className="theme-premium-input surface-inset"
               />
+              </label>
+              <label className="theme-premium-field">
+                <span className="theme-premium-field-label">正价</span>
+                <input
+                  type="number"
+                  inputMode="decimal"
+                  step="any"
+                  min="0"
+                  value={entry?.regularPriceCny ?? ""}
+                  onChange={(event) => {
+                    if (event.target.validity.badInput) return;
+                    onPatchRegularPrice(client.uuid, event.target.value);
+                  }}
+                  placeholder="正价（人民币）"
+                  disabled={!entry || !canCompute}
+                  aria-label={`${client.name} 的正价（人民币）`}
+                  className="theme-premium-input surface-inset"
+                />
               </label>
               <label className="theme-premium-field is-date">
                 <span className="theme-premium-field-label">收购日期</span>
@@ -584,6 +621,7 @@ export function ThemeManage() {
           calculateCostPremiumAmount(paid, basis, current),
           paid,
           acquiredAt,
+          current?.regularPriceCny,
         );
         return { ...prev, costPremiums: next };
       });
@@ -607,12 +645,45 @@ export function ThemeManage() {
           amount = calculateCostPremiumAmount(current.paidCny, basis);
         }
         const next = { ...prev.costPremiums };
-        next[uuid] = buildPremiumEntry(amount, current.paidCny, acquiredAt);
+        next[uuid] = buildPremiumEntry(
+          amount,
+          current.paidCny,
+          acquiredAt,
+          current.regularPriceCny,
+        );
         return { ...prev, costPremiums: next };
       });
     },
     [premiumBasisAt],
   );
+
+  const patchPremiumRegularPrice = useCallback((uuid: string, rawValue: string) => {
+    editVersionRef.current += 1;
+    setDraft((prev) => {
+      const current = prev.costPremiums[uuid];
+      if (!current) return prev;
+      const regularPriceCny = rawValue.trim() === "" ? undefined : Number(rawValue);
+      if (
+        regularPriceCny != null &&
+        (!Number.isFinite(regularPriceCny) || regularPriceCny < 0)
+      ) {
+        return prev;
+      }
+      if (Object.is(current.regularPriceCny, regularPriceCny)) return prev;
+      return {
+        ...prev,
+        costPremiums: {
+          ...prev.costPremiums,
+          [uuid]: buildPremiumEntry(
+            current.amount,
+            current.paidCny,
+            current.acquiredAt,
+            regularPriceCny,
+          ),
+        },
+      };
+    });
+  }, []);
 
   const draftCostRateApiUrlInvalid =
     draft.costRateApiUrl.trim() !== "" && !isCostRateApiUrlValid(draft.costRateApiUrl.trim());
@@ -1270,6 +1341,7 @@ export function ThemeManage() {
               acquiredAtMax={acquiredAtMax}
               onPatchPaid={patchPremiumPaid}
               onPatchAcquiredAt={patchPremiumAcquiredAt}
+              onPatchRegularPrice={patchPremiumRegularPrice}
             />
           )}
         </div>

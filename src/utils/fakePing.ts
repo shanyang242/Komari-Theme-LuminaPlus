@@ -72,6 +72,7 @@ export function buildFakePingItem(uuid: string, minuteIndex: number): PingOvervi
   return {
     client: uuid,
     isAssigned: true,
+    taskName: "延迟",
     lastValue,
     samples,
     max,

@@ -285,6 +285,8 @@ export type PingOverviewTaskLoadState = "pending" | "ready" | "error";
 export interface PingOverviewItem {
   client: string;
   isAssigned: boolean;
+  /** 当前首页使用的探测点名称；模拟数据使用“模拟延迟”。 */
+  taskName?: string;
   /** 当前任务本轮请求状态；模拟 Ping 不设置此字段。 */
   loadState?: PingOverviewTaskLoadState;
   lastValue: number | null;

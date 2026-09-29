@@ -253,6 +253,21 @@
   letter-spacing: 0.02em;
 }
 
+.server-health-label {
+  min-width: 0;
+}
+
+.server-health-label > svg {
+  flex: 0 0 auto;
+}
+
+.server-health-label > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .traffic-stat-value {
   flex: 0 0 auto;
   font-size: 20px;

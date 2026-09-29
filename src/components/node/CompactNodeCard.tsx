@@ -296,9 +296,9 @@ function CompactHealthItem({
   return (
     <div className="compact-node-health-item">
       <div className="compact-node-health-head">
-        <span className="compact-node-health-label">
+        <span className="compact-node-health-label" title={label}>
           {icon}
-          {label}
+          <span>{label}</span>
         </span>
         <strong className="compact-node-health-value tabular" style={{ color }}>
           {value}
@@ -600,6 +600,7 @@ const CompactNodeHealth = memo(function CompactNodeHealth({
     pingLoading,
     pingError,
   );
+  const latencyLabel = ping.taskName?.trim() || "延迟";
   return (
     <div
       className="compact-node-bottom"
@@ -612,7 +613,7 @@ const CompactNodeHealth = memo(function CompactNodeHealth({
     >
       <CompactHealthItem
         icon={<Clock3 size={12} />}
-        label="延迟"
+        label={latencyLabel}
         value={ping.lastValue != null ? Math.round(ping.lastValue).toString() : emptyText}
         unit={ping.lastValue != null ? "ms" : undefined}
         color={latencyColor}

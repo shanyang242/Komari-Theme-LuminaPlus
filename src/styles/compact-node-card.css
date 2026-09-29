@@ -491,6 +491,17 @@
   line-height: 1.1;
 }
 
+.compact-node-health-label > svg {
+  flex: 0 0 auto;
+}
+
+.compact-node-health-label > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .compact-node-health-value {
   min-width: 0;
   overflow: hidden;

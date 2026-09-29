@@ -97,6 +97,7 @@ function equalPingItem(
   return (
     left.client === right.client &&
     left.isAssigned === right.isAssigned &&
+    left.taskName === right.taskName &&
     left.loadState === right.loadState &&
     left.lastValue === right.lastValue &&
     left.max === right.max &&
@@ -105,7 +106,11 @@ function equalPingItem(
   );
 }
 
-export function buildPingOverviewItems(taskId: number, records: PingRecord[]) {
+export function buildPingOverviewItems(
+  taskId: number,
+  records: PingRecord[],
+  taskName?: string,
+) {
   const grouped = new Map<string, PingRecord[]>();
   for (const record of records) {
     if (record.task_id !== taskId || !record.client) continue;
@@ -132,6 +137,7 @@ export function buildPingOverviewItems(taskId: number, records: PingRecord[]) {
     result.set(client, {
       client,
       isAssigned: true,
+      taskName,
       loadState: "ready",
       lastValue: latest && latest.value >= 0 ? latest.value : null,
       samples,
@@ -146,10 +152,12 @@ function emptyPing(
   client: string,
   isAssigned: boolean,
   loadState: PingOverviewTaskLoadState = "ready",
+  taskName?: string,
 ): PingOverviewItem {
   return {
     client,
     isAssigned,
+    taskName,
     loadState,
     lastValue: null,
     samples: [],
@@ -235,10 +243,13 @@ export async function buildPingOverviewMap(
   const selectedTaskIds = [...new Set(selectedTaskIdsByClient.values())].sort(
     (left, right) => left - right,
   );
+  const taskById = new Map(tasks.map((task) => [task.id, task]));
+  const taskName = (taskId: number) =>
+    taskById.get(taskId)?.name.trim() || `任务 #${taskId}`;
   const itemsByTask = new Map(
     selectedTaskIds.map((taskId) => [
       taskId,
-      buildPingOverviewItems(taskId, overview.records),
+      buildPingOverviewItems(taskId, overview.records, taskName(taskId)),
     ]),
   );
   const singleItems = new Map<string, PingOverviewItem>();
@@ -248,11 +259,11 @@ export async function buildPingOverviewMap(
       uuid,
       taskId == null
         ? emptyPing(uuid, false)
-        : (itemsByTask.get(taskId)?.get(uuid) ?? emptyPing(uuid, true)),
+        : (itemsByTask.get(taskId)?.get(uuid) ??
+          emptyPing(uuid, true, "ready", taskName(taskId))),
     );
   }
 
-  const taskById = new Map(tasks.map((task) => [task.id, task]));
   const intervals = selectedTaskIds.map((taskId) =>
     normalizeRefreshInterval(taskById.get(taskId)?.interval),
   );

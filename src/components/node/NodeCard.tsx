@@ -422,6 +422,7 @@ const NodeHealthSection = memo(function NodeHealthSection({
   const lossTooltip = hoveredLossBucket
     ? formatHealthBucketTooltip(hoveredLossBucket, "loss")
     : null;
+  const latencyLabel = ping.taskName?.trim() || "延迟";
 
   return (
     <div className="card-metric-section server-health-grid">
@@ -429,7 +430,7 @@ const NodeHealthSection = memo(function NodeHealthSection({
         <div className="server-health-head">
           <div className="server-health-label">
             <Clock3 size={13} strokeWidth={2} />
-            <span>延迟</span>
+            <span title={latencyLabel}>{latencyLabel}</span>
           </div>
           <span
             className="server-health-value tabular"

@@ -1071,7 +1071,7 @@ export function ThemeManage() {
         title="首页巡检"
         aside={<ListFilter size={16} />}
       >
-        <div className="grid gap-3 md:grid-cols-3">
+        <div className="theme-home-control-grid grid gap-3 md:grid-cols-3">
           <ToggleRow
             field="enableHomeHeaderAutoHide"
             title="定时隐藏顶部信息"
@@ -1097,7 +1097,7 @@ export function ThemeManage() {
                   );
                 }}
                 aria-label="顶部信息显示时长（秒）"
-                className="surface-inset w-20 px-3 py-2 text-right text-[13px] tabular outline-none disabled:opacity-45"
+                className="theme-home-control-input surface-inset w-20 text-right text-[13px] tabular outline-none disabled:opacity-45"
               />
               <span className="text-[13px] font-medium text-[var(--text-tertiary)]">秒</span>
             </span>
@@ -1222,17 +1222,18 @@ export function ThemeManage() {
               )}
             </label>
           </div>
-          <label className="surface-inset flex min-w-0 flex-col gap-2 px-4 py-3">
-            <span className="text-[12px] font-medium text-[var(--text-secondary)]">
-              忽略下期账单节点
-            </span>
-            <span className="text-[11px] leading-relaxed text-[var(--text-tertiary)]">
-              每行填写节点名称或 UUID。仅排除后续周期支出，当前已付周期的剩余价值仍会计入资产。
+          <label className="relative flex min-w-0 self-stretch">
+            <span
+              aria-hidden
+              className="pointer-events-none absolute inset-x-3 top-2 z-[1] text-[13px] font-medium text-[var(--text-secondary)]"
+            >
+              忽略本期剩余价值
             </span>
             <textarea
               value={draft.costIgnoredText}
               onChange={(event) => patch("costIgnoredText", event.target.value)}
-              className="surface-inset min-h-[160px] w-full flex-1 resize-y px-3 py-2 text-[13px] outline-none"
+              aria-label="忽略本期剩余价值"
+              className="surface-inset min-h-[160px] w-full flex-1 resize-none px-3 pb-2 pt-8 text-[13px] outline-none"
             />
           </label>
         </div>

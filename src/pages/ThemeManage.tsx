@@ -41,7 +41,7 @@ import {
   parseBackgroundAlignment,
 } from "@/utils/background";
 import {
-  calculateCostPaybackMonths,
+  calculateCostPayback,
   calculateCostSummary,
   calculateCostPremiumAmount,
   calculateCostPremiumBasisAt,
@@ -246,6 +246,7 @@ const PremiumList = memo(function PremiumList({
   costPremiums,
   detailByUuid,
   rateLoading,
+  now,
   acquiredAtMax,
   onPatchPaid,
   onPatchAcquiredAt,
@@ -255,6 +256,7 @@ const PremiumList = memo(function PremiumList({
   costPremiums: ThemeDraft["costPremiums"];
   detailByUuid: Map<string, PremiumDetail>;
   rateLoading: boolean;
+  now: number;
   acquiredAtMax: string;
   onPatchPaid: (uuid: string, rawValue: string) => void;
   onPatchAcquiredAt: (uuid: string, rawValue: string) => void;
@@ -273,12 +275,15 @@ const PremiumList = memo(function PremiumList({
               : detail.note || "--"
             : "--";
         const canCompute = detail != null && (detail.counted || detail.note === "免费");
-        const paybackMonths = entry && detail && canCompute
-          ? calculateCostPaybackMonths(
+        const payback = entry && detail && canCompute
+          ? calculateCostPayback(
               entry.amount,
               detail.priceCny,
               entry.regularPriceCny,
               detail.billingCycleDays,
+              entry.acquiredAt,
+              now,
+              detail.expiredAt,
             )
           : null;
         return (
@@ -310,9 +315,9 @@ const PremiumList = memo(function PremiumList({
                     溢价 {formatSignedCny(entry.amount)}
                   </span>
                 )}
-                {entry?.regularPriceCny != null && canCompute && (
+                {entry?.regularPriceCny != null && canCompute && payback && (
                   <span className="theme-premium-delta">
-                    {formatCostPayback(paybackMonths, entry.amount, entry.regularPriceCny)}
+                    {formatCostPayback(payback)}
                   </span>
                 )}
               </div>
@@ -1338,6 +1343,7 @@ export function ThemeManage() {
               costPremiums={draft.costPremiums}
               detailByUuid={premiumDetailByUuid}
               rateLoading={premiumRateQuery.isLoading}
+              now={now}
               acquiredAtMax={acquiredAtMax}
               onPatchPaid={patchPremiumPaid}
               onPatchAcquiredAt={patchPremiumAcquiredAt}

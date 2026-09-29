@@ -29,7 +29,7 @@ const TABLE_COLUMNS = [
   { label: "价格", numeric: true, sortKey: "price" },
   { label: "剩余价值", numeric: true, sortKey: "remaining" },
   { label: "溢价", numeric: true },
-  { label: "回本周期", numeric: true },
+  { label: "回本状态", numeric: true },
   { label: "到期", numeric: true },
 ] as const;
 
@@ -327,11 +327,7 @@ export function Assets() {
                         <td data-numeric>
                           {detail.premiumCny !== 0 &&
                           (detail.counted || detail.note === "免费")
-                            ? formatCostPayback(
-                                detail.paybackMonths,
-                                detail.premiumCny,
-                                detail.regularPriceCny,
-                              )
+                            ? formatCostPayback(detail.payback)
                             : "—"}
                         </td>
                         <td data-numeric>
@@ -411,13 +407,9 @@ export function Assets() {
                           (detail.counted || detail.note === "免费") && (
                           <span
                             className="cost-summary-premium-chip"
-                            title="按正价与当前续费价的周期价差计算"
+                            title="按收购日起正价与当前续费价的累计价差计算"
                           >
-                            {formatCostPayback(
-                              detail.paybackMonths,
-                              detail.premiumCny,
-                              detail.regularPriceCny,
-                            )}
+                            {formatCostPayback(detail.payback)}
                           </span>
                         )}
                         <span

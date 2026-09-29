@@ -75,6 +75,13 @@ interface CostSummary {
   details: CostSummaryDetail[];
 }
 
+export interface CostPaybackResult {
+  status: "unconfigured" | "impossible" | "active" | "recovered";
+  remainingMonths: number | null;
+  remainingCny: number;
+  netCny: number;
+}
+
 interface CostSummaryDetail {
   uuid: string;
   name: string;
@@ -86,7 +93,7 @@ interface CostSummaryDetail {
   remainingCny: number;
   premiumCny: number;
   regularPriceCny: number | null;
-  paybackMonths: number | null;
+  payback: CostPaybackResult;
   // 摊销月数(见 premiumAmortMonths);未填收购日期时为 null,该节点不参与摊销。
   amortMonths: number | null;
   // 溢价月摊 = 溢价 ÷ 摊销月数。
@@ -211,7 +218,8 @@ export function calculateCostPremiumAmount(
 }
 
 // 与 cycleMonths 的 days/30 口径一致;不足 1 月钳到 1,防月摊爆炸。
-const AMORT_MONTH_MS = 30 * 24 * 60 * 60 * 1000;
+const DAY_MS = 24 * 60 * 60 * 1000;
+const AMORT_MONTH_MS = 30 * DAY_MS;
 const AMORT_LONG_TERM_MS = 100 * 365 * 24 * 60 * 60 * 1000;
 
 // 溢价摊销月数:优先按 收购日 → 到期日 的整段跨度(两端固定,录入当天就是稳定合理值);
@@ -311,30 +319,57 @@ function paybackCycleMonths(days: number) {
   return days > 0 ? (days * 12) / 365 : 0;
 }
 
-export function calculateCostPaybackMonths(
+export function calculateCostPayback(
   premiumCny: number,
   renewalPriceCny: number,
   regularPriceCny: number | undefined,
   cycleDays: number,
-) {
-  if (premiumCny <= 0) return 0;
-  if (regularPriceCny == null) return null;
+  acquiredAt?: string,
+  now = Date.now(),
+  expiredAt?: string | number | null,
+): CostPaybackResult {
+  const immediateNet = Math.max(0, -premiumCny);
+  if (regularPriceCny == null) {
+    return premiumCny <= 0
+      ? { status: "recovered", remainingMonths: 0, remainingCny: 0, netCny: immediateNet }
+      : { status: "unconfigured", remainingMonths: null, remainingCny: premiumCny, netCny: 0 };
+  }
   const savingsPerCycle = regularPriceCny - renewalPriceCny;
   const monthsPerCycle = paybackCycleMonths(cycleDays);
-  if (savingsPerCycle <= 0 || monthsPerCycle <= 0) return null;
-  return (premiumCny / savingsPerCycle) * monthsPerCycle;
+  if (savingsPerCycle <= 0 || monthsPerCycle <= 0) {
+    return premiumCny <= 0
+      ? { status: "recovered", remainingMonths: 0, remainingCny: 0, netCny: immediateNet }
+      : { status: "impossible", remainingMonths: null, remainingCny: premiumCny, netCny: 0 };
+  }
+
+  const acquiredMs = acquiredAt ? parseAcquiredTimestamp(acquiredAt) : null;
+  const expiresMs = resolveExpireTimestamp(expiredAt);
+  const heldUntil = expiresMs != null && expiresMs < now ? expiresMs : now;
+  const elapsedDays = acquiredMs == null ? 0 : Math.max(0, (heldUntil - acquiredMs) / DAY_MS);
+  const savingsPerDay = savingsPerCycle / ((monthsPerCycle * 365) / 12);
+  const recoveredCny = savingsPerDay * elapsedDays;
+  const remainingCny = Math.max(0, premiumCny - recoveredCny);
+  const netCny = Math.max(0, recoveredCny - premiumCny);
+  const remainingMonths = (remainingCny / savingsPerDay) / (365 / 12);
+  return {
+    status: remainingCny > 0 ? "active" : "recovered",
+    remainingMonths,
+    remainingCny,
+    netCny,
+  };
 }
 
-export function formatCostPayback(
-  paybackMonths: number | null,
-  premiumCny: number,
-  regularPriceCny: number | null | undefined,
-) {
-  if (premiumCny <= 0) return "无需回本";
-  if (regularPriceCny == null) return "—";
-  if (paybackMonths == null) return "无法回本";
-  if (paybackMonths < 0.05) return "< 0.1 个月回本";
-  return `${paybackMonths.toFixed(1)} 个月回本`;
+export function formatCostPayback(payback: CostPaybackResult) {
+  if (payback.status === "unconfigured") return "—";
+  if (payback.status === "impossible") return "无法回本";
+  if (payback.status === "recovered") {
+    return payback.netCny >= 0.005
+      ? `已回本 · 净省 ${formatCnyMoney(payback.netCny)}`
+      : "已回本";
+  }
+  const months = payback.remainingMonths ?? 0;
+  const monthsLabel = months < 0.05 ? "< 0.1" : months.toFixed(1);
+  return `待回本 ${formatCnyMoney(payback.remainingCny)} · 还需 ${monthsLabel} 个月`;
 }
 
 function remainingCycleValue(
@@ -523,7 +558,7 @@ export function calculateCostSummary(
       remainingCny: 0,
       premiumCny: premium,
       regularPriceCny: regularPrice ?? null,
-      paybackMonths: premium <= 0 ? 0 : null,
+      payback: calculateCostPayback(premium, 0, undefined, cycleDays),
       amortMonths,
       premiumMonthlyCny: premiumMonthly,
       premiumRemainingCny: premiumRemaining,
@@ -538,7 +573,15 @@ export function calculateCostSummary(
       premiumRemainingTotalCny += premiumRemaining;
       details.push({
         ...baseDetail,
-        paybackMonths: calculateCostPaybackMonths(premium, 0, regularPrice, cycleDays),
+        payback: calculateCostPayback(
+          premium,
+          0,
+          regularPrice,
+          cycleDays,
+          entry?.acquiredAt,
+          now,
+          node.expired_at,
+        ),
         counted: false,
         note: "免费",
       });
@@ -576,11 +619,14 @@ export function calculateCostSummary(
     details.push({
       ...baseDetail,
       priceCny: converted,
-      paybackMonths: calculateCostPaybackMonths(
+      payback: calculateCostPayback(
         premium,
         converted,
         regularPrice,
         cycleDays,
+        entry?.acquiredAt,
+        now,
+        node.expired_at,
       ),
       monthlyCny: billingIgnored ? 0 : monthly,
       remainingCny: remaining,

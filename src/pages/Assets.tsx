@@ -379,6 +379,17 @@ export function Assets() {
                         >
                           <Flag region={detail.region} size={12} />
                           <span className="cost-summary-detail-title">{detail.name}</span>
+                          {detail.premiumCny !== 0 && (
+                            <span
+                              className="cost-summary-premium-chip"
+                              style={
+                                { "--cost-premium-color": premiumTone(detail.premiumCny) } as CSSProperties
+                              }
+                              title="收购溢价（正数=多花钱溢价买入，负数=折价买入）"
+                            >
+                              {formatSignedCny(detail.premiumCny)} 溢价
+                            </span>
+                          )}
                           {detail.billingIgnored && (
                             <small className="assets-note-chip is-billing-ignored">
                               忽略下期
@@ -391,17 +402,6 @@ export function Assets() {
                       </div>
                       <div className="cost-summary-detail-meta">
                         <span className="cost-summary-price-chip">{priceLabel}</span>
-                        {detail.premiumCny !== 0 && (
-                          <span
-                            className="cost-summary-premium-chip"
-                            style={
-                              { "--cost-premium-color": premiumTone(detail.premiumCny) } as CSSProperties
-                            }
-                            title="收购溢价（正数=多花钱溢价买入，负数=折价买入）"
-                          >
-                            {formatSignedCny(detail.premiumCny)} 溢价
-                          </span>
-                        )}
                         {detail.premiumCny !== 0 &&
                           (detail.regularPriceCny != null || detail.premiumCny < 0) &&
                           (detail.counted || detail.note === "免费") && (

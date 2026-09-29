@@ -292,34 +292,38 @@ const PremiumList = memo(function PremiumList({
             className="theme-premium-row"
           >
             <div className="theme-premium-node">
-              <div className="theme-premium-name">
-                <Flag region={client.region ?? ""} size={13} />
-                <span title={client.name}>{client.name}</span>
+              <div className="theme-premium-identity">
+                <div className="theme-premium-name">
+                  <Flag region={client.region ?? ""} size={13} />
+                  <span title={client.name}>{client.name}</span>
+                </div>
+                {entry && (
+                  <div className="theme-premium-tags">
+                    <span
+                      className="theme-premium-delta"
+                      data-tone={
+                        entry.amount > 0
+                          ? "positive"
+                          : entry.amount < 0
+                            ? "negative"
+                            : "neutral"
+                      }
+                    >
+                      溢价 {formatSignedCny(entry.amount)}
+                    </span>
+                    {entry.regularPriceCny != null && canCompute && payback && (
+                      <span className="theme-premium-delta">
+                        {formatCostPayback(payback)}
+                      </span>
+                    )}
+                  </div>
+                )}
               </div>
               <div className="theme-premium-summary">
                 <span className="theme-premium-reference">
                   <span>剩余</span>
                   <strong>{referenceLabel}</strong>
                 </span>
-                {entry && (
-                  <span
-                    className="theme-premium-delta"
-                    data-tone={
-                      entry.amount > 0
-                        ? "positive"
-                        : entry.amount < 0
-                          ? "negative"
-                          : "neutral"
-                    }
-                  >
-                    溢价 {formatSignedCny(entry.amount)}
-                  </span>
-                )}
-                {entry?.regularPriceCny != null && canCompute && payback && (
-                  <span className="theme-premium-delta">
-                    {formatCostPayback(payback)}
-                  </span>
-                )}
               </div>
             </div>
             <div className="theme-premium-fields">

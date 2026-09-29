@@ -906,7 +906,9 @@ body::after {
 }
 
 .theme-premium-node,
+.theme-premium-identity,
 .theme-premium-name,
+.theme-premium-tags,
 .theme-premium-summary,
 .theme-premium-fields {
   display: flex;
@@ -919,10 +921,21 @@ body::after {
   gap: 10px;
 }
 
-.theme-premium-name {
+.theme-premium-identity {
   min-width: 0;
   flex: 1 1 auto;
   gap: 8px;
+}
+
+.theme-premium-name {
+  min-width: 0;
+  flex: 0 1 auto;
+  gap: 8px;
+}
+
+.theme-premium-tags {
+  flex: 0 0 auto;
+  gap: 4px;
 }
 
 .theme-premium-name > span {
@@ -937,6 +950,7 @@ body::after {
 
 .theme-premium-summary {
   flex: 0 0 auto;
+  margin-left: auto;
   gap: 7px;
 }
 
@@ -1042,6 +1056,11 @@ body::after {
 
   .theme-premium-name {
     padding-top: 2px;
+  }
+
+  .theme-premium-identity,
+  .theme-premium-tags {
+    flex-wrap: wrap;
   }
 
   .theme-premium-name > span {

@@ -77,7 +77,7 @@ interface CostSummary {
 
 export interface CostPaybackResult {
   status: "unconfigured" | "impossible" | "active" | "recovered";
-  remainingMonths: number | null;
+  remainingDays: number | null;
   remainingCny: number;
   netCny: number;
 }
@@ -310,15 +310,6 @@ function cycleMonths(days: number) {
   return 0;
 }
 
-function paybackCycleMonths(days: number) {
-  if (days === 30) return 1;
-  if (days === 90) return 3;
-  if (days === 180) return 6;
-  if (days === 360 || days === 365) return 12;
-  if (days > 0 && days % 365 === 0) return (days / 365) * 12;
-  return days > 0 ? (days * 12) / 365 : 0;
-}
-
 export function calculateCostPayback(
   premiumCny: number,
   renewalPriceCny: number,
@@ -331,29 +322,31 @@ export function calculateCostPayback(
   const immediateNet = Math.max(0, -premiumCny);
   if (regularPriceCny == null) {
     return premiumCny <= 0
-      ? { status: "recovered", remainingMonths: 0, remainingCny: 0, netCny: immediateNet }
-      : { status: "unconfigured", remainingMonths: null, remainingCny: premiumCny, netCny: 0 };
+      ? { status: "recovered", remainingDays: 0, remainingCny: 0, netCny: immediateNet }
+      : { status: "unconfigured", remainingDays: null, remainingCny: premiumCny, netCny: 0 };
   }
   const savingsPerCycle = regularPriceCny - renewalPriceCny;
-  const monthsPerCycle = paybackCycleMonths(cycleDays);
-  if (savingsPerCycle <= 0 || monthsPerCycle <= 0) {
+  const daysPerCycle = cycleDays === 360 ? 365 : cycleDays;
+  if (savingsPerCycle <= 0 || daysPerCycle <= 0) {
     return premiumCny <= 0
-      ? { status: "recovered", remainingMonths: 0, remainingCny: 0, netCny: immediateNet }
-      : { status: "impossible", remainingMonths: null, remainingCny: premiumCny, netCny: 0 };
+      ? { status: "recovered", remainingDays: 0, remainingCny: 0, netCny: immediateNet }
+      : { status: "impossible", remainingDays: null, remainingCny: premiumCny, netCny: 0 };
   }
 
   const acquiredMs = acquiredAt ? parseAcquiredTimestamp(acquiredAt) : null;
   const expiresMs = resolveExpireTimestamp(expiredAt);
   const heldUntil = expiresMs != null && expiresMs < now ? expiresMs : now;
-  const elapsedDays = acquiredMs == null ? 0 : Math.max(0, (heldUntil - acquiredMs) / DAY_MS);
-  const savingsPerDay = savingsPerCycle / ((monthsPerCycle * 365) / 12);
+  const elapsedDays = acquiredMs == null
+    ? 0
+    : Math.floor(Math.max(0, (heldUntil - acquiredMs) / DAY_MS));
+  const savingsPerDay = savingsPerCycle / daysPerCycle;
   const recoveredCny = savingsPerDay * elapsedDays;
   const remainingCny = Math.max(0, premiumCny - recoveredCny);
   const netCny = Math.max(0, recoveredCny - premiumCny);
-  const remainingMonths = (remainingCny / savingsPerDay) / (365 / 12);
+  const remainingDays = remainingCny / savingsPerDay;
   return {
     status: remainingCny > 0 ? "active" : "recovered",
-    remainingMonths,
+    remainingDays,
     remainingCny,
     netCny,
   };
@@ -364,12 +357,10 @@ export function formatCostPayback(payback: CostPaybackResult) {
   if (payback.status === "impossible") return "无法回本";
   if (payback.status === "recovered") {
     return payback.netCny >= 0.005
-      ? `已回本 · 净省 ${formatCnyMoney(payback.netCny)}`
+      ? `已回本净省${payback.netCny.toFixed(2)}`
       : "已回本";
   }
-  const months = payback.remainingMonths ?? 0;
-  const monthsLabel = months < 0.05 ? "< 0.1" : months.toFixed(1);
-  return `待回本 ${formatCnyMoney(payback.remainingCny)} · 还需 ${monthsLabel} 个月`;
+  return `待回本${payback.remainingCny.toFixed(2)}还需${Math.ceil(payback.remainingDays ?? 0)}天`;
 }
 
 function remainingCycleValue(

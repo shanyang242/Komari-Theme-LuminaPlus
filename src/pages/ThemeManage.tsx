@@ -349,9 +349,9 @@ const PremiumList = memo(function PremiumList({
                     if (event.target.validity.badInput) return;
                     onPatchRegularPrice(client.uuid, event.target.value);
                   }}
-                  placeholder="正价（人民币）"
+                  placeholder="正价"
                   disabled={!entry || !canCompute}
-                  aria-label={`${client.name} 的正价（人民币）`}
+                  aria-label={`${client.name} 的正价`}
                   className="theme-premium-input surface-inset"
                 />
               </label>

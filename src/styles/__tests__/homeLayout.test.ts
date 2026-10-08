@@ -81,6 +81,14 @@ describe("home responsive layout contracts", () => {
     expect(homeSource).toContain("{homeReady && <FloatingControls");
   });
 
+  it("keeps filter reordering desktop-only and lets mobile region chips wrap", () => {
+    expect(nodeGridSource).toContain("useMediaQuery(MOBILE_VIEWPORT_QUERY, true)");
+    expect(nodeGridSource).toContain("canReorderFilters && !isMobileViewport");
+    expect(homeCss).toMatch(
+      /@media \(max-width: 720px\)[\s\S]*?\.home-region-chips\s*\{[^}]*flex-wrap:\s*wrap;[^}]*overflow-x:\s*visible;/,
+    );
+  });
+
   it("keeps access and initial home hydration behind one shell-owned spinner", () => {
     expect(appShellSource).toContain("useNodeStoreStatus(canHydrateHome)");
     expect(appShellSource).toContain("isCheckingAccess || isCheckingHomeData");

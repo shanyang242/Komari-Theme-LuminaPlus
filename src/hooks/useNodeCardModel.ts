@@ -57,6 +57,7 @@ export function useNodeCardModel(
   const { meta, metrics, trafficTrend } = useNodeCardSnapshots(uuid);
   const {
     showCardGroup,
+    trafficResetDays,
     fakePingForUnbound,
     homepagePingBindings,
     enableHomepageMultiPing,
@@ -177,12 +178,12 @@ export function useNodeCardModel(
       subtitle: joinDisplayParts(subtitleParts),
       expire: formatExpireDays(meta.expired_at, now),
       expireColor: getExpireTextColor(meta.expired_at, now),
-      trafficReset: getTrafficResetDisplay(meta.expired_at, now),
+      trafficReset: getTrafficResetDisplay(meta.expired_at, now, trafficResetDays[uuid]),
       renewalPrice: formatRenewalPrice(meta),
       osName: resolveOsInfo(meta.os).name,
       loadBaseline: meta.cpu_cores > 0 ? meta.cpu_cores : 4,
     };
-  }, [meta, now, showCardGroup]);
+  }, [meta, now, showCardGroup, trafficResetDays, uuid]);
 
   // ping 派生的颜色只在 ping item 变化时才变。
   const pingModel = useMemo(

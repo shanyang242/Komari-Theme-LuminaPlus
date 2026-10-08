@@ -1,4 +1,5 @@
 import type { ThemeSettings } from "@/types/komari";
+import { normalizeTrafficResetDays } from "@/utils/trafficReset";
 import {
   DEFAULT_BACKGROUND_ALIGNMENT,
   DEFAULT_BACKGROUND_VIDEO_URL,
@@ -16,7 +17,7 @@ import {
   type CostPremiumEntry,
 } from "@/utils/cost";
 import { normalizeNodeIdentityList } from "@/utils/nodeIdentity";
-import { normalizeHomeGroupOrder } from "@/utils/homeNodes";
+import { normalizeHomeGroupOrder, normalizeHomeRegionOrder } from "@/utils/homeNodes";
 import {
   HOME_SORT_NATURAL_DIRECTION,
   isHomeSortDirection,
@@ -71,6 +72,7 @@ export interface ResolvedThemeSettings {
   showRegionBar: boolean;
   showCardGroup: boolean;
   homeGroupOrder: string[];
+  homeRegionOrder: string[];
   enableHomeSort: boolean;
   homeSortField: HomeSortField;
   homeSortDirection: HomeSortDirection;
@@ -89,6 +91,7 @@ export interface ResolvedThemeSettings {
   compactShowUptime: boolean;
   showConnections: boolean;
   showTodayTrafficPopover: boolean;
+  trafficResetDays: Record<string, number>;
   hiddenNodes: string[];
   costIgnoredNodes: string[];
   costPremiums: Record<string, CostPremiumEntry>;
@@ -124,6 +127,7 @@ export const DEFAULT_THEME_SETTINGS: ResolvedThemeSettings = {
   showRegionBar: true,
   showCardGroup: true,
   homeGroupOrder: [],
+  homeRegionOrder: [],
   enableHomeSort: true,
   homeSortField: "default",
   homeSortDirection: HOME_SORT_NATURAL_DIRECTION.default,
@@ -142,6 +146,7 @@ export const DEFAULT_THEME_SETTINGS: ResolvedThemeSettings = {
   compactShowUptime: true,
   showConnections: false,
   showTodayTrafficPopover: true,
+  trafficResetDays: {},
   hiddenNodes: [],
   costIgnoredNodes: [],
   costPremiums: {},
@@ -296,6 +301,7 @@ export function normalizeThemeSettings(
     showRegionBar: enabledUnlessFalse(settings?.showRegionBar),
     showCardGroup: enabledUnlessFalse(settings?.showCardGroup),
     homeGroupOrder: normalizeHomeGroupOrder(settings?.homeGroupOrder),
+    homeRegionOrder: normalizeHomeRegionOrder(settings?.homeRegionOrder),
     enableHomeSort: enabledUnlessFalse(settings?.enableHomeSort),
     ...normalizeHomeSortDefault(settings?.homeSortField, settings?.homeSortDirection),
     // 默认公开以保持存量站点升级后的展示行为；站长可显式关闭访客费用展示。
@@ -315,6 +321,7 @@ export function normalizeThemeSettings(
     // 默认关闭(需手动开启):连接数是个小众指标,很多 agent 也不上报,所以只在显式启用时才显示。
     showConnections: settings?.showConnections === true,
     showTodayTrafficPopover: enabledUnlessFalse(settings?.showTodayTrafficPopover),
+    trafficResetDays: normalizeTrafficResetDays(settings?.trafficResetDays),
     hiddenNodes: normalizeNodeIdentityList(settings?.hiddenNodes),
     costIgnoredNodes: normalizeCostIgnoredNodes(settings?.costIgnoredNodes),
     costPremiums: normalizeCostPremiums(settings?.costPremiums),

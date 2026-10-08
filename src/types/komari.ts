@@ -128,6 +128,7 @@ export interface ThemeSettings {
   showRegionBar?: boolean;
   showCardGroup?: boolean;
   homeGroupOrder?: string[];
+  homeRegionOrder?: string[];
   enableHomeSort?: boolean;
   homeSortField?: "default" | "name" | "speed" | "traffic" | "price";
   homeSortDirection?: "asc" | "desc";
@@ -146,6 +147,7 @@ export interface ThemeSettings {
   compactShowUptime?: boolean;
   showConnections?: boolean;
   showTodayTrafficPopover?: boolean;
+  trafficResetDays?: Record<string, number>;
   hiddenNodes?: string[];
   costIgnoredNodes?: string[];
   // 值支持旧版纯数字(自动升格)或 { amount, paidCny?, acquiredAt? } 条目,见 normalizeCostPremiums。
@@ -200,6 +202,7 @@ export const AdminClientSchema = z
     group: z.union([z.string(), z.number()]).nullish().transform((v) => (v == null ? "" : String(v))),
     region: z.union([z.string(), z.number()]).nullish().transform((v) => (v == null ? "" : String(v))),
     weight: looseNumber.default(0),
+    expired_at: NodeInfoSchema.shape.expired_at,
   })
   .passthrough();
 

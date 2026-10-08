@@ -1,10 +1,33 @@
 import { describe, expect, it } from "vitest";
-import { getCountryCodeFromRegion, getDisplayRegionCode } from "@/utils/geo";
+import { getCountryCodeFromRegion, getDisplayRegionCode, normalizeRegionCode } from "@/utils/geo";
 
 describe("getCountryCodeFromRegion", () => {
   it("decodes flag emoji to an ISO code", () => {
     expect(getCountryCodeFromRegion("🇩🇪")).toBe("DE");
     expect(getCountryCodeFromRegion("🇺🇸 Los Angeles")).toBe("US");
+  });
+
+  it.each([
+    ["🇦🇨", "AC"],
+    ["🇨🇵", "CP"],
+    ["🇩🇬", "DG"],
+    ["🇪🇦", "EA"],
+    ["🇮🇨", "IC"],
+    ["🇹🇦", "TA"],
+    ["🇽🇰", "XK"],
+    ["🇪🇺", "EU"],
+    ["🇺🇳", "UN"],
+    ["🇺🇰", "GB"],
+  ])("uses the same canonical code for %s and its text form", (flag, code) => {
+    expect(normalizeRegionCode(code)).toBe(code);
+    expect(getCountryCodeFromRegion(flag)).toBe(code);
+    expect(getCountryCodeFromRegion(code)).toBe(code);
+    expect(getDisplayRegionCode(getDisplayRegionCode(flag))).toBe(code);
+  });
+
+  it("uses the unknown fallback for unsupported flag codes", () => {
+    expect(getCountryCodeFromRegion("🇿🇿")).toBeNull();
+    expect(getDisplayRegionCode("🇿🇿")).toBe("UN");
   });
 
   it("resolves English and Chinese region names via aliases", () => {
@@ -46,5 +69,15 @@ describe("getCountryCodeFromRegion", () => {
   it("still resolves a valid embedded code, even after a stray token", () => {
     expect(getCountryCodeFromRegion("SE Stockholm")).toBe("SE");
     expect(getCountryCodeFromRegion("GO HK")).toBe("HK");
+  });
+});
+
+describe("normalizeRegionCode", () => {
+  it("trims and canonicalizes whole codes while rejecting names and free text", () => {
+    expect(normalizeRegionCode(" uk ")).toBe("GB");
+    expect(normalizeRegionCode(" xk ")).toBe("XK");
+    for (const value of ["", "ZZ", "Japan", "JP Tokyo", "🇯🇵"]) {
+      expect(normalizeRegionCode(value)).toBeNull();
+    }
   });
 });

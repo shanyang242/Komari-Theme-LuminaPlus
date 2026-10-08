@@ -807,7 +807,7 @@
   }
 }
 
-/* 地区筛选栏:与分组栏同一套面板视觉(surface-a + 描边 + 圆角 + 浮起阴影);国旗 chip 换行铺开。
+/* 地区筛选栏:与分组栏同一套面板视觉；桌面端保持单行以支持拖动排序，移动端恢复换行。
    chip 的悬停/选中态与分组 tab、费用抽屉排序 tab 共用同一组样式。 */
 .home-region-bar {
   margin-bottom: 16px;
@@ -822,13 +822,14 @@
 
 .home-region-chips {
   display: flex;
-  flex-wrap: wrap;
+  overflow-x: auto;
   align-items: center;
   gap: 8px;
 }
 
 .home-region-chip {
   display: inline-flex;
+  flex: 0 0 auto;
   align-items: center;
   gap: 6px;
   min-height: 32px;
@@ -877,6 +878,74 @@
 .home-region-chip[data-active="true"] .home-region-chip-count {
   background: color-mix(in srgb, var(--accent-500) 20%, transparent);
   color: var(--text-secondary);
+}
+
+.home-group-tabs[data-reorderable="true"] [data-sort-item],
+.home-region-chips[data-reorderable="true"] [data-sort-item] {
+  cursor: grab;
+  user-select: none;
+}
+
+.home-group-tabs [data-sort-dragging="true"],
+.home-region-chips [data-sort-dragging="true"] {
+  opacity: 0.3;
+  border-style: dashed;
+  border-color: var(--border-strong);
+}
+
+html.home-filter-sorting,
+html.home-filter-sorting * {
+  cursor: grabbing !important;
+  user-select: none !important;
+}
+
+.home-filter-drag-preview {
+  position: fixed;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 10px;
+  overflow: hidden;
+  border: 1px solid var(--border-strong);
+  border-radius: 11px;
+  background: var(--surface-elev);
+  color: var(--text-primary);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.18);
+  font-size: 12px;
+  font-weight: 650;
+  white-space: nowrap;
+  pointer-events: none;
+  transform: scale(1.03);
+}
+
+.home-filter-order-error {
+  position: fixed;
+  z-index: 100;
+  bottom: calc(24px + env(safe-area-inset-bottom, 0px));
+  left: 50%;
+  width: max-content;
+  max-width: calc(100vw - 32px);
+  padding: 10px 16px;
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+  background: var(--surface-elev);
+  color: var(--text-primary);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.16);
+  font-size: 12px;
+  transform: translateX(-50%);
+}
+
+@media (max-width: 720px) {
+  .home-region-chips {
+    flex-wrap: wrap;
+    overflow-x: visible;
+  }
+
+  .home-region-chip {
+    flex: 0 1 auto;
+  }
 }
 
 @media (max-width: 560px) {

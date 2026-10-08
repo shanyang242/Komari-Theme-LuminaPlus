@@ -8,6 +8,26 @@ import {
 import { DEFAULT_BACKGROUND_VIDEO_URL } from "@/utils/background";
 
 describe("normalizeThemeSettings", () => {
+  it("uses only theme traffic reset overrides, ignoring backend reset fields", () => {
+    expect(normalizeThemeSettings({}).trafficResetDays).toEqual({});
+    expect(normalizeThemeSettings({ traffic_reset_day: 20 }).trafficResetDays).toEqual({});
+    expect(normalizeThemeSettings({
+      traffic_reset_day: 20,
+      trafficResetDays: { node: 15, invalid: 32 },
+    }).trafficResetDays).toEqual({ node: 15 });
+  });
+
+  it("defaults region order to automatic and preserves custom order while the bar is disabled", () => {
+    expect(normalizeThemeSettings({}).homeRegionOrder).toEqual([]);
+    expect(normalizeThemeSettings({
+      showRegionBar: false,
+      homeRegionOrder: [" us ", "JP", "US", "ZZ", "UN"],
+    })).toMatchObject({
+      showRegionBar: false,
+      homeRegionOrder: ["US", "JP", "UN"],
+    });
+  });
+
   it("defaults to image mode with the bundled desktop video ready to enable", () => {
     const settings = normalizeThemeSettings({});
 

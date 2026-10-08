@@ -3,8 +3,6 @@ import { Link, Navigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import {
   ArrowLeft,
-  ChevronDown,
-  ChevronUp,
   CircleDollarSign,
   EyeOff,
   Grid3x3,
@@ -28,6 +26,7 @@ import {
 import { clsx } from "clsx";
 import { InstancePanel } from "@/components/instance/InstancePanel";
 import { MultiPingNodeConfigPanel } from "@/components/theme/MultiPingNodeConfigPanel";
+import { TrafficResetConfigPanel } from "@/components/theme/TrafficResetConfigPanel";
 import { Spinner } from "@/components/ui/Spinner";
 import { Flag } from "@/components/ui/Flag";
 import { usePublicConfig } from "@/hooks/usePublicConfig";
@@ -65,11 +64,7 @@ import {
   type CostPremiumEntry,
 } from "@/utils/cost";
 import { normalizeNodeIdentityList } from "@/utils/nodeIdentity";
-import {
-  dedupeGroupLabels,
-  normalizeHomeGroupOrder,
-  sortHomeGroupOptions,
-} from "@/utils/homeNodes";
+import { normalizeTrafficResetDays } from "@/utils/trafficReset";
 import {
   HOMEPAGE_MULTI_PING_TASK_COUNT,
   normalizeHomepageMultiPingNodeTaskIds,
@@ -304,7 +299,6 @@ function pickManagedThemeSettings(settings: ResolvedThemeSettings) {
     showGroupTabs: settings.showGroupTabs,
     showRegionBar: settings.showRegionBar,
     showCardGroup: settings.showCardGroup,
-    homeGroupOrder: settings.homeGroupOrder,
     enableHomeSort: settings.enableHomeSort,
     homeSortField: settings.homeSortField,
     homeSortDirection: settings.homeSortDirection,
@@ -323,6 +317,7 @@ function pickManagedThemeSettings(settings: ResolvedThemeSettings) {
     compactShowUptime: settings.compactShowUptime,
     showConnections: settings.showConnections,
     showTodayTrafficPopover: settings.showTodayTrafficPopover,
+    trafficResetDays: normalizeTrafficResetDays(settings.trafficResetDays),
     hiddenNodes: settings.hiddenNodes,
     costIgnoredNodes: settings.costIgnoredNodes,
     // 按键排序:costPremiums 的键序随编辑历史漂移(删掉再加回同一键会排到最后),而 dirty /
@@ -812,6 +807,7 @@ export function ThemeManage() {
   const [taskSearch, setTaskSearch] = useState("");
   const [nodeSearch, setNodeSearch] = useState("");
   const [premiumSearch, setPremiumSearch] = useState("");
+  const [trafficResetOpen, setTrafficResetOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -915,24 +911,6 @@ export function ThemeManage() {
     () => new Map(sortedClients.map((client) => [client.uuid, client])),
     [sortedClients],
   );
-
-  // 后端实际存在的分组,按首页 Tab 的渲染顺序排列(已配置的在前,未排序的在后)。
-  // 用户直接拖动这个列表来调整顺序。
-  const availableGroups = useMemo(
-    () => dedupeGroupLabels(sortedClients.map((client) => client.group)),
-    [sortedClients],
-  );
-  const orderedDraftGroups = useMemo(
-    () => sortHomeGroupOptions(availableGroups, draft.homeGroupOrder),
-    [availableGroups, draft.homeGroupOrder],
-  );
-  const moveGroup = (index: number, direction: -1 | 1) => {
-    const target = index + direction;
-    if (target < 0 || target >= orderedDraftGroups.length) return;
-    const next = [...orderedDraftGroups];
-    [next[index], next[target]] = [next[target], next[index]];
-    patch("homeGroupOrder", next);
-  };
 
   const filteredTasks = useMemo(() => {
     const keyword = taskSearch.trim().toLowerCase();
@@ -1115,7 +1093,6 @@ export function ThemeManage() {
       homepageMultiPingNodeTaskIds: normalizeHomepageMultiPingNodeTaskIds(
         rest.homepageMultiPingNodeTaskIds,
       ),
-      homeGroupOrder: normalizeHomeGroupOrder(rest.homeGroupOrder),
       trafficRatingLabels: ratingLabels.traffic,
       bandwidthRatingLabels: ratingLabels.bandwidth,
       assetRatingLabels: ratingLabels.asset,
@@ -1158,6 +1135,9 @@ export function ThemeManage() {
     draftSignature !== sourceSignature ||
     costRateApiUrlDirty ||
     videoInputInvalid;
+  const draftSaveInvalid =
+    draftCostRateApiUrlInvalid || videoInputInvalid || draftMultiPingInvalid;
+  const saveDisabled = !isDirty || draftSaveInvalid;
 
   // 用户重新编辑后清掉「已保存」提示,避免过期的成功提示和 dirty 表单并存。
   useEffect(() => {
@@ -1201,9 +1181,7 @@ export function ThemeManage() {
     if (
       !config?.theme ||
       savingDraftRef.current ||
-      draftCostRateApiUrlInvalid ||
-      videoInputInvalid ||
-      draftMultiPingInvalid
+      draftSaveInvalid
     ) {
       return false;
     }
@@ -1344,13 +1322,7 @@ export function ThemeManage() {
             <button
               type="button"
               onClick={handleSave}
-              disabled={
-                !isDirty ||
-                saving ||
-                draftCostRateApiUrlInvalid ||
-                videoInputInvalid ||
-                draftMultiPingInvalid
-              }
+              disabled={saveDisabled || saving}
               className="theme-manage-button is-primary"
             >
               {saving ? <Spinner size={14} /> : <Save size={14} />}
@@ -1844,61 +1816,6 @@ export function ThemeManage() {
           </div>
         </div>
 
-        <div className="mt-4">
-          <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-            <span className="text-[13px] font-medium text-[var(--text-primary)]">分组排序</span>
-            <span className="text-[11px] text-[var(--text-tertiary)]">
-              调整首页分组 Tab 的显示顺序；未列出的分组按后端顺序排在后面。
-            </span>
-          </div>
-          {orderedDraftGroups.length === 0 ? (
-            <p className="surface-inset mt-2 px-4 py-3 text-[12px] text-[var(--text-tertiary)]">
-              {clientsLoading ? "正在加载分组…" : "暂无分组（节点未设置分组时无需排序）"}
-            </p>
-          ) : (
-            <ul className="mt-2 flex flex-col gap-2">
-              {orderedDraftGroups.map((group, index) => (
-                <li
-                  key={group}
-                  className="surface-inset flex items-center justify-between gap-3 px-4 py-2.5"
-                >
-                  <span className="flex min-w-0 items-center gap-2">
-                    <span className="tabular text-[12px] text-[var(--text-tertiary)]">
-                      {index + 1}
-                    </span>
-                    <span
-                      className="truncate text-[13px] text-[var(--text-primary)]"
-                      title={group}
-                    >
-                      {group}
-                    </span>
-                  </span>
-                  <span className="flex shrink-0 items-center gap-1">
-                    <button
-                      type="button"
-                      disabled={index === 0}
-                      onClick={() => moveGroup(index, -1)}
-                      className="theme-manage-button is-compact"
-                      aria-label={`上移 ${group}`}
-                    >
-                      <ChevronUp size={14} />
-                    </button>
-                    <button
-                      type="button"
-                      disabled={index === orderedDraftGroups.length - 1}
-                      onClick={() => moveGroup(index, 1)}
-                      className="theme-manage-button is-compact"
-                      aria-label={`下移 ${group}`}
-                    >
-                      <ChevronDown size={14} />
-                    </button>
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-
         <div className="mt-4 surface-inset px-4 py-4">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <span className="min-w-0">
@@ -2038,6 +1955,38 @@ export function ThemeManage() {
             />
           </div>
         </div>
+      </InstancePanel>
+
+      <InstancePanel
+        title="流量重置日"
+        description="按服务器设置每月重置日，未自定义的服务器继续按账单到期日推算。"
+      >
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <span className="text-[13px] text-[var(--text-secondary)]">
+            已自定义 {sortedClients.filter((client) => draft.trafficResetDays[client.uuid] != null).length} 台，其余跟随账单日
+          </span>
+          <button
+            type="button"
+            disabled={clientsLoading || Boolean(clientsError)}
+            onClick={() => setTrafficResetOpen(true)}
+            className="theme-manage-button"
+          >
+            <SlidersHorizontal size={14} />配置重置日
+          </button>
+        </div>
+        {trafficResetOpen && (
+          <TrafficResetConfigPanel
+            clients={sortedClients}
+            days={draft.trafficResetDays}
+            now={now}
+            saving={saving}
+            saveDisabled={saveDisabled}
+            saveError={error}
+            onChange={(next) => patch("trafficResetDays", next)}
+            onClose={() => setTrafficResetOpen(false)}
+            onSave={handleSave}
+          />
+        )}
       </InstancePanel>
 
       <InstancePanel
@@ -2291,12 +2240,7 @@ export function ThemeManage() {
                   disabled={draftMultiPingInvalid || clientsLoading || tasksLoading}
                   saving={saving}
                   saveError={error}
-                  saveDisabled={
-                    !isDirty ||
-                    draftCostRateApiUrlInvalid ||
-                    videoInputInvalid ||
-                    draftMultiPingInvalid
-                  }
+                  saveDisabled={saveDisabled}
                   onChange={patchNodeMultiPingTaskIds}
                   onSave={handleSave}
                 />

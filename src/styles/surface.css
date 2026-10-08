@@ -934,6 +934,31 @@ body::after {
   font-size: 13px;
 }
 
+.traffic-reset-dialog {
+  margin: auto;
+  padding: 0;
+  max-width: 100vw;
+  max-height: 100dvh;
+}
+
+.traffic-reset-dialog:not([open]) { display: none; }
+.traffic-reset-dialog::backdrop { background: rgba(7, 10, 18, 0.72); }
+
+.traffic-reset-row {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) 150px 160px 110px;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 0;
+}
+
+@media (max-width: 767px) {
+  .traffic-reset-row { grid-template-columns: 18px minmax(0, 1fr) 130px; gap: 8px; }
+  .traffic-reset-columns { display: none; }
+  .traffic-reset-rule { grid-column: 2; }
+  .traffic-reset-preview { grid-column: 3; }
+}
+
 .multi-ping-config-backdrop {
   position: fixed;
   inset: 0;

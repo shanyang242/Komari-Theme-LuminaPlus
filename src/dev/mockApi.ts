@@ -501,7 +501,8 @@ export function installDevMockApi() {
     if (url.pathname === "/api/admin/client/list") {
       if (!adminMode) return json({ message: "unauthorized" }, { status: 401 });
       return json(
-        nodes.map(({ uuid, name, group, region, weight }) => ({
+        nodes.map(({ uuid, name, group, region, weight, expired_at }) => ({
+          expired_at,
           uuid,
           name,
           group,

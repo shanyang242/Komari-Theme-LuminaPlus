@@ -1,5 +1,5 @@
 import type { HomeNodeSummary } from "@/services/wsStore";
-import { getDisplayRegionCode } from "@/utils/geo";
+import { getDisplayRegionCode, normalizeRegionCode } from "@/utils/geo";
 
 export const HOME_ALL_GROUP = "__all__";
 export const HOME_ALL_REGION = "__all__";
@@ -31,11 +31,22 @@ function regionRank(code: string): number {
   return REGION_PRIORITY.length + 1;
 }
 
+function compareDefaultRegionOptions(a: HomeRegionOption, b: HomeRegionOption): number {
+  return regionRank(a.code) - regionRank(b.code) ||
+    b.count - a.count ||
+    a.code.localeCompare(b.code);
+}
+
 /**
  * 按展示地区代码聚合节点数,按固定地理优先级排序(见 REGION_PRIORITY):中国(大陆优先,含港澳台)
  * → 新加坡 → 日本 → 美国 → 欧洲诸国 → 其余。同一档内(欧洲/其余)再按数量降序、代码升序。
+ * 已配置的地区优先按 order 排列，未配置的地区沿用默认规则追加。
  */
-export function getHomeRegionOptions(nodes: HomeNodeSummary[]): HomeRegionOption[] {
+export function getHomeRegionOptions(
+  nodes: ReadonlyArray<Pick<HomeNodeSummary, "region">>,
+  order: readonly string[] = [],
+): HomeRegionOption[] {
+  const ranks = new Map(normalizeHomeRegionOrder(order).map((code, index) => [code, index]));
   const counts = new Map<string, number>();
   for (const node of nodes) {
     const code = getDisplayRegionCode(node.region);
@@ -43,10 +54,20 @@ export function getHomeRegionOptions(nodes: HomeNodeSummary[]): HomeRegionOption
   }
   return Array.from(counts, ([code, count]) => ({ code, count })).sort(
     (a, b) =>
-      regionRank(a.code) - regionRank(b.code) ||
-      b.count - a.count ||
-      a.code.localeCompare(b.code),
+      (ranks.get(a.code) ?? ranks.size) - (ranks.get(b.code) ?? ranks.size) ||
+      compareDefaultRegionOptions(a, b),
   );
+}
+
+/** 只保存有效地区代码，未知地区 UN 也可排序；忽略无效值并保留首次出现的顺序。 */
+export function normalizeHomeRegionOrder(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  const codes = value.flatMap((item) => {
+    if (typeof item !== "string") return [];
+    const normalized = normalizeRegionCode(item);
+    return normalized ? [normalized] : [];
+  });
+  return [...new Set(codes)];
 }
 
 export function getHomeGroupLabel(group: string) {
@@ -75,6 +96,20 @@ export function getHomeGroupOptions(nodes: HomeNodeSummary[]) {
 /** 规范化存下来的 group 排序:trim、去空、去重(首次出现的优先)。 */
 export function normalizeHomeGroupOrder(value: unknown): string[] {
   return Array.isArray(value) ? dedupeGroupLabels(value as Array<string | null | undefined>) : [];
+}
+
+/** 保留缺席项的位置，用编辑后的可见顺序替换其余项，并追加新项。 */
+export function mergeHomeOptionOrder(
+  order: readonly string[],
+  visibleOrder: readonly string[],
+): string[] {
+  const available = new Set(visibleOrder);
+  const reordered = [...available];
+  let index = 0;
+  const merged = Array.from(new Set(order), (item) =>
+    available.has(item) ? reordered[index++] : item,
+  );
+  return [...merged, ...reordered.slice(index)];
 }
 
 /**

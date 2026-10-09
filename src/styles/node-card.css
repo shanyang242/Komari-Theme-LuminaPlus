@@ -521,12 +521,8 @@
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  /* 先 rgba() 兜底、后 color-mix() 覆盖:不支持 color-mix() 的浏览器(老 WebKit)
-     仍得到可读的绿色 pill,现代浏览器则用主题自适应的 mix。 */
-  border: 1px solid rgba(47, 158, 101, 0.22);
   border: 1px solid color-mix(in srgb, var(--status-success) 18%, transparent);
   border-radius: 8px;
-  background: rgba(47, 158, 101, 0.1);
   background: color-mix(in srgb, var(--status-success) 10%, var(--surface-elev));
   color: var(--status-success);
   padding: 0.38rem 0.62rem;

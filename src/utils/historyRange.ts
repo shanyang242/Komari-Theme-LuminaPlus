@@ -17,7 +17,7 @@ function historyTimeMs(value: HistoryTimeValue) {
   return Date.parse(value);
 }
 
-/** 从旧记录接口的时间戳推导典型采样周期，供覆盖率和断点判断补齐边缘区间。 */
+/** 从记录时间戳推导典型采样周期，供覆盖率和断点判断补齐边缘区间。 */
 export function inferHistoryIntervalSeconds(
   records: Array<{ time: HistoryTimeValue }>,
 ) {

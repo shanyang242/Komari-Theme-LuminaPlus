@@ -29,21 +29,6 @@
   white-space: nowrap;
 }
 
-.home-dashboard .floating-controls {
-  transition:
-    opacity 160ms ease,
-    transform 180ms ease,
-    visibility 160ms ease;
-}
-
-.home-dashboard.is-home-header-hidden .home-brand,
-.home-dashboard.is-home-header-hidden .floating-controls {
-  visibility: hidden;
-  opacity: 0;
-  pointer-events: none;
-  transform: translateY(-6px);
-}
-
 @media (max-width: 720px) {
   .home-brand {
     max-width: calc(100vw - 8.5rem);
@@ -55,10 +40,9 @@
 
 }
 
-/* 中小屏的完整快捷栏会占用顶部大部分宽度。由 React 同步显式状态类，兼容
-   Chrome 87，并覆盖平板宽度；折叠后站点名立即恢复。 */
+/* 中小屏的完整快捷栏会占用顶部大部分宽度；折叠后站点名立即恢复。 */
 @media (max-width: 1023px) {
-  .home-dashboard.is-controls-expanded .home-brand {
+  .home-dashboard:has(.floating-controls:not(.is-collapsed)) .home-brand {
     visibility: hidden;
     opacity: 0;
     transform: translateX(-8px);
@@ -899,11 +883,6 @@
    iOS PWA 的状态栏安全区由 app-main 统一叠加。 */
 .home-dashboard {
   padding-top: 28px;
-  transition: padding-top 180ms ease;
-}
-
-.home-dashboard.is-home-header-hidden {
-  padding-top: 0;
 }
 
 /* 首页分组控件条。 */

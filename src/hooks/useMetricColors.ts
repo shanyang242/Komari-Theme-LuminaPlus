@@ -51,7 +51,7 @@ type MetricColors = Partial<Record<MetricColorKey, string>>;
 
 const SETTINGS_KEY = "metricColors";
 const DARK_DEPTH_SETTINGS_KEY = "darkDepth";
-const DARK_DEPTH_CACHE_KEY = "komaritheme:dark-depth";
+const DARK_DEPTH_CACHE_KEY = "lumina-plus:dark-depth";
 const HEX = /^#[0-9a-f]{6}$/;
 export const DEFAULT_DARK_DEPTH = 0;
 

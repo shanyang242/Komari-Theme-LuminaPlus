@@ -13,7 +13,6 @@ import {
   Rows3,
   Save,
   SlidersHorizontal,
-  Sparkles,
   Sun,
   SunMoon,
   Wallpaper,
@@ -62,9 +61,7 @@ import {
 } from "@/utils/pingTasks";
 import {
   DEFAULT_THEME_SETTINGS,
-  normalizeHomeHeaderVisibleSeconds,
   normalizeThemeSettings,
-  type AmbientEffect,
   type ResolvedThemeSettings,
 } from "@/utils/themeSettings";
 
@@ -88,15 +85,6 @@ const BACKGROUND_POSITION_OPTIONS: Array<{ value: BackgroundPosition; label: str
   { value: "center", label: "居中" },
   { value: "bottom", label: "底部" },
 ];
-const AMBIENT_EFFECT_OPTIONS: Array<{
-  value: AmbientEffect;
-  label: string;
-}> = [
-  { value: "sakura", label: "樱花飘落" },
-  { value: "rain", label: "细雨" },
-  { value: "fireworks", label: "烟花" },
-];
-
 function localDateInputMax() {
   const now = new Date();
   return [
@@ -146,8 +134,6 @@ function pickManagedThemeSettings(settings: ResolvedThemeSettings) {
     hideAdminEntryWhenLoggedOut: settings.hideAdminEntryWhenLoggedOut,
     homepagePingNodeTaskIds: settings.homepagePingNodeTaskIds,
     fakePingForUnbound: settings.fakePingForUnbound,
-    enableHomeHeaderAutoHide: settings.enableHomeHeaderAutoHide,
-    homeHeaderVisibleSeconds: settings.homeHeaderVisibleSeconds,
     showHomeOverview: settings.showHomeOverview,
     showGroupTabs: settings.showGroupTabs,
     showRegionBar: settings.showRegionBar,
@@ -172,8 +158,6 @@ function pickManagedThemeSettings(settings: ResolvedThemeSettings) {
     backgroundImageMobile: settings.backgroundImageMobile,
     backgroundAlignment: settings.backgroundAlignment,
     surfaceOpacity: settings.surfaceOpacity,
-    enableAmbientEffect: settings.enableAmbientEffect,
-    ambientEffect: settings.ambientEffect,
   };
 }
 
@@ -715,8 +699,7 @@ export function ThemeManage() {
       backgroundAlignment: normalizeBackgroundAlignment(rest.backgroundAlignment),
     };
   }, [draft]);
-  // 只比较本页实际管理的设置。enableAdminButton/showPingChart 这类隐藏设置会通过
-  // baseSettings 在保存时保留,但不该让表单永远显示为 dirty。
+  // 只比较本页实际管理的设置；未在表单中展示的设置不影响 dirty 状态。
   const draftSignature = useMemo(
     () => managedSettingsSignature(draftThemeSettings as ThemeSettings & Record<string, unknown>),
     [draftThemeSettings],
@@ -769,19 +752,6 @@ export function ThemeManage() {
         ...(config.theme_settings ?? {}),
         ...draftThemeSettings,
       };
-      for (const key of [
-        "homepagePingTask", "homepagePingBindings",
-        "enableHomepageMultiPing", "homepageMultiPingTaskIds", "homepageMultiPingNodeTaskIds",
-        "enableHomeSort", "homeSortField", "homeSortDirection",
-        "homeGroupOrder",
-        "showOverviewRatings", "showTrafficRating", "showBandwidthRating", "showAssetRating",
-        "trafficRatingLabels", "bandwidthRatingLabels", "assetRatingLabels",
-        "showConnections", "showTodayTrafficPopover",
-        "backgroundMediaType", "backgroundVideo", "backgroundVideoDark",
-        "showCostSummaryFloatingButton",
-      ]) {
-        delete nextSettings[key];
-      }
       await saveThemeSettings(config.theme, nextSettings);
       await queryClient.invalidateQueries({ queryKey: ["public"] });
       if (editVersionRef.current === submittedEditVersion) {
@@ -1030,34 +1000,6 @@ export function ThemeManage() {
             onPatch={patch}
           />
 
-          <div className="grid gap-3 md:grid-cols-2">
-            <ToggleRow
-              field="enableAmbientEffect"
-              title="启用背景动效"
-              checked={draft.enableAmbientEffect}
-              onPatch={patch}
-            />
-
-            <label className="surface-inset flex min-w-0 flex-col justify-center gap-2 px-4 py-3">
-              <span className="inline-flex items-center gap-2 text-[12px] font-medium text-[var(--text-secondary)]">
-                <Sparkles size={14} />
-                动效选择
-              </span>
-              <select
-                value={draft.ambientEffect}
-                onChange={(event) => patch("ambientEffect", event.target.value as AmbientEffect)}
-                disabled={!draft.enableAmbientEffect}
-                className="surface-inset w-full px-3 py-2 text-[13px] outline-none disabled:cursor-not-allowed disabled:opacity-55"
-              >
-                {AMBIENT_EFFECT_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
-
           <div className="grid gap-4 md:grid-cols-2">
             <label className="flex min-w-0 flex-col gap-2">
               <span className="text-[12px] font-medium text-[var(--text-secondary)]">
@@ -1152,36 +1094,6 @@ export function ThemeManage() {
         aside={<ListFilter size={16} />}
       >
         <div className="theme-home-control-grid grid gap-3 md:grid-cols-3">
-          <ToggleRow
-            field="enableHomeHeaderAutoHide"
-            title="定时隐藏顶部信息"
-            checked={draft.enableHomeHeaderAutoHide}
-            onPatch={patch}
-          />
-          <div className="surface-inset flex items-center justify-between gap-3 px-4 py-3">
-            <span className="text-[13px] font-medium text-[var(--text-primary)]">显示时长</span>
-            <span className="inline-flex shrink-0 items-center gap-1.5">
-              <input
-                type="number"
-                min={1}
-                max={3600}
-                step={1}
-                inputMode="numeric"
-                value={draft.homeHeaderVisibleSeconds}
-                disabled={!draft.enableHomeHeaderAutoHide}
-                onChange={(event) => {
-                  if (event.target.value.trim() === "") return;
-                  patch(
-                    "homeHeaderVisibleSeconds",
-                    normalizeHomeHeaderVisibleSeconds(event.target.value),
-                  );
-                }}
-                aria-label="顶部信息显示时长（秒）"
-                className="theme-home-control-input surface-inset w-20 text-right text-[13px] tabular outline-none disabled:opacity-45"
-              />
-              <span className="text-[13px] font-medium text-[var(--text-tertiary)]">秒</span>
-            </span>
-          </div>
           <ToggleRow
             field="showHomeOverview"
             title="显示顶部总览"

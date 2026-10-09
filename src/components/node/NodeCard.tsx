@@ -27,7 +27,7 @@ import { OsLogo } from "@/components/ui/OsLogo";
 import { MetricBar } from "./MetricBar";
 import { LatencyBars } from "./LatencyBars";
 import { QualityBars } from "./QualityBars";
-import { CanvasStrip, mixSrgbTowardWhite, safeCanvasColor } from "./CanvasStrip";
+import { CanvasStrip, safeCanvasColor } from "./CanvasStrip";
 import { TrafficQuotaLabel } from "./TrafficQuotaLabel";
 import type { TrafficResetDisplay } from "@/utils/trafficReset";
 import {
@@ -602,13 +602,8 @@ function NodeCardFooter({
     updateVisibleTags();
 
     let cancelled = false;
-    const observer =
-      typeof ResizeObserver === "undefined" ? null : new ResizeObserver(updateVisibleTags);
-    if (observer) {
-      observer.observe(row);
-    } else {
-      window.addEventListener("resize", updateVisibleTags);
-    }
+    const observer = new ResizeObserver(updateVisibleTags);
+    observer.observe(row);
     // 字体替换会在首次绘制后改变 tag 宽度;字体就绪后重新测量一次,
     // 但若卡片在 promise resolve 前已卸载则跳过。
     document.fonts?.ready.then(() => {
@@ -617,8 +612,7 @@ function NodeCardFooter({
 
     return () => {
       cancelled = true;
-      observer?.disconnect();
-      if (!observer) window.removeEventListener("resize", updateVisibleTags);
+      observer.disconnect();
     };
   }, [footerTags, renewalPrice]);
 
@@ -740,9 +734,7 @@ function TrafficDotStrip({
     (ctx: CanvasRenderingContext2D, width: number, height: number) => {
       if (samples.length === 0) return;
       const slotWidth = width / samples.length;
-      // 一次性归一化:safeCanvasColor 解析 var() 并把 hsl() 转成 rgb(),所以
-      // baseColor/inactiveColor 对 canvas 安全,mixSrgbTowardWhite 的 hex 输出也是 ——
-      // 下面循环里不需要再逐点归一化颜色。
+      // 一次性解析变量；每个亮度档再通过 CSS 引擎解析 color-mix()。
       const baseColor = safeCanvasColor(color);
       const inactiveColor = safeCanvasColor("var(--progress-bg)");
 
@@ -750,9 +742,10 @@ function TrafficDotStrip({
         const hasTraffic = sample.value > 0;
         const scale = hasTraffic ? 0.72 + sample.level * 0.82 : 0.46;
         const radius = 2 * scale;
-        // 用 JS 做 sRGB 混色(不用 canvas 的 color-mix() 字符串,老 WebKit 不认)。
         const tone = hasTraffic
-          ? mixSrgbTowardWhite(baseColor, (68 + sample.level * 20) / 100)
+          ? safeCanvasColor(
+              `color-mix(in srgb, ${baseColor} ${68 + sample.level * 20}%, white)`,
+            )
           : inactiveColor;
         const x = index * slotWidth + slotWidth / 2;
         const y = height / 2;

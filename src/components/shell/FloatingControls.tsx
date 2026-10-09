@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useState } from "react";
+import { lazy, Suspense, useState } from "react";
 import { AlertTriangle, ChevronLeft, ChevronRight, LayoutGrid, Monitor, Palette, Rows3, Settings, SlidersHorizontal, Sun, Moon } from "lucide-react";
 import { Link } from "react-router-dom";
 import { usePreferences } from "@/hooks/usePreferences";
@@ -29,11 +29,7 @@ const APPEARANCE_OPTIONS = [
   { value: "dark", icon: Moon, label: "深色" },
 ] as const;
 
-export function FloatingControls({
-  onExpandedChange,
-}: {
-  onExpandedChange?: (expanded: boolean) => void;
-}) {
+export function FloatingControls() {
   const { appearance, setAppearance } = usePreferences();
   const { mode, nextMode, toggleMode } = useViewMode();
   const { data: me } = useAuth();
@@ -55,17 +51,11 @@ export function FloatingControls({
   const ViewIcon = VIEW_MODE_META[nextMode].icon;
   // 只要不在最宽松的大卡默认态,就视为"已切换"，按钮保持高亮。
   const isReducedView = mode !== "large";
-  useEffect(() => {
-    onExpandedChange?.(false);
-    return () => onExpandedChange?.(false);
-  }, [onExpandedChange]);
-
   const toggleControls = () => {
     // 收起快捷栏时同时结束子面板状态，避免下次展开时调色盘自动复现。
     const nextCollapsed = !collapsed;
     if (nextCollapsed) setColorsOpen(false);
     setCollapsed(nextCollapsed);
-    onExpandedChange?.(!nextCollapsed);
   };
 
   return (

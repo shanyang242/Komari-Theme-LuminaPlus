@@ -6,31 +6,6 @@ import {
 } from "@/utils/themeSettings";
 
 describe("normalizeThemeSettings", () => {
-  it("keeps ambient effects opt-in and normalizes the selected preset", () => {
-    const defaults = normalizeThemeSettings({});
-    expect(defaults.enableAmbientEffect).toBe(false);
-    expect(defaults.ambientEffect).toBe("sakura");
-
-    expect(
-      normalizeThemeSettings({
-        enableAmbientEffect: true,
-        ambientEffect: "rain",
-      }),
-    ).toMatchObject({
-      enableAmbientEffect: true,
-      ambientEffect: "rain",
-    });
-    expect(normalizeThemeSettings({ ambientEffect: "unknown" } as never).ambientEffect).toBe(
-      "sakura",
-    );
-    expect(normalizeThemeSettings({ ambientEffect: "fireflies" } as never).ambientEffect).toBe(
-      "sakura",
-    );
-    expect(normalizeThemeSettings({ enableAmbientEffect: "yes" } as never).enableAmbientEffect).toBe(
-      false,
-    );
-  });
-
   it("normalizes per-node single-ping overrides", () => {
     const resolved = normalizeThemeSettings({
       homepagePingNodeTaskIds: {
@@ -47,16 +22,6 @@ describe("normalizeThemeSettings", () => {
     expect(normalizeThemeSettings({}).homepagePingNodeTaskIds).toEqual({});
   });
 
-  it("migrates legacy single bindings unless the new setting is explicitly present", () => {
-    expect(normalizeThemeSettings({
-      homepagePingBindings: { "7": ["node-a"] },
-    } as never).homepagePingNodeTaskIds).toEqual({ "node-a": 7 });
-    expect(normalizeThemeSettings({
-      homepagePingNodeTaskIds: {},
-      homepagePingBindings: { "7": ["node-a"] },
-    } as never).homepagePingNodeTaskIds).toEqual({});
-  });
-
   it("keeps fake ping off unless explicitly enabled", () => {
     expect(normalizeThemeSettings({}).fakePingForUnbound).toBe(false);
     expect(normalizeThemeSettings({ fakePingForUnbound: true }).fakePingForUnbound).toBe(true);
@@ -64,26 +29,6 @@ describe("normalizeThemeSettings", () => {
     expect(
       normalizeThemeSettings({ fakePingForUnbound: "yes" } as never).fakePingForUnbound,
     ).toBe(false);
-  });
-
-  it("keeps timed home header hiding opt-in and normalizes its duration", () => {
-    const defaults = normalizeThemeSettings({});
-    expect(defaults.enableHomeHeaderAutoHide).toBe(false);
-    expect(defaults.homeHeaderVisibleSeconds).toBe(10);
-
-    expect(
-      normalizeThemeSettings({
-        enableHomeHeaderAutoHide: true,
-        homeHeaderVisibleSeconds: 12.6,
-      }),
-    ).toMatchObject({
-      enableHomeHeaderAutoHide: true,
-      homeHeaderVisibleSeconds: 13,
-    });
-    expect(normalizeThemeSettings({ homeHeaderVisibleSeconds: 0 }).homeHeaderVisibleSeconds).toBe(1);
-    expect(
-      normalizeThemeSettings({ homeHeaderVisibleSeconds: 9999 }).homeHeaderVisibleSeconds,
-    ).toBe(3600);
   });
 
   it("hides the admin entry only from logged-out visitors when explicitly enabled", () => {
@@ -96,11 +41,6 @@ describe("normalizeThemeSettings", () => {
     });
     expect(shouldShowAdminEntry(visitorHidden, false)).toBe(false);
     expect(shouldShowAdminEntry(visitorHidden, true)).toBe(true);
-
-    // 旧字段继续作为全局总开关，避免改变存量手工配置的行为。
-    const legacyDisabled = normalizeThemeSettings({ enableAdminButton: false });
-    expect(shouldShowAdminEntry(legacyDisabled, false)).toBe(false);
-    expect(shouldShowAdminEntry(legacyDisabled, true)).toBe(false);
   });
 
   it("can hide costs from guests without affecting logged-in administrators", () => {

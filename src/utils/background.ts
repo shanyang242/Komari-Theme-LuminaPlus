@@ -86,8 +86,7 @@ export function computeBackgroundScrim(opacity: unknown): number {
   return Math.round(t * 16);
 }
 
-// Legacy key retained so existing users keep their saved background after the rename.
-const BACKGROUND_CACHE_KEY = "komaritheme:bg";
+const BACKGROUND_CACHE_KEY = "lumina-plus:background";
 
 interface BackgroundSettingsInput {
   enableBackgroundImage: boolean;

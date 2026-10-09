@@ -81,8 +81,8 @@ export interface NodeRealtime {
   uptime: number;
   process: number;
   updated_at?: string | number;
-  /** 修改版后端返回的校准后配额已用量。 */
-  trafficUsedEffective?: number | null;
+  /** 后端返回的校准后配额已用量。 */
+  trafficUsedEffective: number;
 }
 
 /** 展示用模型:扁平化的节点信息 + 实时指标 + 在线标志。 */
@@ -101,8 +101,7 @@ export interface NodeMetrics {
   netDown: number;
   trafficUp: number;
   trafficDown: number;
-  /** null/undefined 时必须沿用主题原有上下行归约逻辑。 */
-  trafficUsedEffective?: number | null;
+  trafficUsedEffective: number;
   uptime: number;
   load1: number;
   load5: number;
@@ -115,13 +114,10 @@ export interface ThemeSettings {
   defaultAppearance?: "system" | "light" | "dark";
   desktopNodeViewMode?: "large" | "compact";
   mobileNodeViewMode?: "large" | "compact";
-  enableAdminButton?: boolean;
   hideAdminEntryWhenLoggedOut?: boolean;
   showPingChart?: boolean;
   homepagePingNodeTaskIds?: Record<string, number | null>;
   fakePingForUnbound?: boolean;
-  enableHomeHeaderAutoHide?: boolean;
-  homeHeaderVisibleSeconds?: number;
   showHomeOverview?: boolean;
   showGroupTabs?: boolean;
   showRegionBar?: boolean;
@@ -133,10 +129,9 @@ export interface ThemeSettings {
   compactShowUptime?: boolean;
   hiddenNodes?: string[];
   costIgnoredNodes?: string[];
-  // 值支持旧版纯数字(自动升格)或结构化条目,见 normalizeCostPremiums。
   costPremiums?: Record<
     string,
-    number | {
+    {
       amount?: number;
       paidCny?: number;
       acquiredAt?: string;
@@ -149,11 +144,6 @@ export interface ThemeSettings {
   backgroundImageMobile?: string;
   backgroundAlignment?: string;
   surfaceOpacity?: number;
-  enableAmbientEffect?: boolean;
-  ambientEffect?:
-    | "sakura"
-    | "rain"
-    | "fireworks";
 }
 
 export const PublicConfigSchema = z

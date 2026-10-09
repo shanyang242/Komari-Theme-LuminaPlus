@@ -31,9 +31,7 @@ type WidthListener = (width: number) => void;
 type VisibilityListener = (visible: boolean) => void;
 
 const observedWidths = new Map<Element, WidthListener>();
-const fallbackResizeListeners = new Set<() => void>();
 let sharedResizeObserver: ResizeObserver | null = null;
-let fallbackResizeListening = false;
 const observedVisibility = new Map<Element, VisibilityListener>();
 let sharedIntersectionObserver: IntersectionObserver | null = null;
 
@@ -42,51 +40,25 @@ function normalizeWidth(width: number) {
 }
 
 function subscribeToWidth(element: HTMLElement, listener: WidthListener) {
-  if (typeof ResizeObserver !== "undefined") {
-    sharedResizeObserver ??= new ResizeObserver((entries) => {
-      for (const entry of entries) {
-        observedWidths.get(entry.target)?.(normalizeWidth(entry.contentRect.width));
-      }
-    });
-    observedWidths.set(element, listener);
-    sharedResizeObserver.observe(element);
-
-    return () => {
-      observedWidths.delete(element);
-      sharedResizeObserver?.unobserve(element);
-      if (observedWidths.size === 0) {
-        sharedResizeObserver?.disconnect();
-        sharedResizeObserver = null;
-      }
-    };
-  }
-
-  const update = () => listener(normalizeWidth(element.getBoundingClientRect().width));
-  fallbackResizeListeners.add(update);
-  if (!fallbackResizeListening) {
-    fallbackResizeListening = true;
-    window.addEventListener("resize", notifyFallbackResizeListeners);
-  }
+  sharedResizeObserver ??= new ResizeObserver((entries) => {
+    for (const entry of entries) {
+      observedWidths.get(entry.target)?.(normalizeWidth(entry.contentRect.width));
+    }
+  });
+  observedWidths.set(element, listener);
+  sharedResizeObserver.observe(element);
 
   return () => {
-    fallbackResizeListeners.delete(update);
-    if (fallbackResizeListeners.size === 0 && fallbackResizeListening) {
-      fallbackResizeListening = false;
-      window.removeEventListener("resize", notifyFallbackResizeListeners);
+    observedWidths.delete(element);
+    sharedResizeObserver?.unobserve(element);
+    if (observedWidths.size === 0) {
+      sharedResizeObserver?.disconnect();
+      sharedResizeObserver = null;
     }
   };
 }
 
-function notifyFallbackResizeListeners() {
-  for (const listener of fallbackResizeListeners) listener();
-}
-
 function subscribeToVisibility(element: HTMLElement, listener: VisibilityListener) {
-  if (typeof IntersectionObserver === "undefined") {
-    listener(true);
-    return () => undefined;
-  }
-
   sharedIntersectionObserver ??= new IntersectionObserver(
     (entries) => {
       for (const entry of entries) {
@@ -243,36 +215,6 @@ function canUseCanvasColor(color: string): boolean {
   }
 }
 
-function parseHexColor(color: string): { r: number; g: number; b: number } | null {
-  const value = color.trim();
-  const short = /^#([\da-f])([\da-f])([\da-f])$/i.exec(value);
-  if (short) {
-    return {
-      r: parseInt(`${short[1]}${short[1]}`, 16),
-      g: parseInt(`${short[2]}${short[2]}`, 16),
-      b: parseInt(`${short[3]}${short[3]}`, 16),
-    };
-  }
-  const full = /^#([\da-f]{2})([\da-f]{2})([\da-f]{2})$/i.exec(value);
-  if (full) {
-    return {
-      r: parseInt(full[1], 16),
-      g: parseInt(full[2], 16),
-      b: parseInt(full[3], 16),
-    };
-  }
-  return null;
-}
-
-// Canvas 兼容旧 WebKit：用通道插值代替 color-mix()。
-export function mixSrgbTowardWhite(baseColor: string, baseWeight: number): string {
-  const rgb = parseHexColor(baseColor);
-  if (!rgb) return baseColor;
-  const w = Math.max(0, Math.min(1, baseWeight));
-  const channel = (value: number) => Math.round(value * w + 255 * (1 - w));
-  return `rgb(${channel(rgb.r)}, ${channel(rgb.g)}, ${channel(rgb.b)})`;
-}
-
 function hslToRgb(h: number, s: number, l: number): { r: number; g: number; b: number } {
   const sat = Math.max(0, Math.min(1, s / 100));
   const lig = Math.max(0, Math.min(1, l / 100));
@@ -397,7 +339,7 @@ export function CanvasStrip({
   const interactionRef = useRef<CanvasStripInteraction>({ hoverIndex: null, hoverProgress: 0 });
   const [interaction, setInteraction] = useState<CanvasStripInteraction>(interactionRef.current);
   const [width, setWidth] = useState(0);
-  const [visible, setVisible] = useState(() => typeof IntersectionObserver === "undefined");
+  const [visible, setVisible] = useState(false);
   const dpr = useSyncExternalStore(subscribeToDpr, currentDpr, () => 1);
 
   const commitInteraction = (next: CanvasStripInteraction) => {
@@ -457,10 +399,6 @@ export function CanvasStrip({
 
     const unsubscribeWidth = subscribeToWidth(canvas, updateWidth);
     const unsubscribeVisibility = subscribeToVisibility(canvas, setVisible);
-    // 仅旧浏览器的 observer 回退需要主动测量；现代浏览器的首帧不被同步布局读取阻塞。
-    if (typeof ResizeObserver === "undefined") {
-      updateWidth(normalizeWidth(canvas.getBoundingClientRect().width));
-    }
     return () => {
       unsubscribeWidth();
       unsubscribeVisibility();

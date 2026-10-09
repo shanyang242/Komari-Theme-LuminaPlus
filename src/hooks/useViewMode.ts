@@ -3,9 +3,8 @@ import { useThemeSettings } from "@/hooks/useThemeSettings";
 import { MOBILE_VIEWPORT_QUERY, subscribeMediaQuery } from "@/utils/mediaQuery";
 import { isNodeViewMode, type NodeViewMode } from "@/utils/themeSettings";
 
-// Legacy keys retained so session view-mode overrides survive the rename.
-const DESKTOP_OVERRIDE_KEY = "komaritheme:node-view-mode-session:desktop";
-const MOBILE_OVERRIDE_KEY = "komaritheme:node-view-mode-session:mobile";
+const DESKTOP_OVERRIDE_KEY = "lumina-plus:view-mode:desktop";
+const MOBILE_OVERRIDE_KEY = "lumina-plus:view-mode:mobile";
 export const MOBILE_VIEW_MODE_QUERY = MOBILE_VIEWPORT_QUERY;
 const VIEW_MODE_CYCLE: readonly NodeViewMode[] = ["large", "compact"];
 
@@ -33,8 +32,7 @@ function readOverride(key: string): NodeViewMode | null {
   try {
     const value = sessionStorage.getItem(key);
     if (value == null) return null;
-    // 未知旧值回退到小卡，并在下次切换时被正常覆盖。
-    return isNodeViewMode(value) ? value : "compact";
+    return isNodeViewMode(value) ? value : null;
   } catch {
     return null;
   }

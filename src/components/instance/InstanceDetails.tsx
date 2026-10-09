@@ -35,12 +35,7 @@ export function InstanceDetails({
 
   const isOnline = metrics.online;
   const uptime = formatUptimeDays(metrics.uptime);
-  // 按 traffic_limit_type (max/sum/up/down/min) 归并上下行，和卡片、后端保持一致——
-  // 对非 "sum" 节点直接把上下行相加是错的。
   const trafficUsage = resolveTrafficUsage(
-    meta.traffic_limit_type,
-    metrics.trafficUp,
-    metrics.trafficDown,
     meta.traffic_limit,
     metrics.trafficUsedEffective,
   );

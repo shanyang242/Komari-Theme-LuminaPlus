@@ -25,46 +25,7 @@ import {
 import { latencyHeatColor, lossHeatColor } from "@/utils/metricTone";
 import { historyChartRangeSeconds, historyCoverageLabel } from "@/utils/historyRange";
 import { usePreferences } from "@/hooks/usePreferences";
-import type { PingRecord, PingTaskStats } from "@/types/komari";
-
-function percentileFromSorted(sorted: number[], ratio: number) {
-  if (sorted.length === 0) return null;
-  const index = (sorted.length - 1) * ratio;
-  const lower = Math.floor(index);
-  const upper = Math.ceil(index);
-  const lowerValue = sorted[lower];
-  const upperValue = sorted[upper];
-  if (lowerValue == null || upperValue == null) return null;
-  if (lower === upper) return lowerValue;
-  const weight = index - lower;
-  return lowerValue + (upperValue - lowerValue) * weight;
-}
-
-export function summarizePingRecords(records: PingRecord[]) {
-  const valid = records
-    .filter((record) => record.value >= 0)
-    .map((record) => record.value)
-    .sort((a, b) => a - b);
-  const total = records.length;
-
-  let latest: number | null = null;
-  for (let index = records.length - 1; index >= 0; index -= 1) {
-    if (records[index].value >= 0) {
-      latest = records[index].value;
-      break;
-    }
-  }
-
-  return {
-    latest,
-    avg: valid.length > 0 ? valid.reduce((sum, value) => sum + value, 0) / valid.length : null,
-    min: valid[0] ?? null,
-    max: valid[valid.length - 1] ?? null,
-    p50: percentileFromSorted(valid, 0.5),
-    p99: percentileFromSorted(valid, 0.99),
-    total,
-  };
-}
+import type { PingTaskStats } from "@/types/komari";
 
 const EMPTY_PING_STATS: PingTaskStats[] = [];
 const MAX_RENDER_POINTS = 160;
@@ -404,14 +365,6 @@ export function PingChart({
   );
 
   const taskStats = useMemo(() => {
-    const grouped = new Map<number, PingRecord[]>();
-    // 复用已按时间升序的 sortedRecords,分组后桶内天然有序,免去逐桶重排序和重复 Date.parse。
-    for (const { record } of sortedRecords) {
-      const bucket = grouped.get(record.task_id);
-      if (bucket) bucket.push(record);
-      else grouped.set(record.task_id, [record]);
-    }
-
     const serverStats = new Map(
       pingStats
         .filter((stat) => !stat.client || stat.client === uuid)
@@ -419,42 +372,26 @@ export function PingChart({
     );
 
     return tasks.map((task, index) => {
-      const records = grouped.get(task.id) ?? [];
       const server = serverStats.get(task.id);
-      // server stats 命中时跳过本地全量统计(排序/分位数不便宜)。
-      const fallback = server ? null : summarizePingRecords(records);
-      const latest = server ? server.latest : fallback?.latest ?? null;
-      const avg = server ? server.avg : fallback?.avg ?? null;
-      const min = server ? server.min : fallback?.min ?? null;
-      const max = server ? server.max : fallback?.max ?? null;
-      const p50 = server ? server.p50 : fallback?.p50 ?? null;
-      const p99 = server ? server.p99 : fallback?.p99 ?? null;
-      const fallbackVolatility =
-        p50 != null && p99 != null
-          ? Math.max(0, p99 - p50) / Math.min(50, Math.max(10, p50))
-          : null;
       const volatility =
         server && Number.isFinite(server.p99P50Ratio)
           ? server.p99P50Ratio
-          : fallbackVolatility;
-      const total = server?.total ?? fallback?.total ?? 0;
-      // getRecords 的任务摘要在 records 等距抽样前计算，stats 请求失败时仍可用。
-      const loss = server?.loss ?? task.loss;
+          : null;
       return {
         ...task,
-        latest,
-        avg,
-        min,
-        max,
-        p50,
-        p99,
+        latest: server?.latest ?? null,
+        avg: server?.avg ?? null,
+        min: server?.min ?? null,
+        max: server?.max ?? null,
+        p50: server?.p50 ?? null,
+        p99: server?.p99 ?? null,
         volatility,
-        total,
-        loss,
+        total: server?.total ?? 0,
+        loss: server?.loss ?? task.loss,
         color: taskColors.get(task.id) ?? colorForSeries(index, tasks.length),
       };
     });
-  }, [pingStats, sortedRecords, taskColors, tasks, uuid]);
+  }, [pingStats, taskColors, tasks, uuid]);
 
   const refetchAll = () => {
     void refetchRecords();

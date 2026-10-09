@@ -25,16 +25,8 @@
       (() => {
         const appearances = new Set(["system", "light", "dark"]);
         const readAppearance = (key) => {
-          const raw = localStorage.getItem(key);
-          if (raw == null) return null;
-          let value = raw;
-          try {
-            value = JSON.parse(raw);
-          } catch {}
-          if (!appearances.has(value)) return null;
-          const normalized = JSON.stringify(value);
-          if (raw !== normalized) localStorage.setItem(key, normalized);
-          return value;
+          const value = localStorage.getItem(key);
+          return appearances.has(value) ? value : null;
         };
 
         let appearance = "system";
@@ -55,7 +47,7 @@
         if (meta) meta.content = resolved === "dark" ? "#000000" : "#F5F5F7";
 
         try {
-          const rawDepth = localStorage.getItem("komaritheme:dark-depth");
+          const rawDepth = localStorage.getItem("lumina-plus:dark-depth");
           if (rawDepth != null) {
             const parsedDepth = Number(rawDepth);
             const darkDepth = Number.isFinite(parsedDepth)
@@ -73,10 +65,10 @@
         } catch {}
 
         try {
-          const rawBg = localStorage.getItem("komaritheme:bg");
+          const rawBg = localStorage.getItem("lumina-plus:background");
           if (rawBg) {
             const bg = JSON.parse(rawBg);
-            if (bg && (bg.v === 1 || bg.v === 2)) {
+            if (bg?.v === 2) {
               const sizes = new Set(["cover", "contain", "auto"]);
               const positions = new Set(["top", "center", "bottom"]);
               const parseImage = (value) =>

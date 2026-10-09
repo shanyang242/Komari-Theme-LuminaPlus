@@ -111,7 +111,7 @@ function emptyMetrics(info: NodeInfo, online: boolean | null): NodeMetrics {
     netDown: 0,
     trafficUp: 0,
     trafficDown: 0,
-    trafficUsedEffective: null,
+    trafficUsedEffective: 0,
     uptime: 0,
     load1: 0,
     load5: 0,
@@ -184,7 +184,7 @@ function mergeRealtime(
     netDown: rt.network?.down ?? 0,
     trafficUp: trafficTotals.up,
     trafficDown: trafficTotals.down,
-    trafficUsedEffective: rt.trafficUsedEffective ?? null,
+    trafficUsedEffective: rt.trafficUsedEffective,
     uptime: rt.uptime ?? 0,
     load1: rt.load?.load1 ?? 0,
     load5: rt.load?.load5 ?? 0,
@@ -470,12 +470,6 @@ function asNumber(value: unknown, fallback = 0): number {
   return fallback;
 }
 
-function asOptionalNonNegativeNumber(value: unknown): number | null {
-  if (value == null) return null;
-  const parsed = asNumber(value, Number.NaN);
-  return Number.isFinite(parsed) ? Math.max(0, parsed) : null;
-}
-
 function asRecord(value: unknown): RealtimePayload {
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as RealtimePayload)
@@ -549,7 +543,7 @@ function normalizeRealtime(
     uptime: asNumber(payload.uptime),
     process: asNumber(payload.process),
     updated_at: (payload.updated_at ?? payload.time) as string | number | undefined,
-    trafficUsedEffective: asOptionalNonNegativeNumber(payload.traffic_used_effective),
+    trafficUsedEffective: Math.max(0, asNumber(payload.traffic_used_effective)),
   };
 }
 

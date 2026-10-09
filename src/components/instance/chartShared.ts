@@ -368,7 +368,7 @@ export function useResponsiveChartSize(mode: "grid" | "wide") {
     (node: HTMLDivElement | null) => {
       observerRef.current?.disconnect();
       observerRef.current = null;
-      if (node && typeof ResizeObserver !== "undefined") {
+      if (node) {
         const observer = new ResizeObserver(scheduleApply);
         observer.observe(node);
         observerRef.current = observer;

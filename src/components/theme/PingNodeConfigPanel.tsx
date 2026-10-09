@@ -13,10 +13,7 @@ import { clsx } from "clsx";
 import { Flag } from "@/components/ui/Flag";
 import { Spinner } from "@/components/ui/Spinner";
 import type { AdminClient, PingTask } from "@/types/komari";
-import {
-  sortHomepagePingTasks,
-  type HomepagePingNodeTaskIds,
-} from "@/utils/pingTasks";
+import type { HomepagePingNodeTaskIds } from "@/utils/pingTasks";
 
 type ConfigFilter = "all" | "custom" | "auto";
 type SelectionMode = "auto" | "manual" | "none";
@@ -70,10 +67,9 @@ export function PingNodeConfigPanel({
   const [selectedUuid, setSelectedUuid] = useState(clients[0]?.uuid ?? "");
   const [mobileEditorOpen, setMobileEditorOpen] = useState(false);
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
-  const orderedTasks = useMemo(() => sortHomepagePingTasks(tasks), [tasks]);
   const tasksById = useMemo(
-    () => new Map(orderedTasks.map((task) => [task.id, task])),
-    [orderedTasks],
+    () => new Map(tasks.map((task) => [task.id, task])),
+    [tasks],
   );
   const groups = useMemo(
     () => Array.from(new Set(clients.map((client) => String(client.group || "").trim()).filter(Boolean))),
@@ -109,9 +105,9 @@ export function PingNodeConfigPanel({
       : undefined;
   const selectedAutomaticTasks = useMemo(
     () => selectedClient
-      ? orderedTasks.filter((task) => task.clients.includes(selectedClient.uuid))
+      ? tasks.filter((task) => task.clients.includes(selectedClient.uuid))
       : [],
-    [orderedTasks, selectedClient],
+    [selectedClient, tasks],
   );
 
   useEffect(() => {
@@ -144,7 +140,7 @@ export function PingNodeConfigPanel({
     else if (mode === "none") next[selectedClient.uuid] = null;
     else {
       const firstTaskId =
-        selectedManualTaskId ?? selectedAutomaticTasks[0]?.id ?? orderedTasks[0]?.id;
+        selectedManualTaskId ?? selectedAutomaticTasks[0]?.id ?? tasks[0]?.id;
       if (firstTaskId == null) return;
       next[selectedClient.uuid] = firstTaskId;
     }
@@ -230,7 +226,7 @@ export function PingNodeConfigPanel({
               {filteredClients.map((client) => {
                 const mode = selectionMode(overrides, client.uuid);
                 const manualTaskId = mode === "manual" ? overrides[client.uuid] : undefined;
-                const automaticTask = orderedTasks.find((task) => task.clients.includes(client.uuid));
+                const automaticTask = tasks.find((task) => task.clients.includes(client.uuid));
                 const summary = mode === "manual" && manualTaskId != null
                   ? `手动 · ${taskLabel(manualTaskId, tasksById)}`
                   : mode === "none"
@@ -310,7 +306,7 @@ export function PingNodeConfigPanel({
                   </div>
                   <div className="ping-config-mode" aria-label="探测点来源">
                     <button type="button" className={clsx(selectedMode === "auto" && "is-active")} onClick={() => patchMode("auto")}>继承自动</button>
-                    <button type="button" className={clsx(selectedMode === "manual" && "is-active")} disabled={orderedTasks.length === 0} onClick={() => patchMode("manual")}>手动选择</button>
+                    <button type="button" className={clsx(selectedMode === "manual" && "is-active")} disabled={tasks.length === 0} onClick={() => patchMode("manual")}>手动选择</button>
                     <button type="button" className={clsx(selectedMode === "none" && "is-active")} onClick={() => patchMode("none")}>不绑定</button>
                   </div>
 
@@ -327,7 +323,7 @@ export function PingNodeConfigPanel({
                           {selectedManualTaskId != null && !tasksById.has(selectedManualTaskId) && (
                             <option value={selectedManualTaskId}>任务 #{selectedManualTaskId}（当前不可用）</option>
                           )}
-                          {orderedTasks.map((task) => (
+                          {tasks.map((task) => (
                             <option key={task.id} value={task.id}>{task.name || `任务 #${task.id}`}</option>
                           ))}
                         </select>

@@ -31,17 +31,17 @@ export function formatCompactUptime(seconds: number) {
 
 /** 区分已绑定但无样本与未配置 Ping。 */
 export function pingEmptyLabels(
-  hasHomepagePingBinding: boolean,
+  isPingAssigned: boolean,
   pingLoading = false,
   pingError = false,
 ): { title: string; text: string } {
-  if (hasHomepagePingBinding && pingLoading) {
+  if (isPingAssigned && pingLoading) {
     return { title: "正在加载首页 Ping", text: "加载中" };
   }
-  if (hasHomepagePingBinding && pingError) {
+  if (isPingAssigned && pingError) {
     return { title: "首页 Ping 加载失败", text: "加载失败" };
   }
-  return hasHomepagePingBinding
+  return isPingAssigned
     ? { title: "暂无有效样本", text: "无样本" }
     : { title: "未配置首页 Ping", text: "未配置" };
 }

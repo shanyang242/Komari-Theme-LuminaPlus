@@ -1,17 +1,9 @@
 export const MOBILE_VIEWPORT_QUERY = "(max-width: 720px)";
-export const REDUCED_MOTION_QUERY = "(prefers-reduced-motion: reduce)";
 
-/**
- * 订阅 MediaQueryList 的 `change` 事件并返回取消订阅函数。Safari < 14 没在 MediaQueryList 上
- * 实现 addEventListener,故回退到已废弃的 addListener/removeListener。
- */
+/** 订阅 MediaQueryList 的 `change` 事件并返回取消订阅函数。 */
 export function subscribeMediaQuery(mq: MediaQueryList, handler: () => void): () => void {
-  if (typeof mq.addEventListener === "function") {
-    mq.addEventListener("change", handler);
-    return () => mq.removeEventListener("change", handler);
-  }
-  mq.addListener(handler);
-  return () => mq.removeListener(handler);
+  mq.addEventListener("change", handler);
+  return () => mq.removeEventListener("change", handler);
 }
 
 const FINE_HOVER_QUERY = "(any-hover: hover) and (any-pointer: fine)";

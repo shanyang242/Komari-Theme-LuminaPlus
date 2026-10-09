@@ -43,7 +43,7 @@ describe("homepage ping records", () => {
 });
 
 describe("homepage single-ping polling selection", () => {
-  it("loads all tasks once and automatically selects each node's first weighted binding", async () => {
+  it("loads all tasks once and automatically selects each node's first binding", async () => {
     const publicTasks = [
       task(9, 5, ["node-a"]),
       task(3, 10, ["node-b"]),
@@ -130,28 +130,6 @@ describe("homepage single-ping polling selection", () => {
 
     expect(result.selectedTaskIdsByClient.has("node-a")).toBe(false);
     expect(result.singleItems.get("node-a")?.isAssigned).toBe(false);
-  });
-
-  it("infers automatic selection from records only when the public task list is unavailable", async () => {
-    const result = await buildPingOverviewMap(
-      1,
-      ["node-a"],
-      {},
-      undefined,
-      async () => ({
-        records: [
-          { task_id: 7, time: NOW, value: 70, client: "node-a" },
-          { task_id: 3, time: NOW, value: 30, client: "node-a" },
-        ],
-        tasks: [task(7, 20, []), task(3, 5, [])],
-      }),
-      async () => {
-        throw new Error("unsupported by legacy backend");
-      },
-    );
-
-    expect(result.selectedTaskIdsByClient.get("node-a")).toBe(3);
-    expect(result.singleItems.get("node-a")?.lastValue).toBe(30);
   });
 
   it("uses the selected tasks' shortest refresh interval", async () => {

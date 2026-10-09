@@ -52,7 +52,7 @@ describe("history range metadata", () => {
     ).toBe("覆盖完整 1 天");
   });
 
-  it("infers the legacy sampling interval so a complete window is not reported as partial", () => {
+  it("infers the sampling interval so a complete window is not reported as partial", () => {
     const end = Date.UTC(2026, 6, 13);
     const records = Array.from({ length: 12 }, (_, index) => ({
       time: end - (11 - index) * 5 * 60_000,

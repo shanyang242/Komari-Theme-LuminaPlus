@@ -212,10 +212,10 @@
   letter-spacing: -0.02em;
 }
 
-/* 单条分段进度条(原本是 18 个 <span>)。填充是直到 --compact-gauge-fill 的硬停止渐变;
-   repeating mask 切出 18 段,段间用 2px 透明缝隔开(缝隙透出卡片表面,与旧网格的 `gap` 一致)。
-   周期 = (100% + 2px) / 18,缝隙 = 每个周期的最后 2px。 */
+/* 单条分段进度条。填充在 --compact-gauge-fill 处硬停止，图片遮罩切出 18 个
+   微圆角段；每段周期为 (100% + 2px) / 18。 */
 .compact-node-gauge-track {
+  --compact-segment-mask: url("data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 100 100%27 preserveAspectRatio=%27none%27%3E%3Crect width=%2784%27 height=%27100%27 rx=%2716%27 ry=%2724%27 fill=%27black%27/%3E%3C/svg%3E");
   min-width: 0;
   height: 7px;
   overflow: hidden;
@@ -226,36 +226,14 @@
     var(--progress-bg) var(--compact-gauge-fill, 0%),
     var(--progress-bg) 100%
   );
-  -webkit-mask: repeating-linear-gradient(
-    to right,
-    #000 0,
-    #000 calc((100% + 2px) / 18 - 2px),
-    transparent calc((100% + 2px) / 18 - 2px),
-    transparent calc((100% + 2px) / 18)
-  );
-  mask: repeating-linear-gradient(
-    to right,
-    #000 0,
-    #000 calc((100% + 2px) / 18 - 2px),
-    transparent calc((100% + 2px) / 18 - 2px),
-    transparent calc((100% + 2px) / 18)
-  );
-}
-
-/* 大卡 canvas 的每一段都有 2px 轻倒角。小卡继续用单元素遮罩以保留滚动性能，
-   在支持图片遮罩的浏览器里把 18 个硬方块换成同语义的微圆角段；上面的线性遮罩是兜底。 */
-@supports ((-webkit-mask-image: url("data:image/svg+xml,%3Csvg%3E%3C/svg%3E")) or (mask-image: url("data:image/svg+xml,%3Csvg%3E%3C/svg%3E"))) {
-  .compact-node-gauge-track {
-    --compact-segment-mask: url("data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 100 100%27 preserveAspectRatio=%27none%27%3E%3Crect width=%2784%27 height=%27100%27 rx=%2716%27 ry=%2724%27 fill=%27black%27/%3E%3C/svg%3E");
-    -webkit-mask-image: var(--compact-segment-mask);
-    -webkit-mask-position: left top;
-    -webkit-mask-repeat: repeat-x;
-    -webkit-mask-size: calc((100% + 2px) / 18) 100%;
-    mask-image: var(--compact-segment-mask);
-    mask-position: left top;
-    mask-repeat: repeat-x;
-    mask-size: calc((100% + 2px) / 18) 100%;
-  }
+  -webkit-mask-image: var(--compact-segment-mask);
+  -webkit-mask-position: left top;
+  -webkit-mask-repeat: repeat-x;
+  -webkit-mask-size: calc((100% + 2px) / 18) 100%;
+  mask-image: var(--compact-segment-mask);
+  mask-position: left top;
+  mask-repeat: repeat-x;
+  mask-size: calc((100% + 2px) / 18) 100%;
 }
 
 .compact-node-info-strip {

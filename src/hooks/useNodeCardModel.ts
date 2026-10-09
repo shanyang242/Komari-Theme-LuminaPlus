@@ -108,8 +108,6 @@ export function useNodeCardModel(
       latencyColor: latencyHeatColor(ping.lastValue),
       lossColor: lossHeatColor(ping.loss),
       hasRealHomepagePingBinding,
-      // 保留旧字段供外部模型消费者兼容；它表示真实配置状态。
-      hasHomepagePingBinding: hasRealHomepagePingBinding,
       shouldRenderPingBars,
       pingLoading,
       pingError,
@@ -135,12 +133,9 @@ export function useNodeCardModel(
 
     const { loadBaseline } = metaModel;
 
-    // 流量配额：按节点的 traffic_limit_type（与后端一致）把累计上/下行算成"已用"，
-    // 在这里一次性算出剩余和使用占比，让两种卡片布局共用这套计算。
+    // 后端提供校准后的已用流量；在这里一次性算出剩余和使用占比，
+    // 让两种卡片布局共用这套计算。
     const trafficUsage = resolveTrafficUsage(
-      meta.traffic_limit_type,
-      metrics.trafficUp,
-      metrics.trafficDown,
       meta.traffic_limit,
       metrics.trafficUsedEffective,
     );

@@ -37,10 +37,7 @@ function explicitShanghaiResetDisplay(resetDay: number, now: number): TrafficRes
   };
 }
 
-/**
- * 新后端提供 1-31 时固定按 Asia/Shanghai 计算；字段缺失或为 0 时，
- * 完整保留原先按到期日和浏览器时区推导的兼容逻辑。
- */
+/** 1-31 固定按 Asia/Shanghai 计算；0 按节点到期日推导每月重置日。 */
 export function getTrafficResetDisplay(
   expiredAt: string | number | null | undefined,
   now: number,

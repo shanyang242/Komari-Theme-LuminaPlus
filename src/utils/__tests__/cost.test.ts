@@ -335,22 +335,15 @@ describe("cost helpers", () => {
     expect(normalizeCostIgnoredNodes(["x", "", " y "])).toEqual(["x", "y"]);
   });
 
-  it("normalizeCostPremiums upgrades legacy numbers and keeps only non-zero finite amounts", () => {
+  it("normalizeCostPremiums ignores non-object entries", () => {
     expect(
       normalizeCostPremiums({
         paid: "12.5",
         discount: -3,
-        zero: 0,
-        zeroString: "0",
-        bad: Number.POSITIVE_INFINITY,
-        " spaced ": 8,
-        "   ": 7,
-        "": 9,
+        structured: { amount: 8 },
       }),
     ).toEqual({
-      paid: { amount: 12.5 },
-      discount: { amount: -3 },
-      spaced: { amount: 8 },
+      structured: { amount: 8 },
     });
   });
 
@@ -478,12 +471,12 @@ describe("cost helpers", () => {
 
     const futureUrl = "https://cache.test/future";
     entries.set(
-      `komaritheme:cost-rates:${futureUrl}`,
+      `lumina-plus:cost-rates:${futureUrl}`,
       JSON.stringify({ rates: { CNY: 999 }, time: Date.now() + 60_000 }),
     );
     const malformedUrl = "https://cache.test/malformed";
     entries.set(
-      `komaritheme:cost-rates:${malformedUrl}`,
+      `lumina-plus:cost-rates:${malformedUrl}`,
       JSON.stringify({ rates: "invalid", time: Date.now() }),
     );
 
@@ -498,7 +491,7 @@ describe("cost helpers", () => {
 
   it("can bypass a fresh exchange-rate cache for manual refresh", async () => {
     const url = "https://cache.test/manual";
-    const key = `komaritheme:cost-rates:${url}`;
+    const key = `lumina-plus:cost-rates:${url}`;
     const entries = new Map([
       [key, JSON.stringify({ rates: { USD: 1, CNY: 6 }, time: Date.now() })],
     ]);
@@ -524,7 +517,7 @@ describe("cost helpers", () => {
 
   it("does not replace a cancelled request with stale cached rates", async () => {
     const url = "https://cache.test/cancelled";
-    const key = `komaritheme:cost-rates:${url}`;
+    const key = `lumina-plus:cost-rates:${url}`;
     const entries = new Map([
       [
         key,

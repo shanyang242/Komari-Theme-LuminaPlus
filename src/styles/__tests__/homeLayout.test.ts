@@ -19,17 +19,9 @@ const appShellSource = readFileSync(
 const routerSource = readFileSync(new URL("../../router.tsx", import.meta.url), "utf8");
 
 describe("home responsive layout contracts", () => {
-  it("uses an explicit expanded state through tablet widths without :has()", () => {
-    expect(homeCss).not.toContain(":has(");
-    expect(homeCss).toMatch(/@media \(max-width: 1023px\)[\s\S]*\.home-dashboard\.is-controls-expanded \.home-brand/);
-    expect(homeSource).toContain("onExpandedChange={setControlsExpanded}");
-  });
-
-  it("reclaims the reserved header space after timed hiding", () => {
-    expect(homeSource).toContain('is-home-header-hidden');
-    expect(homeCss).toMatch(
-      /\.home-dashboard\.is-home-header-hidden\s*\{[^}]*padding-top:\s*0/,
-    );
+  it("hides the brand while the controls are expanded through tablet widths", () => {
+    expect(homeCss).toMatch(/@media \(max-width: 1023px\)[\s\S]*\.home-dashboard:has\(\.floating-controls:not\(\.is-collapsed\)\) \.home-brand/);
+    expect(homeSource).not.toContain("onExpandedChange");
   });
 
   it("keeps both horizontal edges inside viewport safe areas", () => {

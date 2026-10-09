@@ -9,7 +9,7 @@ describe("Komari schemas", () => {
     expect(node.traffic_reset_day).toBe(0);
   });
 
-  it("accepts the optional traffic reset day from an adapted backend", () => {
+  it("parses the configured traffic reset day", () => {
     expect(NodeInfoSchema.parse({ uuid: "node-a", traffic_reset_day: "31" }).traffic_reset_day).toBe(31);
   });
 

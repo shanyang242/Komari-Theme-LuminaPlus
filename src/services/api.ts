@@ -221,29 +221,13 @@ function normalizeRpcLoadRecords(
   };
 }
 
-function derivePingTasks(records: PingRecordsResponse["records"]): PingTask[] {
-  return Array.from(new Set(records.map((record) => record.task_id)))
-    .sort((a, b) => a - b)
-    .map((id) => ({
-      id,
-      interval: 60,
-      name: `任务 #${id}`,
-      loss: 0,
-      clients: [],
-      type: "icmp",
-      target: "",
-      weight: id,
-    }));
-}
-
 function normalizeRpcPingRecords(
   uuid: string,
   payload: RpcRecordsPayload,
   range?: RequestRange,
 ): PingRecordsResponse {
   const records = parseArrayLenient(PingRecordSchema, extractRpcRecords(payload, uuid));
-  const parsedTasks = z.array(PingTaskSchema).safeParse(payload.tasks);
-  const tasks = parsedTasks.success ? parsedTasks.data : derivePingTasks(records);
+  const tasks = z.array(PingTaskSchema).parse(payload.tasks);
   const count = payload.count;
   return {
     count: typeof count === "number" && Number.isFinite(count) && count > 0 ? count : records.length,
@@ -258,10 +242,9 @@ function normalizeRpcPingOverview(
   range?: RequestRange,
 ): PingOverviewResponse {
   const records = parseArrayLenient(PingRecordSchema, extractRpcRecords(payload));
-  const parsedTasks = z.array(PingTaskSchema).safeParse(payload.tasks);
   return {
     records,
-    tasks: parsedTasks.success ? parsedTasks.data : derivePingTasks(records),
+    tasks: z.array(PingTaskSchema).parse(payload.tasks),
     ...range,
   };
 }
@@ -372,11 +355,7 @@ export async function getPingRecords(
       { entity_id: uuid, hours },
       PingMetricStatsResponseSchema,
       options,
-    ).then(normalizePingMetricStats).catch((error) => {
-      if (options?.signal?.aborted) throw error;
-      // 统计请求失败时图表会从记录本地计算，历史记录仍可展示。
-      return [] as PingTaskStats[];
-    }),
+    ).then(normalizePingMetricStats),
   ]);
   return {
     ...normalizeRpcPingRecords(uuid, payload, createRequestRange(hours)),

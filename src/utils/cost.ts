@@ -7,8 +7,7 @@ import { buildNodeIdentitySet, nodeMatchesIdentitySet, normalizeNodeIdentityList
 const COST_TARGET_CURRENCY = "CNY";
 export const DEFAULT_COST_RATE_API_URL = "https://api.frankfurter.dev/v2/rates?base=USD";
 const RATE_CACHE_TTL_MS = 60 * 60 * 1000;
-// Legacy key retained so existing users keep their cached exchange rates after the rename.
-const RATE_CACHE_KEY_PREFIX = "komaritheme:cost-rates:";
+const RATE_CACHE_KEY_PREFIX = "lumina-plus:cost-rates:";
 const RATE_REQUEST_TIMEOUT_MS = 10_000;
 
 const CURRENCY_ALIASES: Record<string, string> = {
@@ -158,8 +157,8 @@ function normalizeAcquiredAt(value: unknown) {
   return parseLocalDateKey(raw) != null && raw <= localDateKey() ? raw : undefined;
 }
 
-// 以节点 uuid 为 key。旧版纯数字自动升格为 { amount };非法日期/收购价只丢字段不丢条目;
-// 溢价 0 且无收购价的条目整条丢弃(带收购价的 0 溢价是合法记录)。
+// 以节点 uuid 为 key。非法日期/收购价只丢字段不丢条目；
+// 溢价 0 且无收购价的条目整条丢弃（带收购价的 0 溢价是合法记录）。
 export function normalizeCostPremiums(value: unknown): Record<string, CostPremiumEntry> {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
 
@@ -168,26 +167,22 @@ export function normalizeCostPremiums(value: unknown): Record<string, CostPremiu
     const key = uuid.trim();
     if (!key) continue;
 
-    let amount: number;
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) continue;
+
+    const entry = raw as Record<string, unknown>;
+    let amount = Number(entry.amount);
     let paidCny: number | undefined;
-    let acquiredAt: string | undefined;
     let regularPriceCny: number | undefined;
-    if (raw && typeof raw === "object" && !Array.isArray(raw)) {
-      const entry = raw as Record<string, unknown>;
-      amount = Number(entry.amount);
-      const rawPaid = Number(entry.paidCny);
-      if (entry.paidCny != null && Number.isFinite(rawPaid) && rawPaid >= 0) paidCny = rawPaid;
-      acquiredAt = normalizeAcquiredAt(entry.acquiredAt);
-      const rawRegularPrice = Number(entry.regularPriceCny);
-      if (
-        entry.regularPriceCny != null &&
-        Number.isFinite(rawRegularPrice) &&
-        rawRegularPrice >= 0
-      ) {
-        regularPriceCny = rawRegularPrice;
-      }
-    } else {
-      amount = Number(raw);
+    const rawPaid = Number(entry.paidCny);
+    if (entry.paidCny != null && Number.isFinite(rawPaid) && rawPaid >= 0) paidCny = rawPaid;
+    const acquiredAt = normalizeAcquiredAt(entry.acquiredAt);
+    const rawRegularPrice = Number(entry.regularPriceCny);
+    if (
+      entry.regularPriceCny != null &&
+      Number.isFinite(rawRegularPrice) &&
+      rawRegularPrice >= 0
+    ) {
+      regularPriceCny = rawRegularPrice;
     }
 
     if (!Number.isFinite(amount)) amount = 0;

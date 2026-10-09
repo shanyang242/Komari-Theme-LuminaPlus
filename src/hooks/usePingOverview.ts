@@ -177,7 +177,7 @@ export interface PingOverviewMapResult {
 
 /**
  * 一次读取全部公开 Ping 任务及记录，再为每个节点解析唯一线路。这样自动模式可以直接
- * 使用后端任务的 clients 与 weight，无需主题先维护一份重复的节点绑定。
+ * 使用后端任务的 clients 与返回顺序，无需主题先维护一份重复的节点绑定。
  */
 export async function buildPingOverviewMap(
   hours: number,
@@ -201,27 +201,18 @@ export async function buildPingOverviewMap(
     };
   }
 
-  const { overview, tasks, taskBindingsKnown } = await withTimeoutSignal(
+  const { overview, tasks } = await withTimeoutSignal(
     async (requestSignal) => {
-      const overviewPromise = loadOverview(hours, undefined, {
-        signal: requestSignal,
-        entityIds: normalizedUuids,
-      });
-      const tasksPromise = loadTasks({ signal: requestSignal }).then(
-        (items) => items,
-        (error) => {
-          if (requestSignal.aborted) throw error;
-          return null;
-        },
-      );
       const [loadedOverview, publicTasks] = await Promise.all([
-        overviewPromise,
-        tasksPromise,
+        loadOverview(hours, undefined, {
+          signal: requestSignal,
+          entityIds: normalizedUuids,
+        }),
+        loadTasks({ signal: requestSignal }),
       ]);
       return {
         overview: loadedOverview,
-        tasks: publicTasks ?? loadedOverview.tasks,
-        taskBindingsKnown: publicTasks != null,
+        tasks: publicTasks,
       };
     },
     PING_REQUEST_TIMEOUT_MS,
@@ -230,13 +221,7 @@ export async function buildPingOverviewMap(
 
   const selectedTaskIdsByClient = new Map<string, number>();
   for (const uuid of normalizedUuids) {
-    const taskId = resolveHomepagePingTaskId(
-      uuid,
-      tasks,
-      normalizedOverrides,
-      overview.records,
-      !taskBindingsKnown,
-    );
+    const taskId = resolveHomepagePingTaskId(uuid, tasks, normalizedOverrides);
     if (taskId != null) selectedTaskIdsByClient.set(uuid, taskId);
   }
 

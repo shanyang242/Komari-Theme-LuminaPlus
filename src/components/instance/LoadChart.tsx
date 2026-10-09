@@ -12,7 +12,7 @@ import UplotReact from "uplot-react";
 import type uPlot from "uplot";
 import { ArrowDown, ArrowUp, Cpu, Gauge, HardDrive, MemoryStick, Network, RefreshCw } from "lucide-react";
 import { useLoadRecords } from "@/hooks/useRecords";
-import { useNodeMeta, useNodeMetrics } from "@/hooks/useNode";
+import { useNodeMetrics } from "@/hooks/useNode";
 import { InstancePanel, InstanceChartLoading } from "./InstancePanel";
 import {
   buildChartTooltipHooks,
@@ -32,7 +32,6 @@ import {
 } from "./chartData";
 import { formatBytes, formatTrafficRateLabel } from "@/utils/format";
 import { historyChartRangeSeconds, historyCoverageLabel } from "@/utils/historyRange";
-import { resolveLoadRecordTotals } from "@/utils/loadMetrics";
 import { usePreferences } from "@/hooks/usePreferences";
 import type { LoadRecord, NodeMetrics } from "@/types/komari";
 
@@ -378,18 +377,9 @@ export function LoadChart({
   );
   const isRealtime = hours === 0;
   const node = useNodeMetrics(uuid, isRealtime && active);
-  const meta = useNodeMeta(uuid);
   const { resolvedAppearance } = usePreferences();
   const [realtimePoints, setRealtimePoints] = useState<ChartPoint[]>([]);
   const [connectNulls, setConnectNulls] = useState(false);
-  const totalFallbacks = useMemo(
-    () => ({
-      ramTotal: meta?.mem_total,
-      swapTotal: meta?.swap_total,
-      diskTotal: meta?.disk_total,
-    }),
-    [meta?.disk_total, meta?.mem_total, meta?.swap_total],
-  );
 
   useEffect(() => {
     if (!active || !isRealtime || !node) return;
@@ -415,23 +405,20 @@ export function LoadChart({
   );
 
   const historyPoints = useMemo<ChartPoint[]>(() => {
-    const rawPoints = historyRecords.map(({ record, time }) => {
-      const totals = resolveLoadRecordTotals(record, totalFallbacks);
-      return {
+    const rawPoints = historyRecords.map(({ record, time }) => ({
         time,
         cpu: record.cpu,
-        ram: totals.ramTotal > 0 ? (record.ram / totals.ramTotal) * 100 : null,
-        swap: totals.swapTotal > 0 ? (record.swap / totals.swapTotal) * 100 : null,
-        disk: totals.diskTotal > 0 ? (record.disk / totals.diskTotal) * 100 : null,
+        ram: record.ram_total > 0 ? (record.ram / record.ram_total) * 100 : null,
+        swap: record.swap_total > 0 ? (record.swap / record.swap_total) * 100 : null,
+        disk: record.disk_total > 0 ? (record.disk / record.disk_total) * 100 : null,
         netIn: record.net_in,
         netOut: record.net_out,
         process: record.process,
-      };
-    });
+      }));
     const sampled = downsamplePoints(rawPoints, getHistoryRenderLimit(hours));
     const filled = fillMissingMetricPoints(sampled);
     return interpolateMetricGaps(filled, LOAD_INTERPOLATE_KEYS) as ChartPoint[];
-  }, [historyRecords, hours, totalFallbacks]);
+  }, [historyRecords, hours]);
 
   const points = useMemo<ChartPoint[]>(() => {
     if (isRealtime) {
@@ -446,11 +433,8 @@ export function LoadChart({
     return historyPoints;
   }, [historyPoints, isRealtime, realtimePoints]);
 
-  // API 各回退路径不保证返回顺序,最新值必须取自按时间排好序的 historyRecords。
+  // 最新值取自按时间排好序的 historyRecords。
   const latestHistoryRecord = historyRecords[historyRecords.length - 1]?.record;
-  const latestHistoryTotals = latestHistoryRecord
-    ? resolveLoadRecordTotals(latestHistoryRecord, totalFallbacks)
-    : null;
   const sourceRecordCount = historyRecords.length;
   const wasDownsampled = !isRealtime && sourceRecordCount > getHistoryRenderLimit(hours);
   const sampleSummary = isRealtime
@@ -564,8 +548,8 @@ export function LoadChart({
           value={
             isRealtime && node
               ? `${formatBytes(node.ramUsed)} / ${formatBytes(node.ramTotal)}`
-              : latestHistoryRecord && latestHistoryTotals
-                ? `${formatBytes(latestHistoryRecord.ram)} / ${formatBytes(latestHistoryTotals.ramTotal)}`
+              : latestHistoryRecord
+                ? `${formatBytes(latestHistoryRecord.ram)} / ${formatBytes(latestHistoryRecord.ram_total)}`
                 : "—"
           }
           note={
@@ -573,8 +557,8 @@ export function LoadChart({
               ? node.swapTotal
                 ? `Swap ${formatBytes(node.swapUsed)} / ${formatBytes(node.swapTotal)}`
                 : "Swap 无"
-              : latestHistoryRecord && latestHistoryTotals && latestHistoryTotals.swapTotal > 0
-                ? `Swap ${formatBytes(latestHistoryRecord.swap)} / ${formatBytes(latestHistoryTotals.swapTotal)}`
+              : latestHistoryRecord && latestHistoryRecord.swap_total > 0
+                ? `Swap ${formatBytes(latestHistoryRecord.swap)} / ${formatBytes(latestHistoryRecord.swap_total)}`
                 : "Swap 无"
           }
           points={points}
@@ -594,8 +578,8 @@ export function LoadChart({
           value={
             isRealtime && node
               ? `${formatBytes(node.diskUsed)} / ${formatBytes(node.diskTotal)}`
-              : latestHistoryRecord && latestHistoryTotals
-                ? `${formatBytes(latestHistoryRecord.disk)} / ${formatBytes(latestHistoryTotals.diskTotal)}`
+              : latestHistoryRecord
+                ? `${formatBytes(latestHistoryRecord.disk)} / ${formatBytes(latestHistoryRecord.disk_total)}`
                 : "—"
           }
           note="已用空间"

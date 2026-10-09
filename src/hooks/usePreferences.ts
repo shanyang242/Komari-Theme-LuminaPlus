@@ -36,20 +36,7 @@ function resolveAppearance(a: Appearance): ResolvedAppearance {
 }
 
 function parseStoredAppearance(raw: string | null): Appearance | null {
-  if (raw == null) {
-    return null;
-  }
-
-  if (isAppearance(raw)) {
-    return raw;
-  }
-
-  try {
-    const parsed = JSON.parse(raw);
-    return isAppearance(parsed) ? parsed : null;
-  } catch {
-    return null;
-  }
+  return isAppearance(raw) ? raw : null;
 }
 
 function readStorageItem(key: string): string | null {
@@ -78,12 +65,11 @@ function readStoredAppearance() {
 }
 
 function persistAppearance(value: Appearance) {
-  // 存成 JSON 字符串，以兼容会解析这个 key 的旧主题包。
-  writeStorageItem(APPEARANCE_STORAGE_KEY, JSON.stringify(value));
+  writeStorageItem(APPEARANCE_STORAGE_KEY, value);
 }
 
 function persistDefaultAppearance(value: Appearance) {
-  writeStorageItem(APPEARANCE_DEFAULT_STORAGE_KEY, JSON.stringify(value));
+  writeStorageItem(APPEARANCE_DEFAULT_STORAGE_KEY, value);
 }
 
 const listeners = new Set<() => void>();

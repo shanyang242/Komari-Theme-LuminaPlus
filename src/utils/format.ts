@@ -29,10 +29,14 @@ export function trimFixed(value: number, digits: number): string {
 }
 
 export function joinDisplayParts(parts: Array<string | null | undefined>) {
-  return parts
-    .map((part) => part?.trim())
-    .filter((part): part is string => Boolean(part))
-    .join(" · ");
+  let result = "";
+  for (let i = 0; i < parts.length; i++) {
+    const part = parts[i]?.trim();
+    if (!part) continue;
+    if (result.length > 0) result += " · ";
+    result += part;
+  }
+  return result;
 }
 
 export function formatBytes(n: number | undefined | null): string {
@@ -99,8 +103,18 @@ export interface ByteRateDisplay {
 // 按字节算的速率(KB/s · MB/s · GB/s · TB/s)——和 formatBytes 同一套 1024 进制,只是加了 "/s" 后缀。
 // 用在传输速度按字节比按比特更自然的地方(如首页实时带宽和节点卡速度),而不是 bps/Kbps/Mbps。
 export function formatByteRate(bytesPerSec: number | undefined | null): ByteRateDisplay {
-  const [value, unit = "B"] = formatBytes(bytesPerSec).split(" ");
-  return { value, unit: `${unit}/s` };
+  if (!bytesPerSec || bytesPerSec < 0 || !Number.isFinite(bytesPerSec)) {
+    return { value: "0", unit: "B/s" };
+  }
+  let idx = 0;
+  let v = bytesPerSec;
+  while (v >= 1024 && idx < UNITS.length - 1) {
+    v /= 1024;
+    idx += 1;
+  }
+  if (idx === 0) return { value: `${Math.round(v)}`, unit: `${UNITS[idx]}/s` };
+  const dec = v >= 100 ? 0 : v >= 10 ? 1 : 2;
+  return { value: v.toFixed(dec), unit: `${UNITS[idx]}/s` };
 }
 
 export function formatByteRateLabel(bytesPerSec: number | undefined | null): string {
@@ -183,13 +197,17 @@ function inferPlainTagColor(label: string): string {
 /** 把 `tag1<color>;tag2<color2>` 解析成 [{ label, color }]。 */
 export function parseTags(raw: string | undefined | null): Array<{ label: string; color: string }> {
   if (!raw) return [];
-  return raw
-    .split(";")
-    .map((s) => s.trim())
-    .filter(Boolean)
-    .map((item) => {
-      const m = item.match(/^(.*?)<([a-zA-Z]+)>$/);
-      if (m) return { label: m[1].trim(), color: m[2].toLowerCase() };
-      return { label: item, color: inferPlainTagColor(item) };
-    });
+  const parts = raw.split(";");
+  const result: Array<{ label: string; color: string }> = [];
+  for (let i = 0; i < parts.length; i++) {
+    const item = parts[i].trim();
+    if (!item) continue;
+    const m = item.match(/^(.*?)<([a-zA-Z]+)>$/);
+    if (m) {
+      result.push({ label: m[1].trim(), color: m[2].toLowerCase() });
+    } else {
+      result.push({ label: item, color: inferPlainTagColor(item) });
+    }
+  }
+  return result;
 }

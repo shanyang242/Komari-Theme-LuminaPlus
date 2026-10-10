@@ -8,6 +8,7 @@ import {
   formatTrafficRateLabel,
   formatUptimeDays,
   getExpireDaysRemaining,
+  joinDisplayParts,
   parseTags,
   resolveExpireTimestamp,
   trimFixed,
@@ -169,5 +170,22 @@ describe("parseTags", () => {
     expect(parseTags("CN2GIA")).toEqual([{ label: "CN2GIA", color: "blue" }]);
     expect(parseTags("4837")).toEqual([{ label: "4837", color: "green" }]);
     expect(parseTags("Random")).toEqual([{ label: "Random", color: "violet" }]);
+  });
+
+  it("handles whitespace, trailing semicolons, and empty entries gracefully", () => {
+    expect(parseTags("  tag1 ; ; tag2<GREEN> ; ")).toEqual([
+      { label: "tag1", color: "violet" },
+      { label: "tag2", color: "green" },
+    ]);
+  });
+});
+
+describe("joinDisplayParts", () => {
+  it("joins non-empty parts with separator and ignores empty or nullish values", () => {
+    expect(joinDisplayParts(["US", "Los Angeles", null, "  ", undefined, "1 Gbps"])).toBe(
+      "US · Los Angeles · 1 Gbps",
+    );
+    expect(joinDisplayParts([])).toBe("");
+    expect(joinDisplayParts([null, undefined, ""])).toBe("");
   });
 });

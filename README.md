@@ -8,6 +8,17 @@
 
 基于 [komari-theme-Lumina](https://github.com/stqfdyr/komari-theme-Lumina) 的增强分支。感谢原作者 [stqfdyr](https://github.com/stqfdyr) 开源 Lumina 主题。
 
+## ✨ 特性亮点
+
+- **📊 多形态节点展示**：支持大卡片、紧凑卡片、移动端紧凑布局自由切换；集成文字健康度评级与今日流量明细。
+- **🔀 自由排序与交互**：管理员可在首页长按拖拽分组 Tab 或地区标签调整顺序，支持 `Alt + ←/→` 键盘排序与 Esc 取消。
+- **🌐 深度网络监控**：卡片支持三网延迟快速预览；支持单服务器自定义配置探测点与模拟延迟；详情页支持延迟与丢包率图表切换及断点连线。
+- **🎨 丰富视觉定制**：支持深浅色模式、自定义背景图、毛玻璃透明度调节（Solid / Glass）、桌面端循环视频背景，以及 6 种季节与庆典氛围动效（樱花、细雪、落叶等）。
+- **💰 资产统计与隐私控制**：多币种服务器月付/年付成本统计与实时汇率换算；支持向未登录访客隐藏费用与资产信息；支持按服务器自定义流量重置日。
+- **🔌 插件与生态联动**：无缝兼容 [Komari-IP-Info](https://github.com/shanyang242/Komari-IP-Info) 全球延迟与 IP 详情插件，自适应兼容[自定义后台路径插件](https://github.com/Grandova/Backend-Customize-path-For-Komari)。
+- **📱 移动端体验优化**：原生级 PWA 体验，针对 iOS 独立主屏模式提供自然手势下拉刷新与离线提示。
+- **⚡ 极致性能与工程化**：数据流与核心格式化函数深度优化，避免内存碎片与多余中间数组；配备完备的单元测试套件（Vitest）与独立 Mock 审查环境。
+
 ## 效果预览
 
 <p align="center">
@@ -194,8 +205,9 @@ chmod 644 /komari/data/theme/LuminaPlus/dist/assets/my-background.mp4
 - [komari-theme-purcarte](https://github.com/Montia37/komari-theme-purcarte)
 - [Komari 主题开发文档](https://komari-document.pages.dev/)
 
-## 本地 UI 审查
+## 本地开发与测试
 
+### 本地 UI 审查
 无需连接 Komari 后端也可以检查完整数据界面：
 
 ```bash
@@ -203,6 +215,19 @@ npm run dev -- --host 0.0.0.0
 ```
 
 打开开发地址并追加 `?mock=1`。该模式只在 Vite 开发环境启用，会提供正常、高负载、临期、离线、多地区与多币种节点；生产构建不会包含这份测试数据。去掉查询参数即可恢复真实接口。
+
+### 运行测试与打包
+
+```bash
+# 运行单元测试
+npm test
+
+# 代码规范检查
+npm run lint
+
+# 构建并打包主题发布包（zip）
+npm run package
+```
 
 ## Star History
 

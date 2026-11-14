@@ -147,6 +147,14 @@ export interface ThemeSettings {
   compactShowUptime?: boolean;
   showConnections?: boolean;
   showTodayTrafficPopover?: boolean;
+  showMerchantLinks?: boolean;
+  nodeMerchantLinks?: Record<
+    string,
+    {
+      url?: string;
+      iconUrl?: string;
+    }
+  >;
   trafficResetDays?: Record<string, number>;
   hiddenNodes?: string[];
   costIgnoredNodes?: string[];

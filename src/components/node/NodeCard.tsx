@@ -32,8 +32,10 @@ import { LatencyBars } from "./LatencyBars";
 import { QualityBars } from "./QualityBars";
 import { CanvasStrip, mixSrgbTowardWhite, safeCanvasColor } from "./CanvasStrip";
 import { NodeTodayTrafficPopover } from "./NodeTodayTrafficPopover";
+import { MerchantLinkAction } from "./MerchantLinkAction";
 import { TrafficQuotaLabel } from "./TrafficQuotaLabel";
 import type { TrafficResetDisplay } from "@/utils/trafficReset";
+import type { NodeMerchantLink } from "@/utils/merchantLinks";
 import {
   joinTagTitle,
   nodeDetailLinkLabels,
@@ -106,6 +108,7 @@ export const NodeCard = memo(function NodeCard({
     osName,
   } = model;
   const showConnections = themeSettings.isReady && themeSettings.showConnections;
+  const showMerchantLink = themeSettings.isReady && themeSettings.showMerchantLinks;
 
   return (
     <article
@@ -116,6 +119,8 @@ export const NodeCard = memo(function NodeCard({
           node={node}
           subtitle={subtitle}
           osName={osName}
+          showMerchantLink={showMerchantLink}
+          merchantLink={themeSettings.nodeMerchantLinks[node.uuid]}
           showTodayTraffic={showTodayTraffic}
         />
 
@@ -197,11 +202,15 @@ function NodeCardHeader({
   node,
   subtitle,
   osName,
+  showMerchantLink,
+  merchantLink,
   showTodayTraffic,
 }: {
   node: NodeCardNode;
   subtitle: string;
   osName: string;
+  showMerchantLink: boolean;
+  merchantLink?: NodeMerchantLink;
   showTodayTraffic: boolean;
 }) {
   const detailLabels = nodeDetailLinkLabels(node.name, osName);
@@ -230,6 +239,12 @@ function NodeCardHeader({
         )}
       </div>
       <div className="server-card-actions">
+        {showMerchantLink && (
+          <MerchantLinkAction
+            link={merchantLink}
+            className="server-card-detail-link"
+          />
+        )}
         {showTodayTraffic && <NodeTodayTrafficPopover uuid={node.uuid} />}
         <Link
           to={`/instance/${encodeURIComponent(node.uuid)}`}

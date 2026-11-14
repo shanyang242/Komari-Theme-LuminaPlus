@@ -32,6 +32,10 @@ import {
   type HomepageMultiPingNodeTaskIds,
   type HomepagePingTaskBindings,
 } from "@/utils/pingTasks";
+import {
+  normalizeNodeMerchantLinks,
+  type NodeMerchantLinks,
+} from "@/utils/merchantLinks";
 
 export type Appearance = "system" | "light" | "dark";
 export type NodeViewMode = "large" | "compact" | "mini" | "list";
@@ -91,6 +95,8 @@ export interface ResolvedThemeSettings {
   compactShowUptime: boolean;
   showConnections: boolean;
   showTodayTrafficPopover: boolean;
+  showMerchantLinks: boolean;
+  nodeMerchantLinks: NodeMerchantLinks;
   trafficResetDays: Record<string, number>;
   hiddenNodes: string[];
   costIgnoredNodes: string[];
@@ -146,6 +152,8 @@ export const DEFAULT_THEME_SETTINGS: ResolvedThemeSettings = {
   compactShowUptime: true,
   showConnections: false,
   showTodayTrafficPopover: true,
+  showMerchantLinks: false,
+  nodeMerchantLinks: {},
   trafficResetDays: {},
   hiddenNodes: [],
   costIgnoredNodes: [],
@@ -321,6 +329,9 @@ export function normalizeThemeSettings(
     // 默认关闭(需手动开启):连接数是个小众指标,很多 agent 也不上报,所以只在显式启用时才显示。
     showConnections: settings?.showConnections === true,
     showTodayTrafficPopover: enabledUnlessFalse(settings?.showTodayTrafficPopover),
+    // 默认关闭：只有站长显式开启后，卡片标题操作区才展示商家入口。
+    showMerchantLinks: settings?.showMerchantLinks === true,
+    nodeMerchantLinks: normalizeNodeMerchantLinks(settings?.nodeMerchantLinks),
     trafficResetDays: normalizeTrafficResetDays(settings?.trafficResetDays),
     hiddenNodes: normalizeNodeIdentityList(settings?.hiddenNodes),
     costIgnoredNodes: normalizeCostIgnoredNodes(settings?.costIgnoredNodes),

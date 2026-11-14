@@ -37,8 +37,10 @@ import {
 } from "./nodeCardShared";
 import { IpStackBadges } from "./IpStackBadges";
 import { NodeTodayTrafficPopover } from "./NodeTodayTrafficPopover";
+import { MerchantLinkAction } from "./MerchantLinkAction";
 import { TrafficQuotaLabel } from "./TrafficQuotaLabel";
 import type { TrafficResetDisplay } from "@/utils/trafficReset";
+import type { NodeMerchantLink } from "@/utils/merchantLinks";
 import type {
   NodeInfo,
   NodeMetrics,
@@ -317,10 +319,14 @@ function CompactHealthItem({
 function CompactNodeHeader({
   node,
   osName,
+  showMerchantLink,
+  merchantLink,
   showTodayTraffic,
 }: {
   node: CompactNode;
   osName: string;
+  showMerchantLink: boolean;
+  merchantLink?: NodeMerchantLink;
   showTodayTraffic: boolean;
 }) {
   const detailLabels = nodeDetailLinkLabels(node.name, osName);
@@ -339,6 +345,12 @@ function CompactNodeHeader({
         </div>
       </div>
       <div className="compact-node-actions">
+        {showMerchantLink && (
+          <MerchantLinkAction
+            link={merchantLink}
+            className="compact-node-detail-link"
+          />
+        )}
         {showTodayTraffic && (
           <NodeTodayTrafficPopover uuid={node.uuid} size={14} />
         )}
@@ -705,6 +717,7 @@ export const CompactNodeCard = memo(function CompactNodeCard({
   const showBilling = themeSettings.isReady && themeSettings.compactShowBilling;
   const showUptime = themeSettings.isReady && themeSettings.compactShowUptime;
   const showConnections = themeSettings.isReady && themeSettings.showConnections;
+  const showMerchantLink = themeSettings.isReady && themeSettings.showMerchantLinks;
   // 开关关闭或节点离线时,完全跳过格式化工作。
   const uptimeLabel = showUptime && !isOffline ? formatCompactUptime(node.uptime) : "";
 
@@ -713,6 +726,8 @@ export const CompactNodeCard = memo(function CompactNodeCard({
       <CompactNodeHeader
         node={node}
         osName={osName}
+        showMerchantLink={showMerchantLink}
+        merchantLink={themeSettings.nodeMerchantLinks[node.uuid]}
         showTodayTraffic={showTodayTraffic}
       />
       <CompactNodeChips subtitle={subtitle} tags={footerTags} ipv4={node.ipv4} ipv6={node.ipv6} />

@@ -16,8 +16,10 @@ import { Flag } from "@/components/ui/Flag";
 import { OsLogo } from "@/components/ui/OsLogo";
 import { IpStackBadges } from "./IpStackBadges";
 import { NodeTodayTrafficPopover } from "./NodeTodayTrafficPopover";
+import { MerchantLinkAction } from "./MerchantLinkAction";
 import { HealthBucketTooltip } from "./HealthBucketTooltip";
 import { useNodeCardModel } from "@/hooks/useNodeCardModel";
+import { useThemeSettings } from "@/hooks/useThemeSettings";
 import { speedRateColor } from "@/utils/metricTone";
 import { supportsFineHover } from "@/utils/mediaQuery";
 import {
@@ -28,6 +30,7 @@ import {
 } from "./nodeCardShared";
 import { formatHealthBucketTooltip } from "./pingBucketText";
 import { formatBytes, type ByteRateDisplay } from "@/utils/format";
+import type { NodeMerchantLink } from "@/utils/merchantLinks";
 import type { NodeInfo, NodeMetrics, PingOverviewItem, PingOverviewBucket } from "@/types/komari";
 
 // 迷你卡固定为巡检布局，不跟随紧凑卡的可选指标开关；数据仍走共享模型。
@@ -39,10 +42,14 @@ type MiniTag = { label: string; color: string };
 function MiniHeader({
   node,
   osName,
+  showMerchantLink,
+  merchantLink,
   showTodayTraffic,
 }: {
   node: MiniNode;
   osName: string;
+  showMerchantLink: boolean;
+  merchantLink?: NodeMerchantLink;
   showTodayTraffic: boolean;
 }) {
   const detailLabels = nodeDetailLinkLabels(node.name, osName);
@@ -53,6 +60,13 @@ function MiniHeader({
       <Link to={detailHref} className="mini-node-title" title={node.name}>
         {node.name}
       </Link>
+      {showMerchantLink && (
+        <MerchantLinkAction
+          link={merchantLink}
+          className="mini-node-os"
+          size={13}
+        />
+      )}
       {showTodayTraffic && <NodeTodayTrafficPopover uuid={node.uuid} size={13} />}
       <Link
         to={detailHref}
@@ -405,6 +419,7 @@ export const MiniNodeCard = memo(function MiniNodeCard({
   const model = useNodeCardModel(uuid, {
     pingBucketCount: HEALTH_BAR_COUNT,
   });
+  const themeSettings = useThemeSettings();
 
   if (!model.node) {
     return <article className="mini-node-card animate-pulse" aria-busy />;
@@ -427,12 +442,15 @@ export const MiniNodeCard = memo(function MiniNodeCard({
     isOffline,
     osName,
   } = model;
+  const showMerchantLink = themeSettings.isReady && themeSettings.showMerchantLinks;
 
   return (
     <article className={clsx("mini-node-card", isOffline && "is-offline")}>
       <MiniHeader
         node={node}
         osName={osName}
+        showMerchantLink={showMerchantLink}
+        merchantLink={themeSettings.nodeMerchantLinks[node.uuid]}
         showTodayTraffic={showTodayTraffic}
       />
       <MiniChips

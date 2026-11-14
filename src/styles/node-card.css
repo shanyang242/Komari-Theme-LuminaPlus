@@ -114,6 +114,23 @@
   background: var(--fill-tertiary);
 }
 
+.merchant-link-action.is-disabled {
+  cursor: default;
+  opacity: 0.52;
+}
+
+.server-card-detail-link.merchant-link-action.is-disabled:hover,
+.compact-node-detail-link.merchant-link-action.is-disabled:hover,
+.mini-node-os.merchant-link-action.is-disabled:hover {
+  color: var(--text-tertiary);
+  background: transparent;
+}
+
+.merchant-link-icon {
+  display: block;
+  object-fit: contain;
+}
+
 .server-card-subtitle {
   display: inline-flex;
   width: fit-content;

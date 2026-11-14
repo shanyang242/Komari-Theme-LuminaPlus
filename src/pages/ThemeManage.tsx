@@ -18,6 +18,7 @@ import {
   Search,
   SlidersHorizontal,
   Sparkles,
+  Store,
   Sun,
   SunMoon,
   Video,
@@ -26,6 +27,7 @@ import {
 import { clsx } from "clsx";
 import { InstancePanel } from "@/components/instance/InstancePanel";
 import { MultiPingNodeConfigPanel } from "@/components/theme/MultiPingNodeConfigPanel";
+import { MerchantLinkConfigPanel } from "@/components/theme/MerchantLinkConfigPanel";
 import { TrafficResetConfigPanel } from "@/components/theme/TrafficResetConfigPanel";
 import { Spinner } from "@/components/ui/Spinner";
 import { Flag } from "@/components/ui/Flag";
@@ -64,6 +66,10 @@ import {
   type CostPremiumEntry,
 } from "@/utils/cost";
 import { normalizeNodeIdentityList } from "@/utils/nodeIdentity";
+import {
+  normalizeNodeMerchantLinks,
+  type NodeMerchantLinks,
+} from "@/utils/merchantLinks";
 import { normalizeTrafficResetDays } from "@/utils/trafficReset";
 import {
   HOMEPAGE_MULTI_PING_TASK_COUNT,
@@ -317,6 +323,12 @@ function pickManagedThemeSettings(settings: ResolvedThemeSettings) {
     compactShowUptime: settings.compactShowUptime,
     showConnections: settings.showConnections,
     showTodayTrafficPopover: settings.showTodayTrafficPopover,
+    showMerchantLinks: settings.showMerchantLinks,
+    nodeMerchantLinks: Object.fromEntries(
+      Object.keys(settings.nodeMerchantLinks)
+        .sort()
+        .map((uuid) => [uuid, settings.nodeMerchantLinks[uuid]]),
+    ),
     trafficResetDays: normalizeTrafficResetDays(settings.trafficResetDays),
     hiddenNodes: settings.hiddenNodes,
     costIgnoredNodes: settings.costIgnoredNodes,
@@ -788,6 +800,72 @@ const MultiPingNodeConfigControl = memo(function MultiPingNodeConfigControl({
   );
 });
 
+const MerchantLinkConfigControl = memo(function MerchantLinkConfigControl({
+  clients,
+  links,
+  configuredNodeCount,
+  enabled,
+  disabled,
+  saving,
+  saveDisabled,
+  saveError,
+  onChange,
+  onSave,
+}: {
+  clients: AdminClient[];
+  links: NodeMerchantLinks;
+  configuredNodeCount: number;
+  enabled: boolean;
+  disabled: boolean;
+  saving: boolean;
+  saveDisabled: boolean;
+  saveError: string | null;
+  onChange: (next: NodeMerchantLinks) => void;
+  onSave: () => Promise<boolean>;
+}) {
+  const [open, setOpen] = useState(false);
+  const close = useCallback(() => setOpen(false), []);
+
+  return (
+    <>
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-[var(--hairline)] pt-4">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2 text-[12px] font-medium text-[var(--text-primary)]">
+            <Store size={14} />
+            按服务器配置商家官网
+          </div>
+          <p className="mt-1 text-[11px] text-[var(--text-tertiary)]">
+            {configuredNodeCount} / {clients.length} 台已配置；卡片入口当前{enabled ? "显示" : "隐藏"}
+          </p>
+        </div>
+        <button
+          type="button"
+          disabled={disabled}
+          onClick={() => setOpen(true)}
+          className="theme-manage-button is-compact"
+        >
+          <Store size={13} />
+          配置商家链接
+        </button>
+      </div>
+
+      {open && (
+        <MerchantLinkConfigPanel
+          open
+          clients={clients}
+          links={links}
+          saving={saving}
+          saveDisabled={saveDisabled}
+          saveError={saveError}
+          onChange={onChange}
+          onClose={close}
+          onSave={onSave}
+        />
+      )}
+    </>
+  );
+});
+
 export function ThemeManage() {
   const now = useHourlyClock();
   const adminEntryPath = useAdminEntryPath();
@@ -1093,6 +1171,7 @@ export function ThemeManage() {
       homepageMultiPingNodeTaskIds: normalizeHomepageMultiPingNodeTaskIds(
         rest.homepageMultiPingNodeTaskIds,
       ),
+      nodeMerchantLinks: normalizeNodeMerchantLinks(rest.nodeMerchantLinks),
       trafficRatingLabels: ratingLabels.traffic,
       bandwidthRatingLabels: ratingLabels.bandwidth,
       assetRatingLabels: ratingLabels.asset,
@@ -1167,6 +1246,13 @@ export function ThemeManage() {
       sortedClients.filter((client) => draft.homepageMultiPingNodeTaskIds[client.uuid])
         .length,
     [draft.homepageMultiPingNodeTaskIds, sortedClients],
+  );
+  const merchantConfiguredNodeCount = useMemo(
+    () =>
+      sortedClients.filter((client) =>
+        Boolean(draft.nodeMerchantLinks[client.uuid]?.url.trim()),
+      ).length,
+    [draft.nodeMerchantLinks, sortedClients],
   );
 
   // 每个 client 归属哪个 task 的反查,只在绑定草稿变化时重建。与「全选可用」reducer
@@ -1915,6 +2001,13 @@ export function ThemeManage() {
               onPatch={patch}
             />
             <ToggleRow
+              field="showMerchantLinks"
+              title="显示商家链接入口"
+              desc="在大卡片、小卡片与迷你卡片标题旁显示商家入口。默认关闭；与今日流量同时开启时位于其左侧。"
+              checked={draft.showMerchantLinks}
+              onPatch={patch}
+            />
+            <ToggleRow
               field="showConnections"
               title="显示连接数（TCP/UDP）"
               desc="在大卡片与小卡片展示实时 TCP / UDP 连接数；需被控端上报，未上报显示 0。默认关闭。"
@@ -1922,6 +2015,18 @@ export function ThemeManage() {
               onPatch={patch}
             />
           </div>
+          <MerchantLinkConfigControl
+            clients={sortedClients}
+            links={draft.nodeMerchantLinks}
+            configuredNodeCount={merchantConfiguredNodeCount}
+            enabled={draft.showMerchantLinks}
+            disabled={clientsLoading || Boolean(clientsError)}
+            saving={saving}
+            saveDisabled={saveDisabled}
+            saveError={error}
+            onChange={(next) => patch("nodeMerchantLinks", next)}
+            onSave={handleSave}
+          />
         </div>
 
         <div className="mt-4">

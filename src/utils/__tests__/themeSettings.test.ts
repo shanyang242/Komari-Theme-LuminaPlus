@@ -8,6 +8,33 @@ import {
 import { DEFAULT_BACKGROUND_VIDEO_URL } from "@/utils/background";
 
 describe("normalizeThemeSettings", () => {
+  it("keeps merchant links hidden by default and normalizes per-node settings", () => {
+    const defaults = normalizeThemeSettings({});
+    expect(defaults.showMerchantLinks).toBe(false);
+    expect(defaults.nodeMerchantLinks).toEqual({});
+
+    expect(
+      normalizeThemeSettings({
+        showMerchantLinks: true,
+        nodeMerchantLinks: {
+          " node-a ": {
+            url: " https://merchant.example.com ",
+            iconUrl: " https://cdn.example.com/logo.png ",
+          },
+          empty: { url: " ", iconUrl: " " },
+        },
+      }),
+    ).toMatchObject({
+      showMerchantLinks: true,
+      nodeMerchantLinks: {
+        "node-a": {
+          url: "https://merchant.example.com",
+          iconUrl: "https://cdn.example.com/logo.png",
+        },
+      },
+    });
+  });
+
   it("uses only theme traffic reset overrides, ignoring backend reset fields", () => {
     expect(normalizeThemeSettings({}).trafficResetDays).toEqual({});
     expect(normalizeThemeSettings({ traffic_reset_day: 20 }).trafficResetDays).toEqual({});

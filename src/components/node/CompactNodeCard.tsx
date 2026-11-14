@@ -34,6 +34,7 @@ import {
 } from "./nodeCardShared";
 import { IpStackBadges } from "./IpStackBadges";
 import { TrafficQuotaLabel } from "./TrafficQuotaLabel";
+import { MerchantLinkAction } from "./MerchantLinkAction";
 import type { TrafficResetDisplay } from "@/utils/trafficReset";
 import type {
   NodeInfo,
@@ -313,9 +314,11 @@ function CompactHealthItem({
 function CompactNodeHeader({
   node,
   osName,
+  merchantLink,
 }: {
   node: CompactNode;
   osName: string;
+  merchantLink: import("@/utils/merchantLinks").NodeMerchantLink | undefined;
 }) {
   const detailLabels = nodeDetailLinkLabels(node.name, osName);
   return (
@@ -333,6 +336,10 @@ function CompactNodeHeader({
         </div>
       </div>
       <div className="compact-node-actions">
+        <MerchantLinkAction
+          link={merchantLink}
+          className="compact-node-detail-link"
+        />
         <Link
           to={`/instance/${encodeURIComponent(node.uuid)}`}
           className="compact-node-detail-link"
@@ -683,6 +690,7 @@ export const CompactNodeCard = memo(function CompactNodeCard({
       <CompactNodeHeader
         node={node}
         osName={osName}
+        merchantLink={themeSettings.nodeMerchantLinks[node.uuid]}
       />
       <CompactNodeChips subtitle={subtitle} tags={footerTags} ipv4={node.ipv4} ipv6={node.ipv6} />
       <CompactNodeVitals node={node} loadFraction={loadFraction} />

@@ -13,12 +13,14 @@ import {
   Rows3,
   Save,
   SlidersHorizontal,
+  Store,
   Sun,
   SunMoon,
   Wallpaper,
 } from "lucide-react";
 import { InstancePanel } from "@/components/instance/InstancePanel";
 import { PingNodeConfigPanel } from "@/components/theme/PingNodeConfigPanel";
+import { MerchantLinkConfigPanel } from "@/components/theme/MerchantLinkConfigPanel";
 import { Spinner } from "@/components/ui/Spinner";
 import { Flag } from "@/components/ui/Flag";
 import { usePublicConfig } from "@/hooks/usePublicConfig";
@@ -59,6 +61,10 @@ import {
   normalizeHomepagePingNodeTaskIds,
   type HomepagePingNodeTaskIds,
 } from "@/utils/pingTasks";
+import {
+  normalizeNodeMerchantLinks,
+  type NodeMerchantLinks,
+} from "@/utils/merchantLinks";
 import {
   DEFAULT_THEME_SETTINGS,
   normalizeThemeSettings,
@@ -133,6 +139,11 @@ function pickManagedThemeSettings(settings: ResolvedThemeSettings) {
     mobileNodeViewMode: settings.mobileNodeViewMode,
     hideAdminEntryWhenLoggedOut: settings.hideAdminEntryWhenLoggedOut,
     homepagePingNodeTaskIds: settings.homepagePingNodeTaskIds,
+    nodeMerchantLinks: Object.fromEntries(
+      Object.keys(settings.nodeMerchantLinks)
+        .sort()
+        .map((uuid) => [uuid, settings.nodeMerchantLinks[uuid]]),
+    ),
     fakePingForUnbound: settings.fakePingForUnbound,
     showHomeOverview: settings.showHomeOverview,
     showGroupTabs: settings.showGroupTabs,
@@ -441,6 +452,70 @@ const PingNodeConfigControl = memo(function PingNodeConfigControl({
   );
 });
 
+const MerchantLinkConfigControl = memo(function MerchantLinkConfigControl({
+  clients,
+  links,
+  configuredNodeCount,
+  disabled,
+  saving,
+  saveDisabled,
+  saveError,
+  onChange,
+  onSave,
+}: {
+  clients: AdminClient[];
+  links: NodeMerchantLinks;
+  configuredNodeCount: number;
+  disabled: boolean;
+  saving: boolean;
+  saveDisabled: boolean;
+  saveError: string | null;
+  onChange: (next: NodeMerchantLinks) => void;
+  onSave: () => Promise<boolean>;
+}) {
+  const [open, setOpen] = useState(false);
+  const close = useCallback(() => setOpen(false), []);
+
+  return (
+    <>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2 text-[12px] font-medium text-[var(--text-primary)]">
+            <Store size={14} />
+            实例商家官网
+          </div>
+          <p className="mt-1 text-[11px] text-[var(--text-tertiary)]">
+            {configuredNodeCount} / {clients.length} 台实例已配置跳转地址
+          </p>
+        </div>
+        <button
+          type="button"
+          disabled={disabled}
+          onClick={() => setOpen(true)}
+          className="theme-manage-button is-compact"
+        >
+          <Store size={13} />
+          配置商家链接
+        </button>
+      </div>
+
+      {open && (
+        <MerchantLinkConfigPanel
+          open
+          clients={clients}
+          links={links}
+          saving={saving}
+          saveDisabled={saveDisabled}
+          saveError={saveError}
+          onChange={onChange}
+          onClose={close}
+          onSave={onSave}
+        />
+      )}
+    </>
+  );
+});
+
 export function ThemeManage() {
   const now = useHourlyClock();
   const {
@@ -482,6 +557,14 @@ export function ThemeManage() {
     },
     [],
   );
+  const patchMerchantLinks = useCallback((next: NodeMerchantLinks) => {
+    editVersionRef.current += 1;
+    setDraft((prev) =>
+      JSON.stringify(prev.nodeMerchantLinks) === JSON.stringify(next)
+        ? prev
+        : { ...prev, nodeMerchantLinks: next },
+    );
+  }, []);
 
   const {
     data: pingTasks,
@@ -690,6 +773,7 @@ export function ThemeManage() {
       homepagePingNodeTaskIds: normalizeHomepagePingNodeTaskIds(
         rest.homepagePingNodeTaskIds,
       ),
+      nodeMerchantLinks: normalizeNodeMerchantLinks(rest.nodeMerchantLinks),
       hiddenNodes: normalizeNodeIdentityList(hiddenNodesText),
       costIgnoredNodes: normalizeCostIgnoredNodes(costIgnoredText),
       costPremiums: normalizeCostPremiums(rest.costPremiums),
@@ -732,6 +816,13 @@ export function ThemeManage() {
         Object.prototype.hasOwnProperty.call(draft.homepagePingNodeTaskIds, client.uuid),
       ).length,
     [draft.homepagePingNodeTaskIds, sortedClients],
+  );
+  const merchantConfiguredNodeCount = useMemo(
+    () =>
+      sortedClients.filter((client) =>
+        Boolean(draft.nodeMerchantLinks[client.uuid]?.url.trim()),
+      ).length,
+    [draft.nodeMerchantLinks, sortedClients],
   );
 
   const handleSave = async (): Promise<boolean> => {
@@ -1219,12 +1310,13 @@ export function ThemeManage() {
               aria-hidden
               className="pointer-events-none absolute inset-x-3 top-2 z-[1] text-[13px] font-medium text-[var(--text-secondary)]"
             >
-              忽略本期剩余价值
+              忽略所有费用计算
             </span>
             <textarea
               value={draft.costIgnoredText}
               onChange={(event) => patch("costIgnoredText", event.target.value)}
-              aria-label="忽略本期剩余价值"
+              aria-label="忽略所有费用计算"
+              placeholder="填写实例名称或 UUID，每行一个；不计入剩余价值、年费、月费及溢价计算"
               className="surface-inset min-h-[160px] w-full flex-1 resize-none px-3 pb-2 pt-8 text-[13px] outline-none"
             />
           </label>
@@ -1322,6 +1414,35 @@ export function ThemeManage() {
               </a>
             </div>
           )}
+        </div>
+      </InstancePanel>
+
+      <InstancePanel
+        kicker={<><span className="instance-panel-kicker-num">09</span>商家</>}
+        title="商家官网跳转"
+        aside={
+          <div className="text-[11px] text-[var(--text-tertiary)]">
+            {clientsLoading
+              ? "载入中"
+              : `已配置 ${merchantConfiguredNodeCount} 个节点`}
+          </div>
+        }
+      >
+        <div className="surface-inset px-4 py-4">
+          <p className="mb-4 text-[12px] leading-relaxed text-[var(--text-secondary)]">
+            节点卡片始终显示商家图标；未填写官网时使用不可点击的默认图标，填写后点击将在新标签页打开商家官网。
+          </p>
+          <MerchantLinkConfigControl
+            clients={sortedClients}
+            links={draft.nodeMerchantLinks}
+            configuredNodeCount={merchantConfiguredNodeCount}
+            disabled={clientsLoading}
+            saving={saving}
+            saveError={error}
+            saveDisabled={!isDirty || draftCostRateApiUrlInvalid}
+            onChange={patchMerchantLinks}
+            onSave={handleSave}
+          />
         </div>
       </InstancePanel>
 

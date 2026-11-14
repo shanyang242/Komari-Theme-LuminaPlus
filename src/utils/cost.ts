@@ -101,7 +101,7 @@ interface CostSummaryDetail {
   premiumRemainingCny: number;
   billingCycleDays: number;
   counted: boolean;
-  /** 仅从下一期周期支出中排除，当前剩余价值仍参与统计。 */
+  /** 从所有费用计算中排除，包括剩余价值、周期支出和溢价。 */
   billingIgnored: boolean;
   note: string;
 }
@@ -519,6 +519,29 @@ export function calculateCostSummary(
     const name = node.name || node.display_name || node.remark || node.uuid;
     const cycleDays = billingCycleDays(node.billing_cycle);
     const billingIgnored = nodeMatchesIdentitySet(node, ignored);
+    if (billingIgnored) {
+      details.push({
+        uuid: node.uuid,
+        name: String(name || "未命名服务器"),
+        region: String(node.region || ""),
+        expiredAt: String(node.expired_at || ""),
+        weight: Number(node.weight) || 0,
+        priceCny: 0,
+        monthlyCny: 0,
+        remainingCny: 0,
+        premiumCny: 0,
+        regularPriceCny: null,
+        payback: { status: "unconfigured", remainingDays: null, remainingCny: 0, netCny: 0 },
+        amortMonths: null,
+        premiumMonthlyCny: 0,
+        premiumRemainingCny: 0,
+        billingCycleDays: cycleDays,
+        billingIgnored: true,
+        counted: false,
+        note: "已忽略费用",
+      });
+      continue;
+    }
     // 溢价以人民币直接记录、不依赖价格与汇率,免费/汇率缺失节点照样计入 premiumTotalCny,
     // 不能因价格校验不过就静默丢掉;它不参与 remaining/monthly/totalCny。
     const entry = premiums[node.uuid];
@@ -593,10 +616,8 @@ export function calculateCostSummary(
 
     // `totalCny` 是年化支出(月度 ×12),这样不同账单周期的节点能在同一口径上相加;永久/一次性节点
     // (monthly === 0)对这个周期性总额不贡献。
-    if (!billingIgnored) {
-      totalCny += monthly * 12;
-      monthlyCny += monthly;
-    }
+    totalCny += monthly * 12;
+    monthlyCny += monthly;
     remainingCny += remaining;
     premiumTotalCny += premium;
     premiumMonthlyTotalCny += premiumMonthly;
@@ -614,10 +635,10 @@ export function calculateCostSummary(
         now,
         node.expired_at,
       ),
-      monthlyCny: billingIgnored ? 0 : monthly,
+      monthlyCny: monthly,
       remainingCny: remaining,
       counted: true,
-      note: billingIgnored ? "忽略下期账单" : "",
+      note: "",
     });
   }
 

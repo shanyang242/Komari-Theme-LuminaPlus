@@ -117,6 +117,13 @@ export interface ThemeSettings {
   hideAdminEntryWhenLoggedOut?: boolean;
   showPingChart?: boolean;
   homepagePingNodeTaskIds?: Record<string, number | null>;
+  nodeMerchantLinks?: Record<
+    string,
+    {
+      url?: string;
+      iconUrl?: string;
+    }
+  >;
   fakePingForUnbound?: boolean;
   showHomeOverview?: boolean;
   showGroupTabs?: boolean;

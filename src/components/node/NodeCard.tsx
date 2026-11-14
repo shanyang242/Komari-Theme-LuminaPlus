@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { useNodeCardModel } from "@/hooks/useNodeCardModel";
 import { usePreferences } from "@/hooks/usePreferences";
+import { useThemeSettings } from "@/hooks/useThemeSettings";
 import { useMetricColorsVersion } from "@/hooks/useMetricColors";
 import { formatBytes } from "@/utils/format";
 import {
@@ -38,6 +39,7 @@ import {
 } from "./nodeCardShared";
 import { IpStackBadges } from "./IpStackBadges";
 import { HealthBucketTooltip } from "./HealthBucketTooltip";
+import { MerchantLinkAction } from "./MerchantLinkAction";
 import { formatHealthBucketTooltip } from "./pingBucketText";
 import { clsx } from "clsx";
 import type { NodeInfo, NodeMetrics, PingOverviewBucket, PingOverviewItem, TrafficTrendSample } from "@/types/komari";
@@ -59,6 +61,7 @@ export const NodeCard = memo(function NodeCard({
   const colorsVersion = useMetricColorsVersion();
   const redrawKey = `${resolvedAppearance}:${colorsVersion}`;
   const model = useNodeCardModel(uuid);
+  const themeSettings = useThemeSettings();
 
   if (!model.node) {
     return (
@@ -106,6 +109,7 @@ export const NodeCard = memo(function NodeCard({
           node={node}
           subtitle={subtitle}
           osName={osName}
+          merchantLink={themeSettings.nodeMerchantLinks[node.uuid]}
         />
 
         <div className="server-card-stack">
@@ -161,10 +165,12 @@ function NodeCardHeader({
   node,
   subtitle,
   osName,
+  merchantLink,
 }: {
   node: NodeCardNode;
   subtitle: string;
   osName: string;
+  merchantLink: import("@/utils/merchantLinks").NodeMerchantLink | undefined;
 }) {
   const detailLabels = nodeDetailLinkLabels(node.name, osName);
   return (
@@ -192,6 +198,10 @@ function NodeCardHeader({
         )}
       </div>
       <div className="server-card-actions">
+        <MerchantLinkAction
+          link={merchantLink}
+          className="server-card-detail-link"
+        />
         <Link
           to={`/instance/${encodeURIComponent(node.uuid)}`}
           className="server-card-detail-link"

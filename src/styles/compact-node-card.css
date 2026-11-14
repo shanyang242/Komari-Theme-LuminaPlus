@@ -113,6 +113,11 @@
   color: var(--progress-cpu);
 }
 
+.compact-node-detail-link.merchant-link-action.is-disabled:hover {
+  background: transparent;
+  color: var(--text-tertiary);
+}
+
 .compact-node-chip-row {
   display: flex;
   min-width: 0;

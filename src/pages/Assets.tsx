@@ -300,7 +300,7 @@ export function Assets() {
                             <span>{detail.name}</span>
                             {detail.billingIgnored && (
                               <small className="assets-note-chip is-billing-ignored">
-                                忽略下期
+                                已忽略费用
                               </small>
                             )}
                           </Link>
@@ -392,7 +392,7 @@ export function Assets() {
                           )}
                           {detail.billingIgnored && (
                             <small className="assets-note-chip is-billing-ignored">
-                              忽略下期
+                              已忽略费用
                             </small>
                           )}
                         </Link>

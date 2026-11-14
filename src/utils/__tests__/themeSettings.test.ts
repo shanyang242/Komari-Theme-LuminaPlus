@@ -22,6 +22,31 @@ describe("normalizeThemeSettings", () => {
     expect(normalizeThemeSettings({}).homepagePingNodeTaskIds).toEqual({});
   });
 
+  it("normalizes manually configured merchant links without deriving favicons", () => {
+    const resolved = normalizeThemeSettings({
+      nodeMerchantLinks: {
+        "node-a": {
+          url: " https://merchant.example.com ",
+          iconUrl: " https://cdn.example.com/logo.png ",
+        },
+        "node-b": { url: "", iconUrl: " https://cdn.example.com/future.png " },
+        "node-empty": { url: " ", iconUrl: " " },
+      },
+    });
+
+    expect(resolved.nodeMerchantLinks).toEqual({
+      "node-a": {
+        url: "https://merchant.example.com",
+        iconUrl: "https://cdn.example.com/logo.png",
+      },
+      "node-b": {
+        url: "",
+        iconUrl: "https://cdn.example.com/future.png",
+      },
+    });
+    expect(normalizeThemeSettings({}).nodeMerchantLinks).toEqual({});
+  });
+
   it("keeps fake ping off unless explicitly enabled", () => {
     expect(normalizeThemeSettings({}).fakePingForUnbound).toBe(false);
     expect(normalizeThemeSettings({ fakePingForUnbound: true }).fakePingForUnbound).toBe(true);

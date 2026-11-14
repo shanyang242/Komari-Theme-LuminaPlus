@@ -49,13 +49,18 @@
   }
 }
 
+/* 分组栏与总览共用列宽和间距，桌面端分组仅占第一列。 */
+.home-overview,
+.home-controls-bar {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
 .home-overview {
   /* 在线/离线配色,块状与柱状共用一处确保同步;比纯 status 色稍淡,贴合主题。 */
   --overview-online: color-mix(in srgb, var(--status-success) 72%, transparent);
   --overview-offline: color-mix(in srgb, var(--status-error) 55%, transparent);
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px;
   margin-bottom: 12px;
 }
 
@@ -630,7 +635,7 @@
 
 .home-group-tabs {
   display: flex;
-  /* 渲染在与卡片网格对齐的 grid 里(见 NodeGrid),正好占一个卡片列、边缘与首张卡
+  /* 渲染在与总览对齐的 grid 里，正好占一个总览列、边缘与首张总览卡
      对齐。min-width:0 让它能在列内收缩,使溢出的 tab 组改为滚动。 */
   min-width: 0;
   align-items: center;
@@ -719,7 +724,8 @@
 }
 
 @media (max-width: 1100px) {
-  .home-overview {
+  .home-overview,
+  .home-controls-bar {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }

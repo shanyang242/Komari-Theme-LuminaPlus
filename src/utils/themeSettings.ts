@@ -18,6 +18,10 @@ import {
   normalizeHomepagePingNodeTaskIds,
   type HomepagePingNodeTaskIds,
 } from "@/utils/pingTasks";
+import {
+  normalizeNodeMerchantLinks,
+  type NodeMerchantLinks,
+} from "@/utils/merchantLinks";
 
 export type Appearance = "system" | "light" | "dark";
 export type NodeViewMode = "large" | "compact";
@@ -29,6 +33,7 @@ export interface ResolvedThemeSettings {
   hideAdminEntryWhenLoggedOut: boolean;
   showPingChart: boolean;
   homepagePingNodeTaskIds: HomepagePingNodeTaskIds;
+  nodeMerchantLinks: NodeMerchantLinks;
   fakePingForUnbound: boolean;
   showHomeOverview: boolean;
   showGroupTabs: boolean;
@@ -57,6 +62,7 @@ export const DEFAULT_THEME_SETTINGS: ResolvedThemeSettings = {
   hideAdminEntryWhenLoggedOut: false,
   showPingChart: true,
   homepagePingNodeTaskIds: {},
+  nodeMerchantLinks: {},
   fakePingForUnbound: false,
   showHomeOverview: true,
   showGroupTabs: true,
@@ -141,6 +147,7 @@ export function normalizeThemeSettings(
     homepagePingNodeTaskIds: normalizeHomepagePingNodeTaskIds(
       settings?.homepagePingNodeTaskIds,
     ),
+    nodeMerchantLinks: normalizeNodeMerchantLinks(settings?.nodeMerchantLinks),
     // 默认关闭(需手动开启):给访客展示的是模拟数据,必须由站长显式决定。
     fakePingForUnbound: settings?.fakePingForUnbound === true,
     showHomeOverview: enabledUnlessFalse(settings?.showHomeOverview),

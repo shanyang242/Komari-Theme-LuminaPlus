@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
 import { Link } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { CircleDollarSign } from "lucide-react";
@@ -55,6 +55,10 @@ import { NodeListView } from "./NodeListView";
 import { RenewalReminder } from "./RenewalReminder";
 import { canViewCosts, type NodeViewMode } from "@/utils/themeSettings";
 import type { RenewalReminderSource } from "@/utils/renewalReminder";
+
+const NodeMapBackground = lazy(() =>
+  import("./NodeMapBackground").then((module) => ({ default: module.NodeMapBackground })),
+);
 
 // 卡片视图网格密度；列表档由独立组件布局。
 const GRID_LAYOUT: Record<NodeViewMode, { className: string; minColumnWidth: number }> = {
@@ -132,12 +136,14 @@ function HomeOverviewCards({
   showDetailButton,
   renewalNodes,
   dense,
+  mapBackground,
   onWarmTraffic,
 }: {
   overview: HomeOverview;
   costSummary: { remainingCny: number } | null;
   costLoading: boolean;
   dense: boolean;
+  mapBackground: boolean;
   showOverviewRatings: boolean;
   showTrafficRating: boolean;
   showBandwidthRating: boolean;
@@ -170,7 +176,7 @@ function HomeOverviewCards({
   const bandwidthDetailLabel = `↑ ${formatByteRateLabel(overview.netUp)} · ↓ ${formatByteRateLabel(overview.netDown)}`;
   const bandwidthCompactLabel = `↑${formatCompactBytes(overview.netUp)} ↓${formatCompactBytes(overview.netDown)}`;
   const trafficRating =
-    showOverviewRatings && showTrafficRating
+    !mapBackground && showOverviewRatings && showTrafficRating
       ? getOverviewRating({
           kind: "traffic",
           value: overview.trafficUp + overview.trafficDown,
@@ -178,7 +184,7 @@ function HomeOverviewCards({
         })
       : null;
   const bandwidthRating =
-    showOverviewRatings && showBandwidthRating
+    !mapBackground && showOverviewRatings && showBandwidthRating
       ? getOverviewRating({
           kind: "bandwidth",
           value: overview.netUp + overview.netDown,
@@ -186,7 +192,7 @@ function HomeOverviewCards({
         })
       : null;
   const assetRating =
-    showOverviewRatings && showAssetRating && costSummary
+    !mapBackground && showOverviewRatings && showAssetRating && costSummary
       ? getOverviewRating({
           kind: "asset",
           value: costSummary.remainingCny,
@@ -202,7 +208,7 @@ function HomeOverviewCards({
     ) : null;
 
   return (
-    <section className={`home-overview${dense ? " is-dense" : ""}`} aria-label="首页总览">
+    <section className={`home-overview${dense ? " is-dense" : ""}${mapBackground ? " is-map" : ""}`} aria-label="首页总览">
       <article className="overview-card" data-metric="online">
         <span className="overview-card-label">在线节点</span>
         <div className="overview-card-main">
@@ -244,13 +250,15 @@ function HomeOverviewCards({
             <span className="overview-card-unit">{rate.unit}</span>
           </p>
         </div>
-        <div className="overview-card-footer">
-          <p className="overview-card-sub" title={bandwidthDetailLabel}>
-            <span className="overview-card-sub-full">{bandwidthDetailLabel}</span>
-            <span className="overview-card-sub-compact">{bandwidthCompactLabel}</span>
-          </p>
-          {renderRating(bandwidthRating)}
-        </div>
+        {!mapBackground && (
+          <div className="overview-card-footer">
+            <p className="overview-card-sub" title={bandwidthDetailLabel}>
+              <span className="overview-card-sub-full">{bandwidthDetailLabel}</span>
+              <span className="overview-card-sub-compact">{bandwidthCompactLabel}</span>
+            </p>
+            {renderRating(bandwidthRating)}
+          </div>
+        )}
       </article>
 
       <article className="overview-card" data-metric="traffic">
@@ -274,13 +282,15 @@ function HomeOverviewCards({
             <span className="overview-card-unit">{trafficUnit}</span>
           </p>
         </div>
-        <div className="overview-card-footer">
-          <p className="overview-card-sub" title={trafficDetailLabel}>
-            <span className="overview-card-sub-full">{trafficDetailLabel}</span>
-            <span className="overview-card-sub-compact">{trafficCompactLabel}</span>
-          </p>
-          {renderRating(trafficRating)}
-        </div>
+        {!mapBackground && (
+          <div className="overview-card-footer">
+            <p className="overview-card-sub" title={trafficDetailLabel}>
+              <span className="overview-card-sub-full">{trafficDetailLabel}</span>
+              <span className="overview-card-sub-compact">{trafficCompactLabel}</span>
+            </p>
+            {renderRating(trafficRating)}
+          </div>
+        )}
       </article>
 
       <article className="overview-card" data-metric="asset">
@@ -291,10 +301,12 @@ function HomeOverviewCards({
         <div className="overview-card-main">
           <p className="overview-card-value">{remainingValue}</p>
         </div>
-        <div className="overview-card-footer">
-          <p className="overview-card-caption">实时汇率计算</p>
-          {renderRating(assetRating)}
-        </div>
+        {!mapBackground && (
+          <div className="overview-card-footer">
+            <p className="overview-card-caption">实时汇率计算</p>
+            {renderRating(assetRating)}
+          </div>
+        )}
       </article>
     </section>
   );
@@ -314,6 +326,7 @@ export function NodeGrid() {
   const { mode } = useViewMode();
   const sort = useHomeSort();
   const isMobileViewport = useMediaQuery(MOBILE_VIEWPORT_QUERY, true);
+  const mapBackgroundEnabled = themeSettings.enableMapBackground && !isMobileViewport;
   const {
     canReorder: canReorderFilters,
     reorder: reorderFilters,
@@ -643,25 +656,36 @@ export function NodeGrid() {
         </Link>
       )}
       <HomeBrand siteName={siteName} />
-      {showHomeOverview && (
-        <HomeOverviewCards
-          overview={overview}
-          dense={mode === "mini" || mode === "list"}
-          showDetailButton={showCostDetailButton}
-          showCosts={costsVisible}
-          renewalNodes={renewalNodes}
-          costSummary={costSummary}
-          costLoading={costLoading}
-          showOverviewRatings={themeSettings.showOverviewRatings}
-          showTrafficRating={themeSettings.showTrafficRating}
-          showBandwidthRating={themeSettings.showBandwidthRating}
-          showAssetRating={themeSettings.showAssetRating}
-          trafficRatingLabels={themeSettings.trafficRatingLabels}
-          bandwidthRatingLabels={themeSettings.bandwidthRatingLabels}
-          assetRatingLabels={themeSettings.assetRatingLabels}
-          onWarmTraffic={warmTrafficPage}
-        />
+      {mapBackgroundEnabled && (
+        <Suspense fallback={null}>
+          <NodeMapBackground nodes={visibleNodes} />
+        </Suspense>
       )}
+      <div
+        className={mapBackgroundEnabled ? `${isList ? "grid gap-3" : gridWrapClassName} home-map-header` : undefined}
+        style={mapBackgroundEnabled ? (isList ? controlsStyle : gridStyle) : undefined}
+      >
+        {showHomeOverview && (
+          <HomeOverviewCards
+            overview={overview}
+            dense={mode === "mini" || mode === "list"}
+            mapBackground={mapBackgroundEnabled}
+            showDetailButton={showCostDetailButton}
+            showCosts={costsVisible}
+            renewalNodes={renewalNodes}
+            costSummary={costSummary}
+            costLoading={costLoading}
+            showOverviewRatings={themeSettings.showOverviewRatings}
+            showTrafficRating={themeSettings.showTrafficRating}
+            showBandwidthRating={themeSettings.showBandwidthRating}
+            showAssetRating={themeSettings.showAssetRating}
+            trafficRatingLabels={themeSettings.trafficRatingLabels}
+            bandwidthRatingLabels={themeSettings.bandwidthRatingLabels}
+            assetRatingLabels={themeSettings.assetRatingLabels}
+            onWarmTraffic={warmTrafficPage}
+          />
+        )}
+      </div>
     </>
   );
 

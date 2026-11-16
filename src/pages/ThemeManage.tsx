@@ -34,6 +34,8 @@ import { Flag } from "@/components/ui/Flag";
 import { usePublicConfig } from "@/hooks/usePublicConfig";
 import { useAdminEntryPath } from "@/hooks/useAdminEntryPath";
 import { useHourlyClock } from "@/hooks/useClock";
+import { useMediaQuery } from "@/hooks/useMediaQuery";
+import { MOBILE_VIEWPORT_QUERY } from "@/utils/mediaQuery";
 import { queryClient } from "@/services/queryClient";
 import {
   ApiRequestError,
@@ -341,6 +343,7 @@ function pickManagedThemeSettings(settings: ResolvedThemeSettings) {
     ),
     costRateApiUrl: settings.costRateApiUrl,
     enableBackgroundImage: settings.enableBackgroundImage,
+    enableMapBackground: settings.enableMapBackground,
     backgroundMediaType: settings.backgroundMediaType,
     backgroundImage: settings.backgroundImage,
     backgroundImageMobile: settings.backgroundImageMobile,
@@ -867,6 +870,7 @@ const MerchantLinkConfigControl = memo(function MerchantLinkConfigControl({
 });
 
 export function ThemeManage() {
+  const isMobileViewport = useMediaQuery(MOBILE_VIEWPORT_QUERY, true);
   const now = useHourlyClock();
   const adminEntryPath = useAdminEntryPath();
   const adminPingHref = adminEntryPath ? `${adminEntryPath}/ping` : undefined;
@@ -1557,17 +1561,30 @@ export function ThemeManage() {
       <InstancePanel
         kicker={<><span className="instance-panel-kicker-num">03</span>背景</>}
         title="背景与透明度"
-        description="为站点设置自定义背景图或桌面视频，并调节卡片不透明度。"
+        description={isMobileViewport
+          ? "为站点设置背景图或桌面视频，并调节卡片不透明度。"
+          : "为站点设置背景图、桌面视频或首页地图，并调节卡片不透明度。"}
         aside={<Wallpaper size={16} />}
       >
         <div className="flex flex-col gap-4">
           <ToggleRow
             field="enableBackgroundImage"
             title="启用自定义背景"
-            desc="关闭后不加载任何背景图或视频（下方 URL 配置会保留），站点回到纯色主题；再次开启即恢复。"
+            desc={isMobileViewport
+              ? "关闭后不加载背景图或视频，下方 URL 配置会保留。"
+              : "关闭后不加载背景图或视频，下方 URL 配置会保留；地图背景由独立开关控制。"}
             checked={draft.enableBackgroundImage}
             onPatch={patch}
           />
+          {!isMobileViewport && (
+            <ToggleRow
+              field="enableMapBackground"
+              title="启用桌面地图背景"
+              desc="默认关闭，仅桌面端生效。大幅节点地图铺在首页内容下方，总览和实例卡片覆盖其上。总览独立排列为两行，每行与一张实例卡等宽，可在下方自行调整卡片不透明度。"
+              checked={draft.enableMapBackground}
+              onPatch={patch}
+            />
+          )}
 
           <div className="surface-inset flex flex-col gap-3 px-4 py-4">
             <ToggleRow
@@ -1756,7 +1773,11 @@ export function ThemeManage() {
               输入 0–100 的整数。100 = 完全不透明（与默认主题一致），数值越低卡片越通透、越能透出自定义背景。
               {hasBackgroundMedia
                 ? " 低于 95 时会自动在背景上叠加可读性遮罩，保证文字清晰；卡片本身保持纯半透明。"
-                : " 需先在上方设置自定义背景后才会生效。"}
+                : !isMobileViewport && draft.enableMapBackground
+                  ? " 已启用地图背景，保存后生效。"
+                  : isMobileViewport
+                    ? " 需先设置自定义背景后才会生效。"
+                    : " 需先设置自定义背景或开启地图背景后才会生效。"}
             </span>
           </div>
         </div>

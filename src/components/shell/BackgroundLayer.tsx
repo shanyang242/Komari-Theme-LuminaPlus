@@ -24,6 +24,7 @@ export function BackgroundLayer() {
   const { resolvedAppearance } = usePreferences();
   const {
     enableBackgroundImage,
+    enableMapBackground,
     backgroundMediaType,
     backgroundImage,
     backgroundImageMobile,
@@ -67,6 +68,7 @@ export function BackgroundLayer() {
     () =>
       buildBackgroundCache({
         enableBackgroundImage,
+        enableMapBackground,
         backgroundMediaType,
         backgroundImage,
         backgroundImageMobile,
@@ -77,6 +79,7 @@ export function BackgroundLayer() {
       }),
     [
       enableBackgroundImage,
+      enableMapBackground,
       backgroundMediaType,
       backgroundImage,
       backgroundImageMobile,

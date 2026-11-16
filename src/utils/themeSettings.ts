@@ -103,6 +103,7 @@ export interface ResolvedThemeSettings {
   costPremiums: Record<string, CostPremiumEntry>;
   costRateApiUrl: string;
   enableBackgroundImage: boolean;
+  enableMapBackground: boolean;
   backgroundMediaType: BackgroundMediaType;
   backgroundImage: string;
   backgroundImageMobile: string;
@@ -160,6 +161,7 @@ export const DEFAULT_THEME_SETTINGS: ResolvedThemeSettings = {
   costPremiums: {},
   costRateApiUrl: DEFAULT_COST_RATE_API_URL,
   enableBackgroundImage: true,
+  enableMapBackground: false,
   backgroundMediaType: "image",
   backgroundImage: "",
   backgroundImageMobile: "",
@@ -339,6 +341,7 @@ export function normalizeThemeSettings(
     costRateApiUrl: normalizeCostRateApiUrl(settings?.costRateApiUrl),
     // 默认开:让已配置背景图的存量站点升级后行为不变;关闭 = 保留 URL 但不加载背景图。
     enableBackgroundImage: enabledUnlessFalse(settings?.enableBackgroundImage),
+    enableMapBackground: settings?.enableMapBackground === true,
     backgroundMediaType: normalizeBackgroundMediaType(settings?.backgroundMediaType),
     backgroundImage: normalizeBackgroundUrl(settings?.backgroundImage),
     backgroundImageMobile: normalizeBackgroundUrl(settings?.backgroundImageMobile),

@@ -120,7 +120,7 @@
               style.setProperty("--bg-size", sizes.has(bg.size) ? bg.size : "cover");
               style.setProperty("--bg-position", positions.has(bg.position) ? bg.position : "center");
               const selectedImage = isMobile ? mobile : desktop;
-              if (selectedImage !== "none") {
+              if (selectedImage !== "none" || (!isMobile && bg.mapBackground === true)) {
                 style.setProperty("--surface-alpha", String(alpha));
               } else {
                 style.removeProperty("--surface-alpha");

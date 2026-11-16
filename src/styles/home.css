@@ -958,6 +958,7 @@ html.home-filter-sorting * {
 /* 首页顶部为 36px 快捷设置按钮保留最小 48px 控制区：上下各约 6px。
    iOS PWA 的状态栏安全区由 app-main 统一叠加。 */
 .home-dashboard {
+  isolation: isolate;
   padding-top: 28px;
   transition: padding-top 180ms ease;
 }
@@ -1142,4 +1143,190 @@ html.home-filter-sorting * {
   width: 22px;
   min-width: 22px;
   height: 22px;
+}
+
+/* 总览复用实例网格的第一列，地图独立铺在整个首页内容下方。 */
+.home-map-header {
+  position: relative;
+  min-height: 280px;
+  margin-bottom: 16px;
+  align-items: center;
+  pointer-events: none;
+}
+
+.home-overview.is-map {
+  z-index: 1;
+  pointer-events: auto;
+  grid-column: 1;
+  grid-row: 1;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 0;
+}
+
+.home-overview.is-map .overview-card {
+  min-height: 118px;
+  gap: 10px;
+  padding: 12px;
+  background: var(--surface-a);
+  container-type: inline-size;
+}
+
+.home-overview.is-map .overview-card-value {
+  font-size: clamp(16px, 17cqi, 28px);
+}
+
+.home-overview.is-map .overview-card[data-metric="asset"] .overview-card-value {
+  font-size: clamp(12px, 14cqi, 26px);
+}
+
+.home-overview.is-map .overview-card-unit {
+  font-size: clamp(9px, 8cqi, 12px);
+}
+
+.home-map-background {
+  position: absolute;
+  z-index: -1;
+  top: 0;
+  right: 0;
+  width: 75%;
+  aspect-ratio: 1000 / 420;
+  pointer-events: none;
+}
+
+.home-map-background svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.node-map-country {
+  --map-highlight: var(--accent-500);
+  fill: color-mix(in srgb, var(--text-tertiary) 12%, transparent);
+  stroke: color-mix(in srgb, var(--text-tertiary) 20%, transparent);
+  stroke-width: 0.6;
+  stroke-linejoin: round;
+  pointer-events: visiblePainted;
+  transition: fill 180ms ease, stroke 180ms ease, stroke-width 180ms ease;
+}
+
+.node-map-country[data-status="online"] {
+  --map-highlight: var(--status-success);
+  fill: color-mix(in srgb, var(--status-success) 34%, transparent);
+  stroke: color-mix(in srgb, var(--status-success) 75%, transparent);
+}
+
+.node-map-country[data-status="offline"] {
+  --map-highlight: var(--status-warning);
+  fill: color-mix(in srgb, var(--status-warning) 26%, transparent);
+  stroke: var(--status-warning);
+}
+
+.node-map-point {
+  color: var(--status-success);
+  fill: currentColor;
+  pointer-events: visiblePainted;
+}
+
+.node-map-point[data-status="offline"] { color: var(--status-warning); }
+.node-map-point[data-status="unknown"] { color: var(--text-tertiary); }
+.node-map-point-core { stroke: white; stroke-width: 1.2; }
+.node-map-point text { fill: white; font-size: 12px; font-weight: 600; }
+
+.node-map-point-pulse {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.2;
+  pointer-events: none;
+  animation: node-map-pulse 3s ease-out infinite;
+}
+
+@keyframes node-map-pulse {
+  0% { opacity: 0.5; transform: scale(1); }
+  80%, 100% { opacity: 0; transform: scale(2.5); }
+}
+
+.node-map-meteors {
+  pointer-events: none;
+}
+
+.node-map-meteor {
+  animation-name: node-map-meteor-appear, node-map-meteor-disappear;
+  animation-timing-function: linear;
+  animation-fill-mode: backwards, forwards;
+}
+
+.node-map-route,
+.node-map-route-tip {
+  fill: none;
+  stroke: color-mix(in srgb, var(--status-success) 75%, white);
+  stroke-opacity: 0.65;
+  stroke-linecap: round;
+}
+
+.node-map-route {
+  stroke-width: 2;
+  stroke-dasharray: 5 4;
+}
+
+.node-map-route-tip {
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+}
+
+.node-map-route-reveal {
+  animation: node-map-route-draw linear both;
+}
+
+@keyframes node-map-route-draw {
+  to { stroke-dashoffset: 0; }
+}
+
+@keyframes node-map-meteor-appear {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes node-map-meteor-disappear {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+@media (hover: hover) {
+  .node-map-country:hover {
+    fill: color-mix(in srgb, var(--map-highlight) 28%, transparent);
+    stroke: var(--map-highlight);
+    stroke-width: 1.5;
+  }
+
+  .node-map-point-core {
+    transition: transform 180ms ease, stroke-width 180ms ease;
+  }
+
+  .node-map-point:hover .node-map-point-core {
+    transform: scale(1.15);
+    stroke-width: 1.8;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .node-map-country,
+  .node-map-point-core {
+    transition: none;
+  }
+
+  .node-map-point-pulse {
+    animation: none;
+    display: none;
+  }
+
+  .node-map-meteors { display: none; }
+}
+
+@media (max-width: 1100px) {
+  .home-map-background {
+    width: 100%;
+  }
 }

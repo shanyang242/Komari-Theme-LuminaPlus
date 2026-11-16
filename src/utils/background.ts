@@ -156,6 +156,7 @@ const BACKGROUND_CACHE_KEY = "komaritheme:bg";
 
 interface BackgroundSettingsInput {
   enableBackgroundImage: boolean;
+  enableMapBackground?: boolean;
   backgroundMediaType: "image" | "video";
   backgroundImage: string;
   backgroundImageMobile: string;
@@ -168,6 +169,7 @@ interface BackgroundSettingsInput {
 /** 可直接写入 CSS 的首帧背景缓存。 */
 interface BackgroundCache {
   v: 2;
+  mapBackground?: boolean;
   desktopVideo: boolean;
   size: string;
   position: string;
@@ -185,20 +187,25 @@ function toCssUrl(url: string): string {
 
 export function buildBackgroundCache(settings: BackgroundSettingsInput): BackgroundCache | null {
   // 视频 URL 不进入首帧缓存；只记录视频模式，以便加载阶段隐藏桌面回退图。
-  if (!settings.enableBackgroundImage) return null;
-  const lightDesktop = resolveBackgroundUrl(settings.backgroundImage, "light");
-  const darkDesktop = resolveBackgroundUrl(settings.backgroundImage, "dark");
-  const lightMobile = resolveBackgroundUrl(settings.backgroundImageMobile, "light") || lightDesktop;
-  const darkMobile = resolveBackgroundUrl(settings.backgroundImageMobile, "dark") || darkDesktop;
+  const mapBackground = settings.enableMapBackground === true;
+  if (!settings.enableBackgroundImage && !mapBackground) return null;
+  const desktopImage = settings.enableBackgroundImage ? settings.backgroundImage : "";
+  const mobileImage = settings.enableBackgroundImage ? settings.backgroundImageMobile : "";
+  const lightDesktop = resolveBackgroundUrl(desktopImage, "light");
+  const darkDesktop = resolveBackgroundUrl(desktopImage, "dark");
+  const lightMobile = resolveBackgroundUrl(mobileImage, "light") || lightDesktop;
+  const darkMobile = resolveBackgroundUrl(mobileImage, "dark") || darkDesktop;
   const hasVideo =
+    settings.enableBackgroundImage &&
     settings.backgroundMediaType === "video" &&
     Boolean(settings.backgroundVideo || settings.backgroundVideoDark);
-  if (!lightDesktop && !darkDesktop && !lightMobile && !darkMobile && !hasVideo) return null;
+  if (!lightDesktop && !darkDesktop && !lightMobile && !darkMobile && !hasVideo && !mapBackground) return null;
 
   const { size, position } = parseBackgroundAlignment(settings.backgroundAlignment);
   const scrimPct = computeBackgroundScrim(settings.surfaceOpacity);
   return {
     v: 2,
+    mapBackground,
     desktopVideo: hasVideo,
     size,
     position,
@@ -247,14 +254,14 @@ export function applyBackgroundCache(
   const renderedDesktop = suppressDesktopImage ? "none" : desktop;
   const selectedImage = options.isMobile ? mobile : renderedDesktop;
   const videoIsPlaying = !options.isMobile && videoState === "playing";
-  const active = videoIsPlaying || selectedImage !== "none";
+  const active = videoIsPlaying || selectedImage !== "none" || (!options.isMobile && cache.mapBackground);
   root.style.setProperty("--bg-image-desktop", renderedDesktop);
   root.style.setProperty("--bg-image-mobile", mobile);
   root.style.setProperty("--bg-size", cache.size);
   root.style.setProperty("--bg-position", cache.position);
   if (active) {
     root.style.setProperty("--surface-alpha", cache.alpha);
-    if (cache.scrim) root.style.setProperty("--bg-scrim", cache.scrim);
+    if (cache.scrim && (videoIsPlaying || selectedImage !== "none")) root.style.setProperty("--bg-scrim", cache.scrim);
     else root.style.removeProperty("--bg-scrim");
   } else {
     root.style.removeProperty("--surface-alpha");

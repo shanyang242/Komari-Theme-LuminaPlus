@@ -124,11 +124,7 @@ body::after {
   }
 }
 
-/* 有意不做卡片磨砂(backdrop-filter):它依赖 GPU 合成,不同设备/浏览器渲染差异大
-   (关闭硬件加速的桌面浏览器甚至完全不画),还会和卡片的 content-visibility 优化冲突
-   (Chromium 把 paint containment 视为 backdrop root,吞掉元素自身的 backdrop-filter)。
-   半透明观感 = 纯半透明表面(--surface-a) + 图片上的可读性遮罩(--bg-scrim),
-   两者都是普通绘制,所有设备逐像素一致。 */
+/* 页面共享磨砂表面统一定义在 glass.css。 */
 
 .surface-inset {
   background: var(--surface-sunken);

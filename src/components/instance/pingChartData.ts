@@ -44,3 +44,17 @@ export function alignPingChartRecords(
     lossWeightMap,
   };
 }
+
+/** 独立于延迟降采样，保留原始采样和聚合桶中的任意丢包。 */
+export function pingLossMarkers(
+  records: Array<{ record: PingRecord; time: number }>,
+  visibleTaskIds: Set<number>,
+) {
+  const markers = new Map<string, { time: number; taskId: number }>();
+  for (const { record, time } of records) {
+    if (!Number.isFinite(time) || !visibleTaskIds.has(record.task_id)
+      || resolvePingRecordLossPercent(record) <= 0) continue;
+    markers.set(`${record.task_id}:${time}`, { time, taskId: record.task_id });
+  }
+  return [...markers.values()];
+}

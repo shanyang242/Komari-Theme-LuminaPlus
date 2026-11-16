@@ -1,0 +1,45 @@
+/* 仅模糊面板背后的内容，文字和图表保持清晰。 */
+.overview-card,
+.server-card,
+.compact-node-card,
+.mini-node-card,
+.node-list,
+.home-group-tabs,
+.home-region-bar,
+.instance-panel,
+.control-group,
+.assets-table-wrap,
+.traffic-rate-chart,
+.traffic-node-card,
+.traffic-error,
+.assets-hero,
+.traffic-summary-card {
+  -webkit-backdrop-filter: blur(20px) saturate(125%);
+  backdrop-filter: blur(20px) saturate(125%);
+}
+
+.node-traffic-popover,
+.metric-color-picker,
+.instance-switcher-panel,
+.home-sort-panel,
+.renewal-reminder-panel,
+.multi-ping-config-panel,
+.instance-chart-tooltip,
+.theme-error-card {
+  background: color-mix(in srgb, var(--surface-elev) 84%, transparent);
+  -webkit-backdrop-filter: blur(24px) saturate(125%);
+  backdrop-filter: blur(24px) saturate(125%);
+}
+
+@supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  /* paint containment 会截断 Chromium 的背景采样。 */
+  .server-card,
+  .compact-node-card,
+  .mini-node-card {
+    content-visibility: visible;
+  }
+}
+
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  :root { --surface-alpha: 96; }
+}

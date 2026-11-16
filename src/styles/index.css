@@ -11,6 +11,7 @@
 @import "./node-traffic-popover.css";
 @import "./os-logo.css";
 @import "./numeric.css";
+@import "./glass.css";
 
 @theme {
   --font-sans:
@@ -23,10 +24,8 @@
 :root {
   color-scheme: light dark;
 
-  /* 卡片表面不透明度(0–100),由背景「卡片不透明度」设置驱动。默认 100 → --surface-a
-     等于 --surface,在背景图调低它之前,表面与纯色主题逐像素一致。-a 系列变量才是浮层
-     内容表面实际绘制用的色。 */
-  --surface-alpha: 100;
+  /* 默认磨砂表面；背景设置中的显式不透明度继续优先。 */
+  --surface-alpha: 78;
   --surface-a: color-mix(in srgb, var(--surface) calc(var(--surface-alpha) * 1%), transparent);
   --surface-elev-a: color-mix(in srgb, var(--surface-elev) calc(var(--surface-alpha) * 1%), transparent);
   --hover-bg-a: color-mix(in srgb, var(--hover-bg) calc(var(--surface-alpha) * 1%), transparent);

@@ -67,4 +67,22 @@ describe("history range metadata", () => {
       ),
     ).toBe("覆盖完整 1 小时");
   });
+
+  it("uses the upper median for an even number of intervals so mixed 10m/25m gaps count as full 1h coverage (regression)", () => {
+    const end = Date.UTC(2026, 6, 13, 12, 0);
+    const records = [
+      { time: end - 35 * 60_000 },
+      { time: end - 25 * 60_000 }, // +10m
+      { time: end }, // +25m
+    ];
+    const intervalSeconds = inferHistoryIntervalSeconds(records);
+    expect(intervalSeconds).toBe(25 * 60);
+    expect(
+      historyCoverageLabel(
+        { rangeStartMs: end - HOUR, rangeEndMs: end, intervalSeconds },
+        records[0].time / 1000,
+        records[records.length - 1].time / 1000,
+      ),
+    ).toBe("覆盖完整 1 小时");
+  });
 });

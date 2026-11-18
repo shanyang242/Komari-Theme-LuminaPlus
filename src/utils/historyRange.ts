@@ -1,3 +1,5 @@
+import { parseTimestampMs } from "@/utils/format";
+
 interface HistoryRangeMeta {
   rangeStartMs?: number;
   rangeEndMs?: number;
@@ -10,32 +12,48 @@ function finitePositive(value: number | null | undefined) {
   return typeof value === "number" && Number.isFinite(value) && value > 0;
 }
 
-function historyTimeMs(value: HistoryTimeValue) {
-  if (typeof value === "number") {
-    return value > 1_000_000_000_000 ? value : value * 1000;
+function extractSortedPositiveIntervals(timesSeconds: Iterable<number>): number[] {
+  const unique = Array.from(
+    new Set(Array.from(timesSeconds).filter((time) => Number.isFinite(time))),
+  ).sort((left, right) => left - right);
+  const intervals: number[] = [];
+  for (let index = 1; index < unique.length; index += 1) {
+    const seconds = unique[index] - unique[index - 1];
+    if (seconds > 0) intervals.push(seconds);
   }
-  return Date.parse(value);
+  return intervals.sort((left, right) => left - right);
 }
 
-/** 从记录时间戳推导典型采样周期，供覆盖率和断点判断补齐边缘区间。 */
+/** 计算一组数值的中位数；输入为空时返回 undefined。 */
+export function medianValue(values: readonly number[]): number | undefined {
+  if (values.length === 0) return undefined;
+  const sorted = [...values].sort((left, right) => left - right);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 0
+    ? (sorted[mid - 1] + sorted[mid]) / 2
+    : sorted[mid];
+}
+
+/** 从一组秒级时间戳中推导中位数采样间隔；有效间隔不足时返回 undefined。 */
+export function inferMedianIntervalSeconds(timesSeconds: Iterable<number>): number | undefined {
+  const sorted = extractSortedPositiveIntervals(timesSeconds);
+  if (sorted.length === 0) return undefined;
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 0
+    ? (sorted[mid - 1] + sorted[mid]) / 2
+    : sorted[mid];
+}
+
+/** 从记录时间戳推导典型采样周期（偶数个间隔时取偏大的上中位数以宽容边缘损失），供覆盖率补边判断。 */
 export function inferHistoryIntervalSeconds(
   records: Array<{ time: HistoryTimeValue }>,
 ) {
-  const times = Array.from(
-    new Set(
-      records
-        .map((record) => historyTimeMs(record.time))
-        .filter((time) => Number.isFinite(time) && time > 0),
-    ),
-  ).sort((left, right) => left - right);
-  const intervals: number[] = [];
-  for (let index = 1; index < times.length; index += 1) {
-    const seconds = (times[index] - times[index - 1]) / 1000;
-    if (seconds > 0) intervals.push(seconds);
-  }
-  if (intervals.length === 0) return undefined;
-  intervals.sort((left, right) => left - right);
-  return intervals[Math.floor(intervals.length / 2)];
+  const sorted = extractSortedPositiveIntervals(
+    records
+      .map((record) => parseTimestampMs(record.time) / 1000)
+      .filter((seconds) => seconds > 0),
+  );
+  return sorted.length > 0 ? sorted[Math.floor(sorted.length / 2)] : undefined;
 }
 
 export function historyChartRangeSeconds(

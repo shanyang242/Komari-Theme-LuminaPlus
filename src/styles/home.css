@@ -682,34 +682,26 @@
   background: color-mix(in srgb, var(--hover-bg-a) 72%, transparent);
 }
 
-/* 分组与区域选中状态共用描边和阴影。 */
+/* 分组与区域选中状态共用描边、背景和阴影。 */
 .home-group-tabs button[data-active="true"],
 .home-region-chip[data-active="true"] {
   border-color: rgba(82, 82, 91, 0.28);
-  box-shadow:
-    0 10px 22px -18px rgba(0, 0, 0, 0.34),
-    inset 0 0 0 1px rgba(82, 82, 91, 0.08),
-    inset 0 1px 0 rgba(255, 255, 255, 0.72);
-}
-
-[data-appearance="dark"] .home-group-tabs button[data-active="true"],
-[data-appearance="dark"] .home-region-chip[data-active="true"] {
-  border-color: rgba(255, 255, 255, 0.12);
-}
-
-.home-group-tabs button[data-active="true"],
-.home-region-chip[data-active="true"] {
   background:
     linear-gradient(
       180deg,
       color-mix(in srgb, var(--surface-elev-a) 96%, white 4%) 0%,
       color-mix(in srgb, var(--hover-bg-a) 54%, var(--surface-a)) 100%
     );
+  box-shadow:
+    0 10px 22px -18px rgba(0, 0, 0, 0.34),
+    inset 0 0 0 1px rgba(82, 82, 91, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.72);
   color: var(--text-primary);
 }
 
 [data-appearance="dark"] .home-group-tabs button[data-active="true"],
 [data-appearance="dark"] .home-region-chip[data-active="true"] {
+  border-color: rgba(255, 255, 255, 0.12);
   background:
     linear-gradient(
       180deg,

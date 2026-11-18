@@ -4,6 +4,7 @@ import {
   downsampleAligned,
   fillMissingMetricPoints,
   insertMetricGapSentinels,
+  mergeRealtimeMetricPoints,
   type TimedMetricPoint,
 } from "@/components/instance/chartData";
 
@@ -269,5 +270,42 @@ describe("downsampleAligned", () => {
     const out = downsampleAligned([0, 10, 20, 30], [[50, null, 14, 16]], 2, true);
     expect(out.perTask[0][0]).toBeNull(); // 桶内有丢包 → 断点优先，不被尖峰逻辑覆盖
     expect(out.perTask[0][1]).toBe(15);
+  });
+});
+
+describe("mergeRealtimeMetricPoints", () => {
+  it("appends cleanly on the disjoint ascending fast path", () => {
+    const history = [{ time: 100 }, { time: 110 }, { time: 120 }];
+    const realtime = [{ time: 122 }, { time: 125 }];
+    expect(mergeRealtimeMetricPoints(history, realtime, 10).map((p) => p.time)).toEqual([
+      100, 110, 120, 122, 125,
+    ]);
+  });
+
+  it("preserves interleaved history points instead of truncating after the first realtime sample (regression)", () => {
+    const history = [{ time: 100 }, { time: 110 }, { time: 120 }];
+    const realtime = [{ time: 105 }, { time: 125 }];
+    expect(mergeRealtimeMetricPoints(history, realtime, 10).map((p) => p.time)).toEqual([
+      100, 105, 110, 120, 125,
+    ]);
+  });
+
+  it("restores monotonic order when realtime samples arrive out of order (regression)", () => {
+    const history = [{ time: 100 }, { time: 110 }, { time: 120 }];
+    const realtime = [{ time: 130 }, { time: 122 }];
+    expect(mergeRealtimeMetricPoints(history, realtime, 10).map((p) => p.time)).toEqual([
+      100, 110, 120, 122, 130,
+    ]);
+    expect(mergeRealtimeMetricPoints([], realtime, 10).map((p) => p.time)).toEqual([122, 130]);
+  });
+
+  it("dedupes sub-second overlapping samples and enforces the sample limit", () => {
+    const history = [{ time: 100, v: 1 }, { time: 110, v: 2 }];
+    const realtime = [{ time: 110.4, v: 3 }, { time: 115, v: 4 }];
+    const merged = mergeRealtimeMetricPoints(history, realtime, 2);
+    expect(merged).toEqual([
+      { time: 110.4, v: 3 },
+      { time: 115, v: 4 },
+    ]);
   });
 });

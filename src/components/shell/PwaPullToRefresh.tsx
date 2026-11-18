@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { RotateCw } from "lucide-react";
 
 const REFRESH_THRESHOLD = 56;
@@ -19,24 +19,37 @@ export function isIosStandalone(
   return ios && (standalone || displayModeStandalone);
 }
 
+function applyPullOffset(element: HTMLDivElement | null, distance: number) {
+  if (!element) return;
+  const progress = Math.min(1, distance / REFRESH_THRESHOLD);
+  element.style.setProperty("--pull-refresh-progress", String(progress));
+  element.style.setProperty("--pull-refresh-y", `${Math.min(10, -38 + distance * 0.8)}px`);
+}
+
 export function PwaPullToRefresh({ active = true }: { active?: boolean }) {
   const [state, setState] = useState<PullState>("idle");
-  const [distance, setDistance] = useState(0);
+  const indicatorRef = useRef<HTMLDivElement | null>(null);
   const stateRef = useRef<PullState>("idle");
   const distanceRef = useRef(0);
   const startRef = useRef({ x: 0, y: 0 });
   const trackingRef = useRef(false);
   const reloadTimerRef = useRef<number | null>(null);
-  const enabled = active && isIosStandalone();
+  const standaloneIos = useMemo(
+    () => (typeof window !== "undefined" ? isIosStandalone() : false),
+    [],
+  );
+  const enabled = active && standaloneIos;
 
   useEffect(() => {
     if (!enabled) return;
 
     const update = (nextState: PullState, nextDistance: number) => {
-      stateRef.current = nextState;
       distanceRef.current = nextDistance;
-      setState(nextState);
-      setDistance(nextDistance);
+      applyPullOffset(indicatorRef.current, nextDistance);
+      if (stateRef.current !== nextState) {
+        stateRef.current = nextState;
+        setState(nextState);
+      }
     };
     const reset = () => {
       trackingRef.current = false;
@@ -97,17 +110,13 @@ export function PwaPullToRefresh({ active = true }: { active?: boolean }) {
   if (!enabled) return null;
   const label =
     state === "ready" ? "松开刷新" : state === "refreshing" ? "正在刷新" : state === "offline" ? "网络不可用" : "下拉刷新";
-  const progress = Math.min(1, distance / REFRESH_THRESHOLD);
-  const style = {
-    "--pull-refresh-progress": progress,
-    "--pull-refresh-y": `${Math.min(10, -38 + distance * 0.8)}px`,
-  } as CSSProperties;
 
   return (
     <div
+      ref={indicatorRef}
       className="pwa-pull-refresh"
       data-state={state}
-      style={style}
+      style={{ "--pull-refresh-progress": 0, "--pull-refresh-y": "-38px" } as CSSProperties}
       aria-live="polite"
       aria-hidden={state === "idle"}
     >

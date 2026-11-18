@@ -8,7 +8,7 @@ import {
 } from "react";
 import { supportsFineHover } from "@/utils/mediaQuery";
 
-export interface CanvasStripInteraction {
+interface CanvasStripInteraction {
   hoverIndex: number | null;
   hoverProgress: number;
 }
@@ -85,7 +85,7 @@ const cssColorCache = new Map<string, string>();
 let cssColorCacheKey: string | null = null;
 let colorValidationContext: CanvasRenderingContext2D | null | undefined;
 
-const CANVAS_COLOR_FALLBACKS = {
+export const CANVAS_COLOR_FALLBACKS = {
   light: {
     "--progress-bg": "#e4e4e7",
     "--progress-cpu": "#3b82f6",

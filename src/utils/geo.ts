@@ -154,10 +154,23 @@ function countryCodeFromFlagEmoji(input: string): string | null {
   );
 }
 
+const REGION_CODE_CACHE_LIMIT = 512;
+const regionCodeCache = new Map<string, string | null>();
+
 export function getCountryCodeFromRegion(region: string | null | undefined): string | null {
   const raw = region?.trim();
   if (!raw) return null;
 
+  const cached = regionCodeCache.get(raw);
+  if (cached !== undefined) return cached;
+
+  const resolved = resolveCountryCodeFromRegion(raw);
+  if (regionCodeCache.size >= REGION_CODE_CACHE_LIMIT) regionCodeCache.clear();
+  regionCodeCache.set(raw, resolved);
+  return resolved;
+}
+
+function resolveCountryCodeFromRegion(raw: string): string | null {
   const emoji = raw.match(FLAG_EMOJI_RE)?.[0];
   if (emoji) return countryCodeFromFlagEmoji(emoji);
 

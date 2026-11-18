@@ -11,8 +11,10 @@ import {
   buildPingTimeRangeOptions,
 } from "@/components/instance/chartShared";
 import { usePublicConfig } from "@/hooks/usePublicConfig";
+import { useAuth } from "@/hooks/useAuth";
 import { useNodeMeta, useNodeStoreStatus } from "@/hooks/useNode";
 import { useThemeSettings } from "@/hooks/useThemeSettings";
+import { useHiddenNodeUuids } from "@/hooks/useVisibleNodes";
 
 const DEFAULT_PING_HOURS = 4;
 type TimeRangeOption = ReturnType<typeof buildLoadTimeRangeOptions>[number];
@@ -43,10 +45,42 @@ function RangeSelector({
   );
 }
 
+export function resolveInstanceAccessState({
+  hasMeta,
+  metaHidden,
+  isThemeHidden,
+  authPending,
+  loggedIn,
+  storeHydrated,
+  nodeInfoError,
+}: {
+  hasMeta: boolean;
+  metaHidden: boolean;
+  isThemeHidden: boolean;
+  authPending: boolean;
+  loggedIn: boolean;
+  storeHydrated: boolean;
+  nodeInfoError: boolean;
+}): "ready" | "loading" | "not_found" | "error" {
+  if (isThemeHidden) return "not_found";
+  if (hasMeta && metaHidden) {
+    if (authPending) return "loading";
+    return loggedIn ? "ready" : "not_found";
+  }
+  if (!hasMeta) {
+    if (storeHydrated) return "not_found";
+    if (nodeInfoError) return "error";
+    return "loading";
+  }
+  return "ready";
+}
+
 export function Instance() {
   const { uuid } = useParams<{ uuid: string }>();
   const { data: config } = usePublicConfig();
+  const { data: me, isPending: authPending } = useAuth();
   const themeSettings = useThemeSettings();
+  const hiddenUuids = useHiddenNodeUuids();
   const meta = useNodeMeta(uuid ?? "");
   const storeStatus = useNodeStoreStatus(Boolean(uuid));
   const [chartType, setChartType] = useState<"load" | "ping">("ping");
@@ -99,10 +133,21 @@ export function Instance() {
 
   if (!uuid) return null;
 
-  if (!meta) {
-    const message = storeStatus.hydrated
+  const accessState = resolveInstanceAccessState({
+    hasMeta: Boolean(meta),
+    metaHidden: Boolean(meta?.hidden),
+    isThemeHidden: Boolean(meta && hiddenUuids.has(meta.uuid)),
+    authPending,
+    loggedIn: me?.logged_in === true,
+    storeHydrated: storeStatus.hydrated,
+    nodeInfoError: storeStatus.nodeInfoError,
+  });
+
+  if (accessState !== "ready") {
+    const notFound = accessState === "not_found";
+    const message = notFound
       ? "找不到这个实例，它可能已被删除或链接无效。"
-      : storeStatus.nodeInfoError
+      : accessState === "error"
         ? "节点列表加载失败，系统正在自动重试。"
         : null;
     return (
@@ -115,7 +160,7 @@ export function Instance() {
           {message ? (
             <>
               <div className="text-[15px] font-semibold text-[var(--text-primary)]">
-                {storeStatus.hydrated ? "实例不存在" : "暂时无法加载实例"}
+                {notFound ? "实例不存在" : "暂时无法加载实例"}
               </div>
               <p className="text-[13px] text-[var(--text-secondary)]">{message}</p>
             </>

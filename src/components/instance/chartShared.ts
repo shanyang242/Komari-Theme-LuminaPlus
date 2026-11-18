@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import type uPlot from "uplot";
+import { parseTimestampMs } from "@/utils/format";
+import { clamp } from "@/utils/hsl";
 
 // 共享的图表配色。LoadChart 按指标 (cpu/memory/…) 取色，PingChart 按 task 循环取色；
 // 两者都取自这一处单一来源，避免 hex 值在两个图表间漂移。
@@ -141,12 +143,7 @@ const WIDE_CHART_MOBILE_HEIGHT = 260;
 const CHART_WIDTH_STEP = 8;
 
 export function toChartSeconds(value: string | number): number {
-  if (typeof value === "number") {
-    if (!Number.isFinite(value)) return 0;
-    return value > 1_000_000_000_000 ? value / 1000 : value;
-  }
-  const parsed = Date.parse(value);
-  return Number.isNaN(parsed) ? 0 : parsed / 1000;
+  return parseTimestampMs(value) / 1000;
 }
 
 function pad2(value: number) {
@@ -187,10 +184,6 @@ function formatTooltipTime(timestampSeconds: number, rangeHours = 0): string {
 export function formatChartCoverageTime(timestampSeconds: number): string {
   const parts = getDateParts(timestampSeconds);
   return `${parts.month}/${parts.day} ${parts.hour}:${parts.minute}`;
-}
-
-function clamp(value: number, min: number, max: number) {
-  return Math.min(Math.max(value, min), max);
 }
 
 function getChartTooltipPosition({

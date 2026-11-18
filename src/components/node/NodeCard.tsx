@@ -1,4 +1,4 @@
-import { memo, useCallback, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { memo, useCallback, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import {
   Cpu,
@@ -26,8 +26,7 @@ import {
 import { Flag } from "@/components/ui/Flag";
 import { OsLogo } from "@/components/ui/OsLogo";
 import { MetricBar } from "./MetricBar";
-import { LatencyBars } from "./LatencyBars";
-import { QualityBars } from "./QualityBars";
+import { HealthBars } from "./HealthBars";
 import { CanvasStrip, safeCanvasColor } from "./CanvasStrip";
 import { TrafficQuotaLabel } from "./TrafficQuotaLabel";
 import type { TrafficResetDisplay } from "@/utils/trafficReset";
@@ -465,7 +464,8 @@ const NodeHealthSection = memo(function NodeHealthSection({
         </div>
         <div className="server-health-chart-wrap">
           {shouldRenderPingBars ? (
-            <LatencyBars
+            <HealthBars
+              kind="latency"
               buckets={pingBuckets}
               redrawKey={redrawKey}
               onHoverIndex={onLatencyHover}
@@ -509,7 +509,8 @@ const NodeHealthSection = memo(function NodeHealthSection({
         </div>
         <div className="server-health-chart-wrap">
           {shouldRenderPingBars ? (
-            <QualityBars
+            <HealthBars
+              kind="loss"
               buckets={pingBuckets}
               redrawKey={redrawKey}
               onHoverIndex={onLossHover}
@@ -568,63 +569,9 @@ function NodeCardFooter({
   footerTags: DisplayTag[];
   renewalPrice: string | null;
 }) {
-  const rowRef = useRef<HTMLDivElement>(null);
-  const measureRef = useRef<HTMLDivElement>(null);
-  const [visibleTagCount, setVisibleTagCount] = useState(footerTags.length);
-  const visibleTags = footerTags.slice(0, visibleTagCount);
-  // 完整 tag 列表挂在这一行的 tooltip 上;chip 不带自己的 title,hover 会穿透到行上 ——
-  // fit 阶段丢掉的 tag 就靠这个保持可见,不用显示"+N"角标。
+  // 纯 CSS 轨道自动把整枚放不下的 tag 换行裁剪，省去逐卡 ResizeObserver 和屏外测量 DOM；
+  // 完整 tag 列表挂在轨道 tooltip 上，hover 任意 chip 均可查看全部标签。
   const tagTitle = joinTagTitle(footerTags);
-
-  useLayoutEffect(() => {
-    const row = rowRef.current;
-    const measure = measureRef.current;
-    if (!row || !measure) return;
-
-    // chip 间距是个固定的 CSS token,每次 effect 跑读一次就够,不必每个 resize tick 都读。
-    const styles = window.getComputedStyle(measure);
-    const gap = Number.parseFloat(styles.columnGap || styles.gap || "0") || 0;
-
-    const updateVisibleTags = () => {
-      const availableWidth = row.clientWidth;
-      const children = Array.from(measure.children) as HTMLElement[];
-      const tagWidths = children.slice(0, footerTags.length).map((child) => child.offsetWidth);
-      const priceWidth = renewalPrice ? (children[footerTags.length]?.offsetWidth ?? 0) : 0;
-
-      let usedWidth = renewalPrice ? priceWidth : 0;
-      let nextVisibleCount = 0;
-
-      for (const width of tagWidths) {
-        const nextWidth = usedWidth + (usedWidth > 0 ? gap : 0) + width;
-        if (nextWidth > availableWidth) break;
-        usedWidth = nextWidth;
-        nextVisibleCount += 1;
-      }
-
-      // 绝不塌成空行:就算第一个 tag 比价格 chip 之后剩的空间还宽,也照样显示,交给 CSS 省略号截断。
-      if (nextVisibleCount === 0 && tagWidths.length > 0) nextVisibleCount = 1;
-
-      setVisibleTagCount((current) =>
-        current === nextVisibleCount ? current : nextVisibleCount,
-      );
-    };
-
-    updateVisibleTags();
-
-    let cancelled = false;
-    const observer = new ResizeObserver(updateVisibleTags);
-    observer.observe(row);
-    // 字体替换会在首次绘制后改变 tag 宽度;字体就绪后重新测量一次,
-    // 但若卡片在 promise resolve 前已卸载则跳过。
-    document.fonts?.ready.then(() => {
-      if (!cancelled) updateVisibleTags();
-    });
-
-    return () => {
-      cancelled = true;
-      observer.disconnect();
-    };
-  }, [footerTags, renewalPrice]);
 
   return (
     <div className="server-card-footer">
@@ -645,20 +592,16 @@ function NodeCardFooter({
         />
       </div>
       {(footerTags.length > 0 || renewalPrice) && (
-        <>
-          <div className="dstatus-tags-row" ref={rowRef} title={footerTags.length > 0 ? tagTitle : undefined}>
-            {visibleTags.map((tag, index) => (
-              <FooterTagChip key={`${tag.label}-${index}`} tag={tag} />
-            ))}
-            {renewalPrice && <FooterPriceChip renewalPrice={renewalPrice} titled />}
-          </div>
-          <div className="dstatus-tags-row dstatus-tags-measure" ref={measureRef} aria-hidden>
-            {footerTags.map((tag, index) => (
-              <FooterTagChip key={`${tag.label}-${index}`} tag={tag} />
-            ))}
-            {renewalPrice && <FooterPriceChip renewalPrice={renewalPrice} />}
-          </div>
-        </>
+        <div className="dstatus-tags-row">
+          {footerTags.length > 0 && (
+            <div className="dstatus-tags-lane" title={tagTitle}>
+              {footerTags.map((tag, index) => (
+                <FooterTagChip key={`${tag.label}-${index}`} tag={tag} />
+              ))}
+            </div>
+          )}
+          {renewalPrice && <FooterPriceChip renewalPrice={renewalPrice} titled />}
+        </div>
       )}
     </div>
   );

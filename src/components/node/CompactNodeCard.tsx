@@ -19,6 +19,7 @@ import { OsLogo } from "@/components/ui/OsLogo";
 import { useNodeCardModel } from "@/hooks/useNodeCardModel";
 import { useThemeSettings } from "@/hooks/useThemeSettings";
 import { formatBytes } from "@/utils/format";
+import { clamp } from "@/utils/hsl";
 import { speedRateColor, speedRateColorFromBytes } from "@/utils/metricTone";
 import { supportsFineHover } from "@/utils/mediaQuery";
 import { formatHealthBucketTooltip } from "./pingBucketText";
@@ -53,8 +54,7 @@ type CompactTag = { label: string; color: string };
 type CompactExpire = { value: string; unit: string };
 
 function clamp01(value: number) {
-  if (!Number.isFinite(value)) return 0;
-  return Math.max(0, Math.min(1, value));
+  return Number.isFinite(value) ? clamp(value, 0, 1) : 0;
 }
 
 function CompactGauge({

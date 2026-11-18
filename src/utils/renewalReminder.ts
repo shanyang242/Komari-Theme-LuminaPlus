@@ -39,7 +39,7 @@ export interface RenewalReminderPreferences {
   snoozedUntil: Record<string, number>;
 }
 
-export interface RenewalReminderOptions {
+interface RenewalReminderOptions {
   requireOnlineForExpired?: boolean;
 }
 

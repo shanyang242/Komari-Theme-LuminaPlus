@@ -121,7 +121,7 @@ const OS_CONFIGS: OsConfig[] = [
   },
   {
     name: "fnOS",
-    image: "/images/logo/os-fnos.ico",
+    image: "/images/logo/os-fnos.png",
     keywords: ["fnos", "fnnas"],
   },
   {
@@ -201,17 +201,27 @@ function findOsConfig(osString?: string | null): OsConfig {
   return DEFAULT_OS_CONFIG;
 }
 
-export function resolveOsInfo(value?: string | null) {
-  const config = findOsConfig(value);
-  if (config !== DEFAULT_OS_CONFIG) {
-    return config;
-  }
+const OS_INFO_CACHE_LIMIT = 512;
+const osInfoCache = new Map<string, OsConfig>();
 
-  const name = value?.trim().split(OS_NAME_SPLIT_REGEX)[0] || DEFAULT_OS_CONFIG.name;
-  return {
-    ...DEFAULT_OS_CONFIG,
-    name,
-  };
+export function resolveOsInfo(value?: string | null): OsConfig {
+  const trimmed = value?.trim() ?? "";
+  if (!trimmed) return DEFAULT_OS_CONFIG;
+
+  const cached = osInfoCache.get(trimmed);
+  if (cached) return cached;
+
+  const config = findOsConfig(trimmed);
+  const resolved =
+    config !== DEFAULT_OS_CONFIG
+      ? config
+      : {
+          ...DEFAULT_OS_CONFIG,
+          name: trimmed.split(OS_NAME_SPLIT_REGEX)[0] || DEFAULT_OS_CONFIG.name,
+        };
+  if (osInfoCache.size >= OS_INFO_CACHE_LIMIT) osInfoCache.clear();
+  osInfoCache.set(trimmed, resolved);
+  return resolved;
 }
 
 export const OsLogo = memo(function OsLogo({

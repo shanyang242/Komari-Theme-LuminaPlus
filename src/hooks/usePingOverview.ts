@@ -10,8 +10,10 @@ import type {
   PingOverviewItem,
   PingOverviewTaskLoadState,
   PingRecord,
+  PingTask,
 } from "@/types/komari";
 import { withTimeoutSignal } from "@/utils/abort";
+import { parseTimestampMs } from "@/utils/format";
 import {
   normalizeHomepagePingNodeTaskIds,
   resolveHomepagePingTaskId,
@@ -23,6 +25,8 @@ const MIN_PING_REFRESH_INTERVAL = 10_000;
 const MAX_PING_REFRESH_INTERVAL = 300_000;
 const MAX_VISIBLE_HOMEPAGE_PING_BUCKETS = 24;
 const PING_REQUEST_TIMEOUT_MS = 35_000;
+const PUBLIC_PING_TASKS_TTL_MS = 60_000;
+const MAX_TARGETED_OVERVIEW_TASKS = 4;
 
 const EMPTY_PING: PingOverviewItem = {
   client: "",
@@ -36,14 +40,6 @@ const EMPTY_PING: PingOverviewItem = {
 const EMPTY_PING_BUCKETS: PingOverviewBucket[] = [];
 
 type Listener = () => void;
-
-function toTimestamp(value: string | number) {
-  if (typeof value === "number") {
-    return value > 1_000_000_000_000 ? value : value * 1000;
-  }
-  const parsed = Date.parse(String(value));
-  return Number.isNaN(parsed) ? 0 : parsed;
-}
 
 function normalizeRefreshInterval(seconds: number | null | undefined) {
   if (!Number.isFinite(seconds) || !seconds || seconds <= 0) {
@@ -121,19 +117,18 @@ export function buildPingOverviewItems(
 
   const result = new Map<string, PingOverviewItem>();
   for (const [client, clientRecords] of grouped) {
-    const sorted = [...clientRecords].sort(
-      (left, right) => toTimestamp(left.time) - toTimestamp(right.time),
-    );
+    const sorted = clientRecords
+      .map((record) => ({ record, time: parseTimestampMs(record.time) }))
+      .sort((left, right) => left.time - right.time);
     const samples: PingOverviewItem["samples"] = [];
     let max = 1;
     let lost = 0;
-    for (const record of sorted) {
-      const time = toTimestamp(record.time);
+    for (const { record, time } of sorted) {
       if (time > 0) samples.push({ time, value: record.value });
       if (record.value < 0) lost += 1;
       else if (record.value > max) max = record.value;
     }
-    const latest = sorted.at(-1);
+    const latest = sorted.at(-1)?.record;
     result.set(client, {
       client,
       isAssigned: true,
@@ -166,18 +161,77 @@ function emptyPing(
   };
 }
 
-export interface PingOverviewMapResult {
+interface PingOverviewMapResult {
   assignmentKey: string;
   intervalMs: number;
   singleItems: Map<string, PingOverviewItem>;
   selectedTaskIdsByClient: Map<string, number>;
-  successfulTaskIds: number[];
-  failedTaskIds: number[];
+}
+
+let cachedPublicTasks: { tasks: PingTask[]; expiresAt: number } | null = null;
+let inFlightPublicTasksPromise: Promise<PingTask[]> | null = null;
+let inFlightPublicTasksController: AbortController | null = null;
+let publicTasksCacheEpoch = 0;
+
+export function resetHomepagePingTasksCache() {
+  publicTasksCacheEpoch += 1;
+  cachedPublicTasks = null;
+  inFlightPublicTasksPromise = null;
+  inFlightPublicTasksController?.abort();
+  inFlightPublicTasksController = null;
+}
+
+async function loadCachedPublicPingTasks(options?: { signal?: AbortSignal }): Promise<PingTask[]> {
+  const now = Date.now();
+  if (cachedPublicTasks && cachedPublicTasks.expiresAt > now) {
+    return cachedPublicTasks.tasks;
+  }
+  if (options?.signal?.aborted) {
+    throw options.signal.reason ?? new DOMException("Aborted", "AbortError");
+  }
+
+  if (!inFlightPublicTasksPromise) {
+    const requestEpoch = publicTasksCacheEpoch;
+    const controller = new AbortController();
+    inFlightPublicTasksController = controller;
+    const requestPromise = getPublicPingTasks({ signal: controller.signal })
+      .then((tasks) => {
+        if (requestEpoch === publicTasksCacheEpoch) {
+          cachedPublicTasks = {
+            tasks,
+            expiresAt: Date.now() + PUBLIC_PING_TASKS_TTL_MS,
+          };
+        }
+        return tasks;
+      })
+      .finally(() => {
+        if (inFlightPublicTasksPromise === requestPromise) {
+          inFlightPublicTasksPromise = null;
+        }
+        if (inFlightPublicTasksController === controller) {
+          inFlightPublicTasksController = null;
+        }
+      });
+    inFlightPublicTasksPromise = requestPromise;
+  }
+
+  const activePromise = inFlightPublicTasksPromise;
+  if (!options?.signal) return await activePromise;
+  return await new Promise<PingTask[]>((resolve, reject) => {
+    const onAbort = () =>
+      reject(options.signal?.reason ?? new DOMException("Aborted", "AbortError"));
+    options.signal?.addEventListener("abort", onAbort, { once: true });
+    activePromise
+      .then(resolve, reject)
+      .finally(() => options.signal?.removeEventListener("abort", onAbort));
+  });
 }
 
 /**
- * 一次读取全部公开 Ping 任务及记录，再为每个节点解析唯一线路。这样自动模式可以直接
- * 使用后端任务的 clients 与返回顺序，无需主题先维护一份重复的节点绑定。
+ * 先解析可见节点实际使用的 Ping 任务，再按需请求对应线路记录：
+ * - 无绑定任务时不发历史记录请求；
+ * - 单任务或少量任务子集时传入 `task_id` 精准拉取，避免无关线路占用带宽与 4000 条采样额度；
+ * - 公开任务列表默认走短 TTL 缓存，减少高频轮询下的重复请求。
  */
 export async function buildPingOverviewMap(
   hours: number,
@@ -185,7 +239,7 @@ export async function buildPingOverviewMap(
   overrides: HomepagePingNodeTaskIds,
   signal?: AbortSignal,
   loadOverview: typeof getPingOverview = getPingOverview,
-  loadTasks: typeof getPublicPingTasks = getPublicPingTasks,
+  loadTasks: typeof getPublicPingTasks = loadCachedPublicPingTasks,
 ): Promise<PingOverviewMapResult> {
   const normalizedUuids = normalizeVisibleUuids(clientUuids);
   const normalizedOverrides = normalizeHomepagePingNodeTaskIds(overrides);
@@ -196,45 +250,63 @@ export async function buildPingOverviewMap(
       intervalMs: DEFAULT_PING_REFRESH_INTERVAL,
       singleItems: new Map(),
       selectedTaskIdsByClient: new Map(),
-      successfulTaskIds: [],
-      failedTaskIds: [],
     };
   }
 
-  const { overview, tasks } = await withTimeoutSignal(
+  const selectedTaskIdsByClient = new Map<string, number>();
+  let selectedTaskIds: number[] = [];
+  let tasks: PingTask[] = [];
+
+  const records = await withTimeoutSignal(
     async (requestSignal) => {
-      const [loadedOverview, publicTasks] = await Promise.all([
-        loadOverview(hours, undefined, {
-          signal: requestSignal,
-          entityIds: normalizedUuids,
-        }),
-        loadTasks({ signal: requestSignal }),
-      ]);
-      return {
-        overview: loadedOverview,
-        tasks: publicTasks,
-      };
+      tasks = await loadTasks({ signal: requestSignal });
+      selectedTaskIdsByClient.clear();
+      for (const uuid of normalizedUuids) {
+        const taskId = resolveHomepagePingTaskId(uuid, tasks, normalizedOverrides);
+        if (taskId != null) selectedTaskIdsByClient.set(uuid, taskId);
+      }
+
+      selectedTaskIds = [...new Set(selectedTaskIdsByClient.values())].sort(
+        (left, right) => left - right,
+      );
+      if (selectedTaskIds.length === 0) {
+        return [];
+      }
+
+      const useTargetedRequests =
+        selectedTaskIds.length === 1 ||
+        (selectedTaskIds.length <= MAX_TARGETED_OVERVIEW_TASKS &&
+          selectedTaskIds.length < tasks.length);
+
+      if (useTargetedRequests) {
+        const responses = await Promise.all(
+          selectedTaskIds.map((taskId) =>
+            loadOverview(hours, taskId, {
+              signal: requestSignal,
+              entityIds: normalizedUuids,
+            }),
+          ),
+        );
+        return responses.flatMap((response) => response.records);
+      }
+
+      const loadedOverview = await loadOverview(hours, undefined, {
+        signal: requestSignal,
+        entityIds: normalizedUuids,
+      });
+      return loadedOverview.records;
     },
     PING_REQUEST_TIMEOUT_MS,
     signal,
   );
 
-  const selectedTaskIdsByClient = new Map<string, number>();
-  for (const uuid of normalizedUuids) {
-    const taskId = resolveHomepagePingTaskId(uuid, tasks, normalizedOverrides);
-    if (taskId != null) selectedTaskIdsByClient.set(uuid, taskId);
-  }
-
-  const selectedTaskIds = [...new Set(selectedTaskIdsByClient.values())].sort(
-    (left, right) => left - right,
-  );
   const taskById = new Map(tasks.map((task) => [task.id, task]));
   const taskName = (taskId: number) =>
     taskById.get(taskId)?.name.trim() || `任务 #${taskId}`;
   const itemsByTask = new Map(
     selectedTaskIds.map((taskId) => [
       taskId,
-      buildPingOverviewItems(taskId, overview.records, taskName(taskId)),
+      buildPingOverviewItems(taskId, records, taskName(taskId)),
     ]),
   );
   const singleItems = new Map<string, PingOverviewItem>();
@@ -259,8 +331,6 @@ export async function buildPingOverviewMap(
       : DEFAULT_PING_REFRESH_INTERVAL,
     singleItems,
     selectedTaskIdsByClient,
-    successfulTaskIds: selectedTaskIds,
-    failedTaskIds: [],
   };
 }
 
@@ -338,6 +408,7 @@ function stopPingPolling() {
   pingRefreshTimer = null;
   pingAbortController?.abort();
   pingAbortController = null;
+  resetHomepagePingTasksCache();
 }
 
 function markPingRefreshFailed() {
@@ -406,6 +477,7 @@ function ensurePingOverviewStarted(
   const selectionKey = buildRequestKey(normalizedVisibleUuids, normalizedOverrides);
 
   if (visibleKey !== scheduledVisibleKey || selectionKey !== scheduledSelectionKey) {
+    const previousOverrides = scheduledOverrides;
     scheduledVisibleUuids = normalizedVisibleUuids;
     scheduledVisibleKey = visibleKey;
     scheduledOverrides = normalizedOverrides;
@@ -413,7 +485,17 @@ function ensurePingOverviewStarted(
     pingAbortController?.abort();
     if (pingRefreshTimer != null) window.clearTimeout(pingRefreshTimer);
     pingRefreshTimer = null;
-    commitPingOverview(selectionKey, DEFAULT_PING_REFRESH_INTERVAL, new Map());
+    // 保留未变更节点的已有 Ping 数据，避免节点增删或登录态就绪时整屏闪烁回 pending。
+    const preservedItems = new Map<string, PingOverviewItem>();
+    for (const uuid of normalizedVisibleUuids) {
+      const hasPrev = Object.prototype.hasOwnProperty.call(previousOverrides, uuid);
+      const hasNext = Object.prototype.hasOwnProperty.call(normalizedOverrides, uuid);
+      if (hasPrev === hasNext && previousOverrides[uuid] === normalizedOverrides[uuid]) {
+        const existing = pingOverviewState.singleItems.get(uuid);
+        if (existing) preservedItems.set(uuid, existing);
+      }
+    }
+    commitPingOverview(selectionKey, DEFAULT_PING_REFRESH_INTERVAL, preservedItems);
   }
 
   if (

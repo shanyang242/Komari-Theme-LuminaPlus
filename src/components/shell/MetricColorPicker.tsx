@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useMemo } from "react";
 import {
   Cpu,
   MemoryStick,
@@ -15,7 +15,7 @@ import {
   DEFAULT_DARK_DEPTH,
   METRIC_COLOR_GROUPS,
   METRIC_COLOR_META,
-  readEffectiveColors,
+  getDefaultMetricColors,
   useMetricColorsEditor,
   type MetricColorKey,
 } from "@/hooks/useMetricColors";
@@ -51,12 +51,10 @@ export function MetricColorPicker({ hidden = false }: { hidden?: boolean }) {
     saveError,
   } = useMetricColorsEditor();
   const { resolvedAppearance } = usePreferences();
-
-  // 默认色（无覆盖时生效的 token）。只在明暗模式切换/重置时重读 ——
-  // 不能放进拖动热路径：getComputedStyle 会强制同步重排，每帧多次=掉帧。
-  const [base, setBase] = useState(readEffectiveColors);
-  useEffect(() => setBase(readEffectiveColors()), [resolvedAppearance]);
-  const refreshBase = useCallback(() => setBase(readEffectiveColors()), []);
+  const base = useMemo(
+    () => getDefaultMetricColors(resolvedAppearance),
+    [resolvedAppearance],
+  );
 
   // 拖动时取色框的值直接来自草稿（无 getComputedStyle），其余指标用稳定的默认色。
   const valueOf = useCallback(
@@ -77,10 +75,7 @@ export function MetricColorPicker({ hidden = false }: { hidden?: boolean }) {
         <button
           type="button"
           className="metric-color-reset-all"
-          onClick={() => {
-            resetAll();
-            refreshBase();
-          }}
+          onClick={resetAll}
           disabled={!hasAny}
         >
           全部重置
@@ -149,10 +144,7 @@ export function MetricColorPicker({ hidden = false }: { hidden?: boolean }) {
                   <button
                     type="button"
                     className="metric-color-reset"
-                    onClick={() => {
-                      resetColor(key);
-                      refreshBase();
-                    }}
+                    onClick={() => resetColor(key)}
                     disabled={!overridden}
                     aria-label={`恢复 ${label} 默认色`}
                     title="恢复默认"

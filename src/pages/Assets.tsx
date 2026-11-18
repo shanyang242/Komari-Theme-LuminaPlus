@@ -39,8 +39,8 @@ type AssetSort =
 
 const ASSETS_MOBILE_QUERY = "(max-width: 720px)";
 
-function formatCostExpiry(expiredAt: string) {
-  const days = getExpireDaysRemaining(expiredAt);
+function formatCostExpiry(expiredAt: string, now: number) {
+  const days = getExpireDaysRemaining(expiredAt, now);
   if (days == null) return "到期未知";
   if (days > LONG_TERM_EXPIRE_DAYS) return "长期";
   if (days < 0) return "已过期";
@@ -119,13 +119,13 @@ export function Assets() {
     [costsVisible, nodes, now, themeSettings.costIgnoredNodes, themeSettings.costPremiums, rateQuery.data],
   );
   const detailRows = useMemo(() => {
-    const rows = [...(summary?.details ?? [])];
-    if (sort.key === "weight") {
-      return rows.sort((left, right) => left.weight - right.weight);
-    }
+    const details = summary?.details ?? [];
+    if (sort.key === "weight") return details;
     const field = sort.key === "price" ? "priceCny" : "remainingCny";
     const direction = sort.direction === "asc" ? 1 : -1;
-    return rows.sort((left, right) => (left[field] - right[field]) * direction);
+    return [...details].sort(
+      (left, right) => (left[field] - right[field]) * direction || left.weight - right.weight,
+    );
   }, [sort, summary]);
   const cycleSort = (key: "price" | "remaining") => {
     setSort((current) => {
@@ -154,7 +154,8 @@ export function Assets() {
     return <Navigate to="/" replace />;
   }
 
-  const hasPremium = summary?.details.some((detail) => detail.premiumCny !== 0) ?? false;
+  const hasPremium =
+    summary?.details.some((detail) => !detail.billingIgnored && detail.premiumCny !== 0) ?? false;
   const ledgerRows: Array<{
     label: string;
     value: string;
@@ -283,6 +284,7 @@ export function Assets() {
                       const renewalLabel = reminder
                         ? assetsRenewalLabel(reminder.daysRemaining)
                         : undefined;
+                      const hasConvertedPrice = detail.priceCny > 0;
                       return (
                         <tr
                           key={detail.uuid}
@@ -306,14 +308,22 @@ export function Assets() {
                           </Link>
                         </td>
                         <td data-numeric>
-                          {detail.counted ? (
+                          {hasConvertedPrice ? (
                             `${formatCnyMoney(detail.priceCny)}/${formatBillingCycle(detail.billingCycleDays)}`
                           ) : (
-                            <span className="assets-note-chip">{detail.note}</span>
+                            <span className="assets-note-chip">{detail.note || "—"}</span>
                           )}
                         </td>
-                        <td data-numeric data-strong>
-                          {detail.counted ? formatCnyMoney(detail.remainingCny) : "—"}
+                        <td
+                          data-numeric
+                          data-strong
+                          title={
+                            detail.billingIgnored && hasConvertedPrice
+                              ? "已忽略费用，仅作参考显示，不计入上方汇总"
+                              : undefined
+                          }
+                        >
+                          {hasConvertedPrice ? formatCnyMoney(detail.remainingCny) : "—"}
                         </td>
                         <td data-numeric>
                           {detail.premiumCny !== 0 ? (
@@ -326,7 +336,7 @@ export function Assets() {
                         </td>
                         <td data-numeric>
                           {detail.premiumCny !== 0 &&
-                          (detail.counted || detail.note === "免费")
+                          (hasConvertedPrice || detail.note === "免费")
                             ? formatCostPayback(detail.payback)
                             : "—"}
                         </td>
@@ -337,11 +347,11 @@ export function Assets() {
                               data-tone={renewalTone}
                               title={renewalLabel}
                             >
-                              <span>{formatCostExpiry(detail.expiredAt)}</span>
+                              <span>{formatCostExpiry(detail.expiredAt, now)}</span>
                               <small>{renewalLabel}</small>
                             </span>
                           ) : (
-                            formatCostExpiry(detail.expiredAt)
+                            formatCostExpiry(detail.expiredAt, now)
                           )}
                         </td>
                         </tr>
@@ -360,7 +370,8 @@ export function Assets() {
                   const renewalLabel = reminder
                     ? assetsRenewalLabel(reminder.daysRemaining)
                     : undefined;
-                  const priceLabel = detail.counted
+                  const hasConvertedPrice = detail.priceCny > 0;
+                  const priceLabel = hasConvertedPrice
                     ? `${formatCnyMoney(detail.priceCny)}/${formatBillingCycle(detail.billingCycleDays)}`
                     : detail.note || "—";
                   return (
@@ -396,15 +407,21 @@ export function Assets() {
                             </small>
                           )}
                         </Link>
-                        <strong title="剩余价值">
-                          {detail.counted ? formatCnyMoney(detail.remainingCny) : "—"}
+                        <strong
+                          title={
+                            detail.billingIgnored && hasConvertedPrice
+                              ? "剩余价值（已忽略费用，不计入汇总）"
+                              : "剩余价值"
+                          }
+                        >
+                          {hasConvertedPrice ? formatCnyMoney(detail.remainingCny) : "—"}
                         </strong>
                       </div>
                       <div className="cost-summary-detail-meta">
                         <span className="cost-summary-price-chip">{priceLabel}</span>
                         {detail.premiumCny !== 0 &&
                           (detail.regularPriceCny != null || detail.premiumCny < 0) &&
-                          (detail.counted || detail.note === "免费") && (
+                          (hasConvertedPrice || detail.note === "免费") && (
                           <span
                             className="cost-summary-premium-chip"
                             title="按收购日起正价与当前续费价的累计价差计算"
@@ -416,7 +433,7 @@ export function Assets() {
                           className="cost-summary-expire-label"
                           data-tone={renewalTone}
                         >
-                          {formatCostExpiry(detail.expiredAt)}
+                          {formatCostExpiry(detail.expiredAt, now)}
                           {renewalLabel && <small>{renewalLabel}</small>}
                         </span>
                       </div>

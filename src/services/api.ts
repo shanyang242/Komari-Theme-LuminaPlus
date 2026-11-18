@@ -5,14 +5,14 @@ import {
   NodeInfoSchema,
   PublicConfigSchema,
   AdminClientSchema,
-  LoadRecordSchema,
-  PingRecordSchema,
   PingTaskSchema,
   type Me,
   type NodeInfo,
   type PublicConfig,
   type AdminClient,
+  type LoadRecord,
   type LoadRecordsResponse,
+  type PingRecord,
   type PingRecordsResponse,
   type PingTask,
   type PingTaskStats,
@@ -181,13 +181,104 @@ async function rpcCall<T>(
   return parsed.data;
 }
 
-// 丢掉单条解析失败的记录，避免一条异常数据阻断整个历史记录。
-function parseArrayLenient<S extends z.ZodTypeAny>(schema: S, value: unknown): z.infer<S>[] {
+function recordNumber(value: unknown): number | null {
+  if (value === undefined) return 0;
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function isValidRecordTime(value: unknown): value is string | number {
+  return typeof value === "string" || (typeof value === "number" && Number.isFinite(value));
+}
+
+// 轻量原生校验替代逐条 Zod safeParse，丢掉单条异常记录，避免上万条历史数据阻塞主线程。
+function parseLoadRecords(value: unknown): LoadRecord[] {
   if (!Array.isArray(value)) return [];
-  const out: z.infer<S>[] = [];
-  for (const item of value) {
-    const parsed = schema.safeParse(item);
-    if (parsed.success) out.push(parsed.data);
+  const out: LoadRecord[] = [];
+  for (const raw of value) {
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) continue;
+    const item = raw as Record<string, unknown>;
+    if (!isValidRecordTime(item.time)) continue;
+    if (item.client !== undefined && typeof item.client !== "string") continue;
+
+    const cpu = recordNumber(item.cpu);
+    const gpu = recordNumber(item.gpu);
+    const ram = recordNumber(item.ram);
+    const ramTotal = recordNumber(item.ram_total);
+    const swap = recordNumber(item.swap);
+    const swapTotal = recordNumber(item.swap_total);
+    const load = recordNumber(item.load);
+    const temp = recordNumber(item.temp);
+    const disk = recordNumber(item.disk);
+    const diskTotal = recordNumber(item.disk_total);
+    const netIn = recordNumber(item.net_in);
+    const netOut = recordNumber(item.net_out);
+    const netTotalUp = recordNumber(item.net_total_up);
+    const netTotalDown = recordNumber(item.net_total_down);
+    const proc = recordNumber(item.process);
+    if (
+      cpu === null ||
+      gpu === null ||
+      ram === null ||
+      ramTotal === null ||
+      swap === null ||
+      swapTotal === null ||
+      load === null ||
+      temp === null ||
+      disk === null ||
+      diskTotal === null ||
+      netIn === null ||
+      netOut === null ||
+      netTotalUp === null ||
+      netTotalDown === null ||
+      proc === null
+    ) {
+      continue;
+    }
+
+    out.push({
+      cpu,
+      gpu,
+      ram,
+      ram_total: ramTotal,
+      swap,
+      swap_total: swapTotal,
+      load,
+      temp,
+      disk,
+      disk_total: diskTotal,
+      net_in: netIn,
+      net_out: netOut,
+      net_total_up: netTotalUp,
+      net_total_down: netTotalDown,
+      process: proc,
+      time: item.time,
+      client: (item.client as string | undefined) ?? "",
+    });
+  }
+  return out;
+}
+
+function parsePingRecords(value: unknown): PingRecord[] {
+  if (!Array.isArray(value)) return [];
+  const out: PingRecord[] = [];
+  for (const raw of value) {
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) continue;
+    const item = raw as Record<string, unknown>;
+    if (typeof item.task_id !== "number" || !Number.isFinite(item.task_id)) continue;
+    if (!isValidRecordTime(item.time)) continue;
+    if (typeof item.value !== "number" || !Number.isFinite(item.value)) continue;
+    if (item.client !== undefined && typeof item.client !== "string") continue;
+
+    const record: PingRecord = {
+      task_id: item.task_id,
+      time: item.time,
+      value: item.value,
+      client: (item.client as string | undefined) ?? "",
+    };
+    if (typeof item.loss === "number" && Number.isFinite(item.loss)) {
+      record.loss = item.loss;
+    }
+    out.push(record);
   }
   return out;
 }
@@ -211,7 +302,7 @@ function normalizeRpcLoadRecords(
   payload: RpcRecordsPayload,
   range?: RequestRange,
 ): LoadRecordsResponse {
-  const records = parseArrayLenient(LoadRecordSchema, extractRpcRecords(payload, uuid));
+  const records = parseLoadRecords(extractRpcRecords(payload, uuid));
   const count = payload.count;
   return {
     count: typeof count === "number" && Number.isFinite(count) && count > 0 ? count : records.length,
@@ -226,7 +317,7 @@ function normalizeRpcPingRecords(
   payload: RpcRecordsPayload,
   range?: RequestRange,
 ): PingRecordsResponse {
-  const records = parseArrayLenient(PingRecordSchema, extractRpcRecords(payload, uuid));
+  const records = parsePingRecords(extractRpcRecords(payload, uuid));
   const tasks = z.array(PingTaskSchema).parse(payload.tasks);
   const count = payload.count;
   return {
@@ -241,7 +332,7 @@ function normalizeRpcPingOverview(
   payload: RpcRecordsPayload,
   range?: RequestRange,
 ): PingOverviewResponse {
-  const records = parseArrayLenient(PingRecordSchema, extractRpcRecords(payload));
+  const records = parsePingRecords(extractRpcRecords(payload));
   return {
     records,
     tasks: z.array(PingTaskSchema).parse(payload.tasks),
@@ -414,11 +505,14 @@ export async function getPingOverview(
   taskId?: number,
   options?: { signal?: AbortSignal; entityIds?: string[] },
 ): Promise<PingOverviewResponse> {
+  const singleUuid =
+    options?.entityIds?.length === 1 ? options.entityIds[0] : undefined;
   const payload = await rpcCall(
     "common:getRecords",
     {
       hours,
       type: "ping",
+      ...(singleUuid ? { uuid: singleUuid } : {}),
       ...(taskId != null ? { task_id: taskId } : {}),
       maxCount: OVERVIEW_PING_MAX_COUNT,
     },

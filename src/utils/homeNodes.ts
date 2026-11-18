@@ -35,7 +35,9 @@ function regionRank(code: string): number {
  * 按展示地区代码聚合节点数,按固定地理优先级排序(见 REGION_PRIORITY):中国(大陆优先,含港澳台)
  * → 新加坡 → 日本 → 美国 → 欧洲诸国 → 其余。同一档内(欧洲/其余)再按数量降序、代码升序。
  */
-export function getHomeRegionOptions(nodes: HomeNodeSummary[]): HomeRegionOption[] {
+export function getHomeRegionOptions(
+  nodes: ReadonlyArray<Pick<HomeNodeSummary, "region">>,
+): HomeRegionOption[] {
   const counts = new Map<string, number>();
   for (const node of nodes) {
     const code = getDisplayRegionCode(node.region);
@@ -54,7 +56,7 @@ export function getHomeGroupLabel(group: string) {
 }
 
 /** 对一组原始 group 值做 trim、去空、去重,保留首次出现的顺序。 */
-export function dedupeGroupLabels(groups: Iterable<string | null | undefined>): string[] {
+function dedupeGroupLabels(groups: Iterable<string | null | undefined>): string[] {
   const seen = new Set<string>();
   const result: string[] = [];
 
@@ -68,14 +70,18 @@ export function dedupeGroupLabels(groups: Iterable<string | null | undefined>): 
   return result;
 }
 
-export function getHomeGroupOptions(nodes: HomeNodeSummary[]) {
+export function getHomeGroupOptions(
+  nodes: ReadonlyArray<Pick<HomeNodeSummary, "group">>,
+) {
   return dedupeGroupLabels(nodes.map((node) => node.group));
 }
 
 /** 保留 Komari 原始权重顺序，仅把明确离线的实例稳定移到列表末尾。 */
-export function moveOfflineHomeNodesLast(nodes: HomeNodeSummary[]) {
-  const available: HomeNodeSummary[] = [];
-  const offline: HomeNodeSummary[] = [];
+export function moveOfflineHomeNodesLast<T extends Pick<HomeNodeSummary, "online">>(
+  nodes: readonly T[],
+): T[] {
+  const available: T[] = [];
+  const offline: T[] = [];
   for (const node of nodes) {
     (node.online === false ? offline : available).push(node);
   }

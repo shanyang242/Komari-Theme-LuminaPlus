@@ -1,3 +1,6 @@
+import { clamp } from "@/utils/hsl";
+import { inferMedianIntervalSeconds, medianValue } from "@/utils/historyRange";
+
 export type TimedMetricPoint = {
   time: number;
   // null = 真实断点 (丢包或检测到的中断)——切断线条。
@@ -37,16 +40,6 @@ function findPointNearTime(times: number[], target: number, tolerance: number) {
   return -1;
 }
 
-function median(values: number[]) {
-  if (values.length === 0) return 0;
-  const sorted = [...values].sort((a, b) => a - b);
-  const mid = Math.floor(sorted.length / 2);
-  if (sorted.length % 2 === 0) {
-    return (sorted[mid - 1] + sorted[mid]) / 2;
-  }
-  return sorted[mid];
-}
-
 // `spanMissing` 决定缺失的 task key 填成什么。false (默认) 填 `null`——把缺采样当真实断点，
 // 适用于 LoadChart 的 fillMissingMetricPoints 这类单序列填充。true 填 `undefined`，让 off-phase
 // anchor (另一个 task 建的列) 保持可跨越而非切断每条线。(用布尔而非填充值，因为给有默认值的参数
@@ -70,14 +63,14 @@ function normalizePoints(points: TimedMetricPoint[], spanMissing = false) {
   const deduped = new Map<number, TimedMetricPoint>();
 
   // 对同一时间戳的点做合并 (而非覆盖)，这样落在已有 anchor 上的某 task 哨兵 null
-  // 不会丢掉该 anchor 上其他 task 的值。
+  // 不会丢掉该 anchor 上其他 task 的值。Map 天然保持首次插入的升序顺序，无需二次排序。
   for (const point of [...points].sort((a, b) => a.time - b.time)) {
     const prev = deduped.get(point.time);
     deduped.set(point.time, prev ? { ...prev, ...point } : { ...base, ...point });
   }
 
   return {
-    points: [...deduped.values()].sort((a, b) => a.time - b.time),
+    points: Array.from(deduped.values()),
     keys,
   };
 }
@@ -87,13 +80,45 @@ export function detectTypicalIntervalSeconds(
   fallbackSeconds = 60,
 ) {
   if (times.length < 2) return fallbackSeconds;
-  const unique = Array.from(new Set(times)).sort((a, b) => a - b);
-  const gaps: number[] = [];
-  for (let index = 1; index < unique.length; index += 1) {
-    const gap = unique[index] - unique[index - 1];
-    if (gap > 0) gaps.push(gap);
+  return inferMedianIntervalSeconds(times) ?? fallbackSeconds;
+}
+
+function isSeparatedAscending<T extends { time: number }>(points: readonly T[]): boolean {
+  for (let index = 1; index < points.length; index += 1) {
+    if (points[index].time - points[index - 1].time < 1) return false;
   }
-  return gaps.length > 0 ? median(gaps) : fallbackSeconds;
+  return true;
+}
+
+/**
+ * 合并历史种子点与实时流采样点：
+ * - 两段各自严格递增（间隔 >= 1s）且实时段完全位于历史段之后时，直接线性拼接切片；
+ * - 出现时间交错、近邻重复（< 1s）或乱序帧时，回退排序与去重以保证单调时间轴且不丢历史点。
+ */
+export function mergeRealtimeMetricPoints<T extends { time: number }>(
+  initial: readonly T[],
+  realtimePoints: readonly T[],
+  limit: number,
+): T[] {
+  const canAppendDirectly =
+    isSeparatedAscending(initial) &&
+    isSeparatedAscending(realtimePoints) &&
+    (initial.length === 0 ||
+      realtimePoints.length === 0 ||
+      realtimePoints[0].time - initial[initial.length - 1].time >= 1);
+
+  if (canAppendDirectly) {
+    if (realtimePoints.length === 0) return initial.slice(-limit);
+    if (initial.length === 0) return realtimePoints.slice(-limit);
+    return [...initial, ...realtimePoints].slice(-limit);
+  }
+
+  const merged = [...initial, ...realtimePoints].sort((a, b) => a.time - b.time);
+  const deduped = merged.filter((point, index, arr) => {
+    const next = arr[index + 1];
+    return !next || Math.abs(next.time - point.time) >= 1;
+  });
+  return deduped.slice(-limit);
 }
 
 export function fillMissingMetricPoints(
@@ -255,8 +280,6 @@ export function interpolateMetricGaps(
   const multiplier = options?.maxGapMultiplier ?? 6;
   const minCapSeconds = options?.minCapSeconds ?? 120;
   const maxCapSeconds = options?.maxCapSeconds ?? 1_800;
-  const clamp = (value: number, min: number, max: number) =>
-    Math.max(min, Math.min(max, value));
 
   for (const key of keys) {
     const validIndices: number[] = [];
@@ -276,7 +299,7 @@ export function interpolateMetricGaps(
         if (gap > 0) gaps.push(gap);
       }
       if (gaps.length === 0) continue;
-      maxGapSeconds = clamp(median(gaps) * multiplier, minCapSeconds, maxCapSeconds);
+      maxGapSeconds = clamp((medianValue(gaps) ?? 0) * multiplier, minCapSeconds, maxCapSeconds);
     }
 
     for (let index = 0; index < validIndices.length - 1; index += 1) {
@@ -312,17 +335,17 @@ export function cutPeakValues<T extends { [key: string]: number | null | undefin
 ) {
   if (!data || data.length === 0 || keys.length === 0) return data;
 
-  const result = data.map((point) => ({ ...point }));
+  const result = data.map((point) => ({ ...point })) as Array<Record<string, number | null | undefined>>;
   const halfWindow = Math.floor(windowSize / 2);
 
   for (const key of keys) {
     // 记下哪些点本来就没值 (丢包/空缺)。下面的 EWMA 过程绝不能回填这些点——只能补它自己
     // 移除的尖峰——否则丢包空缺会被渲染成假的延迟。
-    const originallyMissing = new Set<number>();
+    const originallyMissing = new Uint8Array(result.length);
     for (let index = 0; index < result.length; index += 1) {
       const value = result[index][key];
       if (value == null || typeof value !== "number" || !Number.isFinite(value)) {
-        originallyMissing.add(index);
+        originallyMissing[index] = 1;
       }
     }
 
@@ -330,35 +353,28 @@ export function cutPeakValues<T extends { [key: string]: number | null | undefin
       const currentValue = result[index][key];
       if (currentValue == null || typeof currentValue !== "number") continue;
 
-      const neighbors: number[] = [];
-      for (
-        let pointer = Math.max(0, index - halfWindow);
-        pointer <= Math.min(result.length - 1, index + halfWindow);
-        pointer += 1
-      ) {
+      let neighborSum = 0;
+      let neighborCount = 0;
+      const start = Math.max(0, index - halfWindow);
+      const end = Math.min(result.length - 1, index + halfWindow);
+      for (let pointer = start; pointer <= end; pointer += 1) {
         if (pointer === index) continue;
         const neighbor = result[pointer][key];
         if (neighbor != null && typeof neighbor === "number" && Number.isFinite(neighbor)) {
-          neighbors.push(neighbor);
+          neighborSum += neighbor;
+          neighborCount += 1;
         }
       }
 
-      if (neighbors.length < 2) continue;
+      if (neighborCount < 2) continue;
 
-      const mean = neighbors.reduce((sum, value) => sum + value, 0) / neighbors.length;
+      const mean = neighborSum / neighborCount;
       if (mean > 0) {
-        const relativeChange = Math.abs(currentValue - mean) / mean;
-        if (relativeChange > spikeThreshold) {
-          result[index] = {
-            ...result[index],
-            [key]: null,
-          };
+        if (Math.abs(currentValue - mean) / mean > spikeThreshold) {
+          result[index][key] = null;
         }
       } else if (Math.abs(currentValue) > 10) {
-        result[index] = {
-          ...result[index],
-          [key]: null,
-        };
+        result[index][key] = null;
       }
     }
 
@@ -367,21 +383,15 @@ export function cutPeakValues<T extends { [key: string]: number | null | undefin
       const currentValue = result[index][key];
       if (currentValue != null && typeof currentValue === "number" && Number.isFinite(currentValue)) {
         ewma = ewma == null ? currentValue : alpha * currentValue + (1 - alpha) * ewma;
-        result[index] = {
-          ...result[index],
-          [key]: ewma,
-        };
-      } else if (ewma != null && !originallyMissing.has(index)) {
+        result[index][key] = ewma;
+      } else if (ewma != null && originallyMissing[index] === 0) {
         // 平滑掉刚移除的尖峰，但真实丢包空缺保持 null。
-        result[index] = {
-          ...result[index],
-          [key]: ewma,
-        };
+        result[index][key] = ewma;
       }
     }
   }
 
-  return result;
+  return result as T[];
 }
 
 // 桶内偏离均值超过这个相对比例才判定为「真尖峰」，保峰模式下输出极值而非均值。

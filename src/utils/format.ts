@@ -1,9 +1,4 @@
 const UNITS = ["B", "KB", "MB", "GB", "TB", "PB"] as const;
-const CLOCK_TIME_FORMATTER = new Intl.DateTimeFormat("zh-CN", {
-  hour: "2-digit",
-  minute: "2-digit",
-  hour12: false,
-});
 const TRAFFIC_RATE_THRESHOLDS: Array<{ unit: Exclude<TrafficRateUnit, "bps">; divisor: number }> = [
   { unit: "Tbps", divisor: 1_000_000_000_000 },
   { unit: "Gbps", divisor: 1_000_000_000 },
@@ -46,12 +41,6 @@ export function formatBytes(n: number | undefined | null): string {
   if (idx === 0) return `${Math.round(v)} ${UNITS[idx]}`;
   const dec = v >= 100 ? 0 : v >= 10 ? 1 : 2;
   return `${v.toFixed(dec)} ${UNITS[idx]}`;
-}
-
-/** 只显示时分（本地时区），用于峰值时间、更新时间等场景。 */
-export function formatClockTime(timeMs: number | null | undefined): string {
-  if (timeMs == null || !Number.isFinite(timeMs)) return "—";
-  return CLOCK_TIME_FORMATTER.format(timeMs);
 }
 
 function formatRateValue(value: number): string {
@@ -119,21 +108,30 @@ export function formatUptimeDays(seconds: number): { value: string; unit: string
   return { value: minutes.toString(), unit: "分钟" };
 }
 
+/** 统一解析数字秒/毫秒、数字字符串或日期字符串为毫秒时间戳；无效或非正值返回 0。 */
+export function parseTimestampMs(value: string | number | null | undefined): number {
+  if (typeof value === "number") {
+    if (!Number.isFinite(value) || value <= 0) return 0;
+    return value >= 1_000_000_000_000 ? value : value * 1000;
+  }
+  if (value == null) return 0;
+  const raw = String(value).trim();
+  if (!raw) return 0;
+  if (/^-?\d+(?:\.\d+)?$/.test(raw)) {
+    const numeric = Number(raw);
+    if (!Number.isFinite(numeric) || numeric <= 0) return 0;
+    return numeric >= 1_000_000_000_000 ? numeric : numeric * 1000;
+  }
+  const parsed = Date.parse(raw);
+  return Number.isNaN(parsed) || parsed <= 0 ? 0 : parsed;
+}
+
 // 将 `expired_at` 解析为毫秒；空值、Go 零时和 0/-1 哨兵均表示无到期。
 export function resolveExpireTimestamp(
   iso: string | number | null | undefined,
 ): number | null {
-  if (iso == null) return null;
-  const raw = String(iso).trim();
-  if (raw === "") return null;
-  if (/^-?\d+$/.test(raw)) {
-    const n = Number(raw);
-    if (n <= 0) return null; // 0 / -1 "无到期" 哨兵值
-    return n < 1e12 ? n * 1000 : n; // unix 秒 vs. 毫秒
-  }
-  const ts = Date.parse(raw);
-  if (Number.isNaN(ts) || ts <= 0) return null; // 无法解析或 Go 零时
-  return ts;
+  const ts = parseTimestampMs(iso);
+  return ts > 0 ? ts : null;
 }
 
 export function getExpireDaysRemaining(

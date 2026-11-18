@@ -25,7 +25,7 @@ type BillingCycleKind = "month" | "quarter" | "halfYear" | "year" | "lifetime";
  * 把自由文本的账单周期关键词(须预先 lowercase/trim)归类成标准周期,识别不出时返回 null。
  * 这里的标签格式化和 utils/cost.ts 里的天数解析共用它,让这套正则只存在一处。
  */
-export function classifyBillingCycleWord(normalized: string): BillingCycleKind | null {
+function classifyBillingCycleWord(normalized: string): BillingCycleKind | null {
   if (/^(monthly|month|mo|月|每月|月付)$/.test(normalized)) return "month";
   if (/^(quarterly|quarter|季|季度|每季|季付)$/.test(normalized)) return "quarter";
   if (/^(semi-?annual(ly)?|halfyear|half-year|半年|半年付)$/.test(normalized)) return "halfYear";
@@ -34,7 +34,7 @@ export function classifyBillingCycleWord(normalized: string): BillingCycleKind |
   return null;
 }
 
-export interface NormalizedBillingCycle {
+interface NormalizedBillingCycle {
   kind: BillingCycleKind | "days";
   /** 摊销天数;lifetime 为 -1 哨兵。 */
   days: number;

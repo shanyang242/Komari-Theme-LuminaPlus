@@ -1,9 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+import { memo, useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Flag } from "@/components/ui/Flag";
 import { useAuth } from "@/hooks/useAuth";
 import {
-  useAllNodeMeta,
   useHomeNodeSummaries,
   useNodeOnlineSummaries,
   useNodeStoreStatus,
@@ -23,7 +22,7 @@ import {
   formatSignedCny,
   getExchangeRates,
 } from "@/utils/cost";
-import { useHiddenNodeUuids } from "@/hooks/useVisibleNodes";
+import { useVisibleNodes } from "@/hooks/useVisibleNodes";
 import { speedRateColor } from "@/utils/metricTone";
 import {
   getHomeGroupLabel,
@@ -84,20 +83,51 @@ function HomeBrand({ siteName }: { siteName: string }) {
 }
 
 function HomeOverviewCards({
-  overview,
+  visibleUuidSet,
   costSummary,
   costLoading,
   showCosts,
   showDetailButton,
   renewalNodes,
 }: {
-  overview: HomeOverview;
+  visibleUuidSet: ReadonlySet<string>;
   costSummary: { remainingCny: number; premiumTotalCny: number } | null;
   costLoading: boolean;
   showCosts: boolean;
   showDetailButton: boolean;
   renewalNodes: RenewalReminderSource[];
 }) {
+  // 实时网速与总流量仅在此处订阅，避免每 2 秒微动带动下方分组、地区和整张网格重算。
+  const summaries = useHomeNodeSummaries();
+  const overview = useMemo<HomeOverview>(() => {
+    let totalNodes = 0;
+    let onlineNodes = 0;
+    let offlineNodes = 0;
+    let trafficUp = 0;
+    let trafficDown = 0;
+    let netUp = 0;
+    let netDown = 0;
+    for (const node of summaries) {
+      if (!visibleUuidSet.has(node.uuid)) continue;
+      totalNodes += 1;
+      if (node.online === true) onlineNodes += 1;
+      else if (node.online === false) offlineNodes += 1;
+      trafficUp += node.trafficUp;
+      trafficDown += node.trafficDown;
+      netUp += node.netUp;
+      netDown += node.netDown;
+    }
+
+    return {
+      totalNodes,
+      onlineNodes,
+      offlineNodes,
+      trafficUp,
+      trafficDown,
+      netUp,
+      netDown,
+    };
+  }, [summaries, visibleUuidSet]);
   const [trafficValue, trafficUnit] = formatBytes(
     overview.trafficUp + overview.trafficDown,
   ).split(" ");
@@ -221,7 +251,7 @@ function HomeOverviewCards({
   );
 }
 
-function GroupTabs({
+const GroupTabs = memo(function GroupTabs({
   groups,
   selectedGroup,
   onSelectGroup,
@@ -254,11 +284,11 @@ function GroupTabs({
       ))}
     </div>
   );
-}
+});
 
 // 地区筛选栏:按国旗聚合节点,点击某地区只看该地区;再点一次(或点已选中项)回到全部。
 // 与分组栏是两条独立筛选,可叠加(先分组、后地区)。
-function RegionTabs({
+const RegionTabs = memo(function RegionTabs({
   regions,
   selectedRegion,
   onSelectRegion,
@@ -291,13 +321,12 @@ function RegionTabs({
       </div>
     </section>
   );
-}
+});
 
 export function NodeGrid() {
   const now = useHourlyClock();
-  const nodes = useHomeNodeSummaries();
   const nodeOnlineSummaries = useNodeOnlineSummaries();
-  const allMeta = useAllNodeMeta();
+  const visibleMeta = useVisibleNodes();
   const { hydrated: storeHydrated, nodeInfoError } = useNodeStoreStatus();
   const { data: me, isError: authError } = useAuth();
   const { data: publicConfig } = usePublicConfig();
@@ -310,60 +339,34 @@ export function NodeGrid() {
   const [selectedRegion, setSelectedRegion] = useState(HOME_ALL_REGION);
   useHomepagePingOverview();
 
-  // 摘要不含名称，先从完整 meta 解析主题隐藏列表，再统一过滤各类数据。
-  const hiddenUuids = useHiddenNodeUuids();
+  const onlineByUuid = useMemo(
+    () => new Map(nodeOnlineSummaries.map((node) => [node.uuid, node.online] as const)),
+    [nodeOnlineSummaries],
+  );
+  const visibleUuidSet = useMemo(
+    () => new Set(visibleMeta.map((node) => node.uuid)),
+    [visibleMeta],
+  );
   const visibleNodes = useMemo(
     () =>
       moveOfflineHomeNodesLast(
-        nodes.filter(
-          (node) => (me?.logged_in === true || !node.hidden) && !hiddenUuids.has(node.uuid),
-        ),
+        visibleMeta.map((node) => ({
+          uuid: node.uuid,
+          group: String(node.group || "").trim(),
+          region: String(node.region || "").trim(),
+          online: onlineByUuid.get(node.uuid) ?? null,
+        })),
       ),
-    [me?.logged_in, nodes, hiddenUuids],
+    [onlineByUuid, visibleMeta],
   );
-  // 资产统计与卡片使用同一可见性规则，避免泄露隐藏节点信息。
-  const visibleMeta = useMemo(
+  const renewalNodes = useMemo<RenewalReminderSource[]>(
     () =>
-      allMeta.filter(
-        (node) => (me?.logged_in === true || !node.hidden) && !hiddenUuids.has(node.uuid),
-      ),
-    [allMeta, me?.logged_in, hiddenUuids],
+      visibleMeta.map((node) => ({
+        ...node,
+        online: onlineByUuid.get(node.uuid) ?? null,
+      })),
+    [onlineByUuid, visibleMeta],
   );
-  const renewalNodes = useMemo<RenewalReminderSource[]>(() => {
-    const onlineByUuid = new Map(
-      nodeOnlineSummaries.map((node) => [node.uuid, node.online]),
-    );
-    return visibleMeta.map((node) => ({
-      ...node,
-      online: onlineByUuid.get(node.uuid) ?? null,
-    }));
-  }, [nodeOnlineSummaries, visibleMeta]);
-  const overview = useMemo<HomeOverview>(() => {
-    let onlineNodes = 0;
-    let offlineNodes = 0;
-    let trafficUp = 0;
-    let trafficDown = 0;
-    let netUp = 0;
-    let netDown = 0;
-    for (const node of visibleNodes) {
-      if (node.online === true) onlineNodes += 1;
-      else if (node.online === false) offlineNodes += 1;
-      trafficUp += node.trafficUp;
-      trafficDown += node.trafficDown;
-      netUp += node.netUp;
-      netDown += node.netDown;
-    }
-
-    return {
-      totalNodes: visibleNodes.length,
-      onlineNodes,
-      offlineNodes,
-      trafficUp,
-      trafficDown,
-      netUp,
-      netDown,
-    };
-  }, [visibleNodes]);
   const showHomeOverview = themeSettings.isReady && themeSettings.showHomeOverview;
   const hasNodes = visibleMeta.length > 0;
   const costOverviewNeeded = showHomeOverview && costsVisible && hasNodes;
@@ -513,7 +516,7 @@ export function NodeGrid() {
       <HomeBrand siteName={siteName} />
       {showHomeOverview && (
         <HomeOverviewCards
-          overview={overview}
+          visibleUuidSet={visibleUuidSet}
           showDetailButton={showCostDetailButton}
           showCosts={costsVisible}
           renewalNodes={renewalNodes}

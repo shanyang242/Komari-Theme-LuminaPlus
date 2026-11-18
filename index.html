@@ -13,7 +13,7 @@
     <meta name="apple-mobile-web-app-title" content="Komari-Theme-LuminaPlus" />
     <link rel="manifest" href="/manifest.json" crossorigin="use-credentials" />
     <link rel="apple-touch-icon" href="/favicon.ico" />
-    <link rel="icon" type="image/png" sizes="192x192" href="/favicon.ico" />
+    <link rel="icon" href="/favicon.ico" />
     <meta property="og:title" content="Komari-Theme-LuminaPlus" />
     <meta property="og:description" content="A Komari monitor theme." />
     <meta name="twitter:card" content="summary_large_image" />
@@ -90,7 +90,11 @@
               const alpha = Number.isFinite(parsedAlpha)
                 ? Math.min(100, Math.max(0, Math.round(parsedAlpha)))
                 : 100;
-              const scrim = alpha >= 95 ? 0 : Math.round(((95 - alpha) / 95) * 16);
+              const scrim =
+                typeof bg.scrim === "string" &&
+                /^color-mix\(in srgb, var\(--bg-0\) \d+%, transparent\)$/.test(bg.scrim)
+                  ? bg.scrim
+                  : "";
               const style = document.documentElement.style;
               style.setProperty("--bg-image-desktop", desktopImage);
               style.setProperty("--bg-image-mobile", mobile);
@@ -102,11 +106,8 @@
               } else {
                 style.removeProperty("--surface-alpha");
               }
-              if (selectedImage !== "none" && scrim > 0) {
-                style.setProperty(
-                  "--bg-scrim",
-                  `color-mix(in srgb, var(--bg-0) ${scrim}%, transparent)`,
-                );
+              if (selectedImage !== "none" && scrim) {
+                style.setProperty("--bg-scrim", scrim);
               } else {
                 style.removeProperty("--bg-scrim");
               }

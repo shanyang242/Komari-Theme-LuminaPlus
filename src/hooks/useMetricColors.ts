@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { clearCssColorCache } from "@/components/node/CanvasStrip";
+import { CANVAS_COLOR_FALLBACKS, clearCssColorCache } from "@/components/node/CanvasStrip";
 import { usePublicConfig } from "@/hooks/usePublicConfig";
 import { saveThemeSettings } from "@/services/api";
 import type { PublicConfig } from "@/types/komari";
@@ -58,12 +58,6 @@ export const DEFAULT_DARK_DEPTH = 0;
 interface PaletteDraft {
   colors: MetricColors;
   darkDepth: number;
-}
-
-function toInputHex(value: string): string {
-  let v = value.trim().toLowerCase();
-  if (/^#[0-9a-f]{3}$/.test(v)) v = "#" + [...v.slice(1)].map((c) => c + c).join("");
-  return HEX.test(v) ? v : "#888888";
 }
 
 /** 从后端 theme_settings 解析出已保存的指标配色（校验 hex 与已知 key）。 */
@@ -171,11 +165,15 @@ export function useMetricColorsVersion(): number {
   );
 }
 
-/** 读取每个指标当前生效的 hex（含默认 token），供取色器显示初值。 */
-export function readEffectiveColors(): Record<MetricColorKey, string> {
-  const styles = getComputedStyle(document.documentElement);
+/** 读取当前明暗主题下每个指标的原生默认 Token 色，不受已写入 style 的自定义覆盖污染，且零同步重排开销。 */
+export function getDefaultMetricColors(
+  appearance: "light" | "dark",
+): Record<MetricColorKey, string> {
+  const palette = CANVAS_COLOR_FALLBACKS[appearance];
   const out = {} as Record<MetricColorKey, string>;
-  for (const { key, cssVar } of METRIC_COLOR_META) out[key] = toInputHex(styles.getPropertyValue(cssVar));
+  for (const { key, cssVar } of METRIC_COLOR_META) {
+    out[key] = palette[cssVar as keyof typeof palette] ?? "#888888";
+  }
   return out;
 }
 

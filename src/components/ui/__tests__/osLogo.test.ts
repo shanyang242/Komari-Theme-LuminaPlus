@@ -21,6 +21,10 @@ describe("resolveOsInfo", () => {
     expect(resolveOsInfo("Red Hat Enterprise Linux").name).toBe("Red Hat");
     expect(resolveOsInfo("FreeBSD 14.0").name).toBe("FreeBSD");
     expect(resolveOsInfo("NixOS 23.11").name).toBe("NixOS");
+    expect(resolveOsInfo("fnOS 0.8")).toMatchObject({
+      name: "fnOS",
+      image: "/images/logo/os-fnos.png",
+    });
   });
 
   it("falls back to the first token for unknown systems", () => {

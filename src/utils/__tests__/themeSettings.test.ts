@@ -30,6 +30,12 @@ describe("normalizeThemeSettings", () => {
           iconUrl: " https://cdn.example.com/logo.png ",
         },
         "node-b": { url: "", iconUrl: " https://cdn.example.com/future.png " },
+        "node-domain": { url: " merchant.example.com ", iconUrl: "" },
+        "node-port": {
+          url: " example.com:8443/shop ",
+          iconUrl: " images/shop.svg ",
+        },
+        "node-unsafe": { url: "javascript:alert(1)", iconUrl: "data:text/html,1" },
         "node-empty": { url: " ", iconUrl: " " },
       },
     });
@@ -42,6 +48,14 @@ describe("normalizeThemeSettings", () => {
       "node-b": {
         url: "",
         iconUrl: "https://cdn.example.com/future.png",
+      },
+      "node-domain": {
+        url: "https://merchant.example.com",
+        iconUrl: "",
+      },
+      "node-port": {
+        url: "https://example.com:8443/shop",
+        iconUrl: "images/shop.svg",
       },
     });
     expect(normalizeThemeSettings({}).nodeMerchantLinks).toEqual({});

@@ -195,40 +195,33 @@ export const MeSchema = z
 
 export type Me = z.output<typeof MeSchema>;
 
-export const LoadRecordSchema = z
-  .object({
-    cpu: z.number().default(0),
-    gpu: z.number().default(0),
-    ram: z.number().default(0),
-    ram_total: z.number().default(0),
-    swap: z.number().default(0),
-    swap_total: z.number().default(0),
-    load: z.number().default(0),
-    temp: z.number().default(0),
-    disk: z.number().default(0),
-    disk_total: z.number().default(0),
-    net_in: z.number().default(0),
-    net_out: z.number().default(0),
-    net_total_up: z.number().default(0),
-    net_total_down: z.number().default(0),
-    process: z.number().default(0),
-    time: z.union([z.string(), z.number()]),
-    client: z.string().default(""),
-  })
-  .passthrough();
+export interface LoadRecord {
+  cpu: number;
+  gpu: number;
+  ram: number;
+  ram_total: number;
+  swap: number;
+  swap_total: number;
+  load: number;
+  temp: number;
+  disk: number;
+  disk_total: number;
+  net_in: number;
+  net_out: number;
+  net_total_up: number;
+  net_total_down: number;
+  process: number;
+  time: string | number;
+  client: string;
+}
 
-export type LoadRecord = z.output<typeof LoadRecordSchema>;
-
-export const PingRecordSchema = z
-  .object({
-    task_id: z.number(),
-    time: z.union([z.string(), z.number()]),
-    value: z.number(),
-    client: z.string().default(""),
-  })
-  .passthrough();
-
-export type PingRecord = z.output<typeof PingRecordSchema>;
+export interface PingRecord {
+  task_id: number;
+  time: string | number;
+  value: number;
+  client: string;
+  loss?: number;
+}
 
 export const PingTaskSchema = z
   .object({

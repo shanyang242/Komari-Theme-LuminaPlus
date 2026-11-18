@@ -74,7 +74,7 @@ interface CostSummary {
   details: CostSummaryDetail[];
 }
 
-export interface CostPaybackResult {
+interface CostPaybackResult {
   status: "unconfigured" | "impossible" | "active" | "recovered";
   remainingDays: number | null;
   remainingCny: number;
@@ -519,31 +519,8 @@ export function calculateCostSummary(
     const name = node.name || node.display_name || node.remark || node.uuid;
     const cycleDays = billingCycleDays(node.billing_cycle);
     const billingIgnored = nodeMatchesIdentitySet(node, ignored);
-    if (billingIgnored) {
-      details.push({
-        uuid: node.uuid,
-        name: String(name || "未命名服务器"),
-        region: String(node.region || ""),
-        expiredAt: String(node.expired_at || ""),
-        weight: Number(node.weight) || 0,
-        priceCny: 0,
-        monthlyCny: 0,
-        remainingCny: 0,
-        premiumCny: 0,
-        regularPriceCny: null,
-        payback: { status: "unconfigured", remainingDays: null, remainingCny: 0, netCny: 0 },
-        amortMonths: null,
-        premiumMonthlyCny: 0,
-        premiumRemainingCny: 0,
-        billingCycleDays: cycleDays,
-        billingIgnored: true,
-        counted: false,
-        note: "已忽略费用",
-      });
-      continue;
-    }
     // 溢价以人民币直接记录、不依赖价格与汇率,免费/汇率缺失节点照样计入 premiumTotalCny,
-    // 不能因价格校验不过就静默丢掉;它不参与 remaining/monthly/totalCny。
+    // 不能因价格校验不过就静默丢掉;已忽略费用的节点仍计算单机参考值,但跳过全部汇总累加。
     const entry = premiums[node.uuid];
     const premium = entry?.amount ?? 0;
     const regularPrice = entry?.regularPriceCny;
@@ -577,9 +554,11 @@ export function calculateCostSummary(
 
     const price = Number(node.price) || 0;
     if (price <= 0) {
-      premiumTotalCny += premium;
-      premiumMonthlyTotalCny += premiumMonthly;
-      premiumRemainingTotalCny += premiumRemaining;
+      if (!billingIgnored) {
+        premiumTotalCny += premium;
+        premiumMonthlyTotalCny += premiumMonthly;
+        premiumRemainingTotalCny += premiumRemaining;
+      }
       details.push({
         ...baseDetail,
         payback: calculateCostPayback(
@@ -599,9 +578,11 @@ export function calculateCostSummary(
 
     const converted = convertToCny(price, node.currency, rates);
     if (converted == null || !Number.isFinite(converted)) {
-      premiumTotalCny += premium;
-      premiumMonthlyTotalCny += premiumMonthly;
-      premiumRemainingTotalCny += premiumRemaining;
+      if (!billingIgnored) {
+        premiumTotalCny += premium;
+        premiumMonthlyTotalCny += premiumMonthly;
+        premiumRemainingTotalCny += premiumRemaining;
+      }
       details.push({
         ...baseDetail,
         counted: false,
@@ -615,13 +596,15 @@ export function calculateCostSummary(
     const remaining = remainingCycleValue(converted, cycleDays, node.expired_at, now);
 
     // `totalCny` 是年化支出(月度 ×12),这样不同账单周期的节点能在同一口径上相加;永久/一次性节点
-    // (monthly === 0)对这个周期性总额不贡献。
-    totalCny += monthly * 12;
-    monthlyCny += monthly;
-    remainingCny += remaining;
-    premiumTotalCny += premium;
-    premiumMonthlyTotalCny += premiumMonthly;
-    premiumRemainingTotalCny += premiumRemaining;
+    // (monthly === 0)对这个周期性总额不贡献。已忽略费用的节点不参与任何总额累加,仅保留单机参考值。
+    if (!billingIgnored) {
+      totalCny += monthly * 12;
+      monthlyCny += monthly;
+      remainingCny += remaining;
+      premiumTotalCny += premium;
+      premiumMonthlyTotalCny += premiumMonthly;
+      premiumRemainingTotalCny += premiumRemaining;
+    }
 
     details.push({
       ...baseDetail,
@@ -637,7 +620,7 @@ export function calculateCostSummary(
       ),
       monthlyCny: monthly,
       remainingCny: remaining,
-      counted: true,
+      counted: !billingIgnored,
       note: "",
     });
   }
@@ -683,7 +666,7 @@ export function calculateCostPremiumBasisAt(
   ).details[0];
   if (!detail) return null;
   if (detail.note === "免费") return 0;
-  return detail.counted ? detail.remainingCny : null;
+  return detail.priceCny > 0 ? detail.remainingCny : null;
 }
 
 const CNY_MONEY_FORMATTER = new Intl.NumberFormat("zh-CN", {

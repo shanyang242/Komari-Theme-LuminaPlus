@@ -46,13 +46,6 @@ export function pingEmptyLabels(
     : { title: "未配置首页 Ping", text: "未配置" };
 }
 
-/** 生成“Debian 12”这类简短系统标签。 */
-export function formatOsLabel(osName: string, rawOs?: string | null): string {
-  if (!rawOs) return osName;
-  const match = rawOs.match(/\d+(?:\.\d+)?/);
-  return match ? `${osName} ${match[0]}` : osName;
-}
-
 /** 节点卡片头部"查看实例详情"链接的 title 和 aria-label。 */
 export function nodeDetailLinkLabels(name: string, osName: string) {
   return {
@@ -64,8 +57,8 @@ export function nodeDetailLinkLabels(name: string, osName: string) {
 /** 极小但非零流量只显示一段内的细提示，避免夸大用量。 */
 export const TRAFFIC_SLIVER_RATIO = 0.1;
 
-// LatencyBars(延迟)和 QualityBars(丢包)共享的柱状条几何/命中检测。两者都渲染
-// 定数量的 canvas 柱子行,所以 slot 计算和柱宽/间距必须保持一致。
+// HealthBars(延迟/丢包)共享的柱状条几何/命中检测。两者都渲染固定数量的 canvas 柱子行,
+// 所以 slot 计算和柱宽/间距必须保持一致。
 
 /** 指针 offset 落在哪个 slot(0..count-1),没有柱子时返回 null。 */
 export function getBarSlot(offsetX: number, width: number, count: number): number | null {
@@ -84,7 +77,7 @@ export function getBarGeometry(width: number, count: number): { gap: number; bar
 // 延迟/丢包柱的统一取值模型:激活判定/柱高/颜色/透明度只在这一处定义，
 // 由大卡 Canvas 与小卡 DOM 共同使用。
 // 延迟与丢包都使用固定高度，严重度只由绝对值颜色表达，便于跨节点比较。
-export interface HealthBarSlotModel {
+interface HealthBarSlotModel {
   active: boolean;
   /** 柱高占比(0-1)。 */
   heightFraction: number;

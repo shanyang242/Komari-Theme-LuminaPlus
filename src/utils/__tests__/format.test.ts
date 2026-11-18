@@ -3,12 +3,12 @@ import {
   formatBytes,
   formatByteRate,
   formatByteRateLabel,
-  formatClockTime,
   formatExpireDays,
   formatTrafficRateLabel,
   formatUptimeDays,
   getExpireDaysRemaining,
   parseTags,
+  parseTimestampMs,
   resolveExpireTimestamp,
   trimFixed,
 } from "@/utils/format";
@@ -42,17 +42,30 @@ describe("formatBytes", () => {
   });
 });
 
-describe("formatClockTime", () => {
-  it("formats local hour and minute only", () => {
-    expect(formatClockTime(new Date(2026, 7, 6, 14, 32).getTime())).toBe("14:32");
-    expect(formatClockTime(new Date(2026, 7, 6, 9, 5).getTime())).toBe("09:05");
+describe("parseTimestampMs", () => {
+  it("normalizes seconds, milliseconds, numeric strings and ISO dates", () => {
+    expect(parseTimestampMs(1_700_000_000)).toBe(1_700_000_000_000);
+    expect(parseTimestampMs(1_700_000_000_000)).toBe(1_700_000_000_000);
+    expect(parseTimestampMs("1700000000")).toBe(1_700_000_000_000);
+    expect(parseTimestampMs("2026-06-13T12:00:00.000Z")).toBe(
+      Date.parse("2026-06-13T12:00:00.000Z"),
+    );
   });
 
-  it("returns an em dash for missing or non-finite timestamps", () => {
-    expect(formatClockTime(null)).toBe("—");
-    expect(formatClockTime(undefined)).toBe("—");
-    expect(formatClockTime(Number.NaN)).toBe("—");
-    expect(formatClockTime(0)).not.toBe("—");
+  it("treats the 1e12 boundary as milliseconds for both numbers and strings (regression)", () => {
+    expect(parseTimestampMs(1_000_000_000_000)).toBe(1_000_000_000_000);
+    expect(parseTimestampMs("1000000000000")).toBe(1_000_000_000_000);
+    expect(resolveExpireTimestamp(1_000_000_000_000)).toBe(1_000_000_000_000);
+    expect(resolveExpireTimestamp("1000000000000")).toBe(1_000_000_000_000);
+  });
+
+  it("returns 0 for missing, invalid, or non-positive inputs", () => {
+    expect(parseTimestampMs(null)).toBe(0);
+    expect(parseTimestampMs(undefined)).toBe(0);
+    expect(parseTimestampMs(0)).toBe(0);
+    expect(parseTimestampMs(-1)).toBe(0);
+    expect(parseTimestampMs(Number.NaN)).toBe(0);
+    expect(parseTimestampMs("invalid")).toBe(0);
   });
 });
 

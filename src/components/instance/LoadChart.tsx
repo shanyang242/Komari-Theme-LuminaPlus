@@ -29,6 +29,7 @@ import {
   downsampleAligned,
   fillMissingMetricPoints,
   interpolateMetricGaps,
+  mergeRealtimeMetricPoints,
 } from "./chartData";
 import { formatBytes, formatTrafficRateLabel } from "@/utils/format";
 import { historyChartRangeSeconds, historyCoverageLabel } from "@/utils/historyRange";
@@ -74,8 +75,11 @@ interface ChartPoint {
   [key: string]: number | null;
 }
 
-function metricData(points: ChartPoint[], keys: string[]): uPlot.AlignedData {
-  const times = points.map((point) => point.time);
+function metricData(
+  points: ChartPoint[],
+  times: number[],
+  keys: string[],
+): uPlot.AlignedData {
   return [times, ...keys.map((key) => points.map((point) => point[key] ?? null))] as uPlot.AlignedData;
 }
 
@@ -244,6 +248,7 @@ const ChartCard = memo(function ChartCard({
   note,
   uuid,
   points,
+  times,
   keys,
   colors,
   resolvedAppearance,
@@ -260,6 +265,7 @@ const ChartCard = memo(function ChartCard({
   note?: ReactNode;
   uuid: string;
   points: ChartPoint[];
+  times: number[];
   keys: string[];
   colors: string[];
   resolvedAppearance: "light" | "dark";
@@ -279,7 +285,7 @@ const ChartCard = memo(function ChartCard({
     rows: [],
     time: "",
   });
-  const data = useMemo(() => metricData(points, keys), [points, keys]);
+  const data = useMemo(() => metricData(points, times, keys), [points, times, keys]);
   useLayoutEffect(() => {
     dataRef.current = data;
   }, [data]);
@@ -423,15 +429,13 @@ export function LoadChart({
   const points = useMemo<ChartPoint[]>(() => {
     if (isRealtime) {
       const initial = historyPoints.slice(-REALTIME_HISTORY_SEED_LIMIT);
-      const merged = [...initial, ...realtimePoints].sort((a, b) => a.time - b.time);
-      const deduped = merged.filter((point, index, arr) => {
-        const next = arr[index + 1];
-        return !next || Math.abs(next.time - point.time) >= 1;
-      });
-      return deduped.slice(-REALTIME_SAMPLE_LIMIT);
+      return mergeRealtimeMetricPoints(initial, realtimePoints, REALTIME_SAMPLE_LIMIT);
     }
     return historyPoints;
   }, [historyPoints, isRealtime, realtimePoints]);
+
+  // 5 张子图表共享同一份时间轴数组，避免每次更新重复提取 5 次。
+  const times = useMemo(() => points.map((point) => point.time), [points]);
 
   // 最新值取自按时间排好序的 historyRecords。
   const latestHistoryRecord = historyRecords[historyRecords.length - 1]?.record;
@@ -532,6 +536,7 @@ export function LoadChart({
           }
           note="使用率"
           points={points}
+          times={times}
           keys={CPU_KEYS}
           colors={CPU_COLORS}
           resolvedAppearance={resolvedAppearance}
@@ -562,6 +567,7 @@ export function LoadChart({
                 : "Swap 无"
           }
           points={points}
+          times={times}
           keys={MEMORY_KEYS}
           colors={MEMORY_COLORS}
           resolvedAppearance={resolvedAppearance}
@@ -584,6 +590,7 @@ export function LoadChart({
           }
           note="已用空间"
           points={points}
+          times={times}
           keys={DISK_KEYS}
           colors={DISK_COLORS}
           resolvedAppearance={resolvedAppearance}
@@ -611,6 +618,7 @@ export function LoadChart({
             </span>
           }
           points={points}
+          times={times}
           keys={NETWORK_KEYS}
           colors={NETWORK_COLORS}
           resolvedAppearance={resolvedAppearance}
@@ -639,6 +647,7 @@ export function LoadChart({
                 : "—"
           }
           points={points}
+          times={times}
           keys={PROCESS_KEYS}
           colors={PROCESS_COLORS}
           resolvedAppearance={resolvedAppearance}

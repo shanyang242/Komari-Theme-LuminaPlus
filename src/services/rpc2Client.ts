@@ -47,7 +47,7 @@ const MAX_RECONNECT_INTERVAL_MS = 30_000;
 
 // 服务端 RPC 错误不可再用 HTTP 重试，否则可能重复处理请求。
 // 注意:WS 超时(结果未知)也会自动用 HTTP 重放同一调用,因此本客户端只可用于幂等的只读方法。
-export class RpcResponseError extends Error {
+class RpcResponseError extends Error {
   constructor(
     message: string,
     public readonly code?: number,
@@ -57,7 +57,7 @@ export class RpcResponseError extends Error {
   }
 }
 
-class RPC2Client {
+export class RPC2Client {
   private ws: WebSocket | null = null;
   private requestId = 0;
   private pending = new Map<JsonRpcId, PendingRequest>();
@@ -134,10 +134,12 @@ class RPC2Client {
 
       const timeout = window.setTimeout(() => {
         cleanup();
+        if (this.ws === ws) this.ws = null;
         this.state = "error";
         try {
           ws.close();
         } catch {}
+        this.scheduleReconnect();
         reject(new Error("RPC2 WebSocket connection timed out"));
       }, 10_000);
 
@@ -151,6 +153,7 @@ class RPC2Client {
       const handleOpen = () => {
         cleanup();
         if (this.closed) {
+          if (this.ws === ws) this.ws = null;
           this.state = "disconnected";
           try {
             ws.close();
@@ -160,28 +163,34 @@ class RPC2Client {
         }
         this.state = "connected";
         this.reconnectAttempts = 0;
+        this.attachSocketHandlers(ws);
         this.startHeartbeat();
         resolve();
       };
 
       const handleError = () => {
         cleanup();
+        if (this.ws === ws) this.ws = null;
         this.state = "error";
+        try {
+          ws.close();
+        } catch {}
         this.scheduleReconnect();
         reject(new Error("RPC2 WebSocket connection failed"));
       };
 
-      // 握手关闭可能没有 error 事件，需立即结算 promise 以允许重连。
+      // 握手关闭可能没有 error 事件，需立即结算 promise 并调度退避重连。
       const handleConnectClose = () => {
         cleanup();
+        if (this.ws === ws) this.ws = null;
         this.state = "error";
+        this.scheduleReconnect();
         reject(new Error("RPC2 WebSocket closed during connect"));
       };
 
       ws.addEventListener("open", handleOpen, { once: true });
       ws.addEventListener("error", handleError, { once: true });
       ws.addEventListener("close", handleConnectClose, { once: true });
-      this.attachSocketHandlers(ws);
     }).finally(() => {
       this.connectPromise = null;
     });

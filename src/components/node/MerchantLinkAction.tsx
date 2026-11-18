@@ -1,6 +1,10 @@
 import { clsx } from "clsx";
 import { MerchantIcon } from "@/components/ui/MerchantIcon";
-import type { NodeMerchantLink } from "@/utils/merchantLinks";
+import {
+  resolveMerchantIconUrl,
+  resolveMerchantLinkUrl,
+  type NodeMerchantLink,
+} from "@/utils/merchantLinks";
 
 export function MerchantLinkAction({
   link,
@@ -9,11 +13,11 @@ export function MerchantLinkAction({
   link?: NodeMerchantLink;
   className: string;
 }) {
-  const url = link?.url.trim() ?? "";
+  const url = resolveMerchantLinkUrl(link?.url);
   const icon = (
     <MerchantIcon
       enabled={Boolean(url)}
-      iconUrl={url ? link?.iconUrl.trim() : ""}
+      iconUrl={url ? resolveMerchantIconUrl(link?.iconUrl) : ""}
       size={15}
     />
   );

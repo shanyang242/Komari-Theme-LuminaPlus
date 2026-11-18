@@ -8,7 +8,7 @@ const MOBILE_OVERRIDE_KEY = "lumina-plus:view-mode:mobile";
 export const MOBILE_VIEW_MODE_QUERY = MOBILE_VIEWPORT_QUERY;
 const VIEW_MODE_CYCLE: readonly NodeViewMode[] = ["large", "compact"];
 
-export type ViewModeDevice = "desktop" | "mobile";
+type ViewModeDevice = "desktop" | "mobile";
 
 export function getNextViewMode(mode: NodeViewMode): NodeViewMode {
   const cycle = VIEW_MODE_CYCLE;

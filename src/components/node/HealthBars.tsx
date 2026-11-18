@@ -8,33 +8,45 @@ import {
 } from "./nodeCardShared";
 import type { PingOverviewBucket } from "@/types/komari";
 
-interface LatencyBarsProps {
+interface HealthBarsProps {
+  kind: "latency" | "loss";
   buckets: PingOverviewBucket[];
   redrawKey?: string;
   height?: number;
   onHoverIndex?: (index: number | null) => void;
 }
 
-export function LatencyBars({ buckets, redrawKey, height = 16, onHoverIndex }: LatencyBarsProps) {
+export function HealthBars({
+  kind,
+  buckets,
+  redrawKey,
+  height = 16,
+  onHoverIndex,
+}: HealthBarsProps) {
   const bars = useMemo(
     () => {
       // CSS 色变化时需要重新解析预计算的 canvas 色值。
       void redrawKey;
       return buckets.map((bucket) => {
-        const slot = healthBarSlotModel(bucket, "latency");
+        const slot = healthBarSlotModel(bucket, kind);
         return { ...slot, tone: safeCanvasColor(slot.color) };
       });
     },
-    [buckets, redrawKey],
+    [buckets, kind, redrawKey],
   );
 
   const getHoverIndex = useCallback(
     (offsetX: number, width: number) => getBarSlot(offsetX, width, bars.length),
-    [bars],
+    [bars.length],
   );
 
   const draw = useCallback(
-    (ctx: CanvasRenderingContext2D, width: number, height: number, interaction: { hoverIndex: number | null; hoverProgress: number }) => {
+    (
+      ctx: CanvasRenderingContext2D,
+      width: number,
+      canvasHeight: number,
+      interaction: { hoverIndex: number | null; hoverProgress: number },
+    ) => {
       const { gap, barWidth } = getBarGeometry(width, bars.length);
 
       bars.forEach(({ heightFraction, alpha, tone }, index) => {
@@ -43,9 +55,9 @@ export function LatencyBars({ buckets, redrawKey, height = 16, onHoverIndex }: L
           interaction.hoverIndex === index,
           interaction.hoverProgress,
         );
-        const barHeight = height * visual.heightFraction;
+        const barHeight = canvasHeight * visual.heightFraction;
         const x = index * (barWidth + gap);
-        const y = height - barHeight;
+        const y = canvasHeight - barHeight;
 
         ctx.globalAlpha = visual.alpha;
         ctx.fillStyle = tone;

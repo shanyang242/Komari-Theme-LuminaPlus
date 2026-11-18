@@ -108,18 +108,23 @@ describe("calculateCostSummary", () => {
     expect(summary.totalCny).toBe(0);
   });
 
-  it("excludes ignored nodes from recurring costs and remaining value", () => {
+  it("excludes ignored nodes from recurring totals while keeping per-node reference values", () => {
     const summary = calculateCostSummary(
       [node({ uuid: "skip", name: "ignored-box", price: 10, expired_at: inDays(10) })],
       ["ignored-box"],
       RATES,
     );
-    expect(noteCount(summary, "已忽略费用")).toBe(1);
     expect(paidCount(summary)).toBe(0);
     expect(summary.totalCny).toBe(0);
     expect(summary.monthlyCny).toBe(0);
     expect(summary.remainingCny).toBe(0);
-    expect(summary.details[0].billingIgnored).toBe(true);
+    expect(summary.details[0]).toMatchObject({
+      billingIgnored: true,
+      counted: false,
+      priceCny: 70,
+      note: "",
+    });
+    expect(summary.details[0].remainingCny).toBeGreaterThan(20);
   });
 
   it("converts currency into CNY for the total", () => {
@@ -132,25 +137,43 @@ describe("calculateCostSummary", () => {
   });
 
   it.each([
-    { price: 10, currency: "USD" },
-    { price: 0, currency: "USD" },
-    { price: 10, currency: "GBP" },
-  ])("excludes ignored UUIDs before price/rate handling: %j", (pricing) => {
+    { price: 10, currency: "USD", expectedPriceCny: 70, expectedNote: "" },
+    { price: 0, currency: "USD", expectedPriceCny: 0, expectedNote: "免费" },
+    { price: 10, currency: "GBP", expectedPriceCny: 0, expectedNote: "汇率缺失" },
+  ])("excludes ignored UUIDs from summary totals across pricing shapes: %j", ({
+    price,
+    currency,
+    expectedPriceCny,
+    expectedNote,
+  }) => {
     const now = Date.now();
     const included = node({ uuid: "keep", price: 20, expired_at: inDays(30) });
-    const excluded = node({ uuid: "skip", ...pricing, expired_at: inDays(30) });
+    const excluded = node({ uuid: "skip", price, currency, expired_at: inDays(30) });
     const baseline = calculateCostSummary([included], [], RATES, {}, now);
     const summary = calculateCostSummary(
       [included, excluded], ["skip"], RATES,
       { skip: { amount: 99, acquiredAt: agoDays(60), regularPriceCny: 100 } }, now,
     );
     expect({ ...summary, details: [] }).toEqual({ ...baseline, details: [] });
-    expect(summary.details.find((detail) => detail.uuid === "skip")).toMatchObject({
-      counted: false, priceCny: 0, remainingCny: 0, premiumCny: 0,
-      premiumRemainingCny: 0, note: "已忽略费用",
+    const skippedDetail = summary.details.find((detail) => detail.uuid === "skip");
+    expect(skippedDetail).toMatchObject({
+      billingIgnored: true,
+      counted: false,
+      priceCny: expectedPriceCny,
+      premiumCny: 99,
+      note: expectedNote,
     });
-    expect(calculateCostPremiumBasisAt([excluded], ["skip"], RATES, "skip"))
-      .toBeNull();
+    if (expectedPriceCny > 0) {
+      expect(skippedDetail?.remainingCny).toBeCloseTo(70, 4);
+      expect(calculateCostPremiumBasisAt([excluded], ["skip"], RATES, "skip", undefined, now))
+        .toBeCloseTo(70, 4);
+    } else if (expectedNote === "免费") {
+      expect(calculateCostPremiumBasisAt([excluded], ["skip"], RATES, "skip", undefined, now))
+        .toBe(0);
+    } else {
+      expect(calculateCostPremiumBasisAt([excluded], ["skip"], RATES, "skip", undefined, now))
+        .toBeNull();
+    }
   });
 });
 
@@ -191,14 +214,13 @@ describe("calculateCostSummary — acquisition premiums", () => {
     expect(summary.details[0].premiumCny).toBe(20);
   });
 
-  it("excludes acquisition value and premium amortization for ignored nodes", () => {
+  it("excludes ignored nodes' acquisition premiums from summary totals while preserving detail reference values", () => {
     const summary = calculateCostSummary(
-      [node({ uuid: "skip", name: "ignored-box", price: 10 })],
+      [node({ uuid: "skip", name: "ignored-box", price: 10, expired_at: inDays(30) })],
       ["ignored-box"],
       RATES,
-      { skip: { amount: 99, acquiredAt: agoDays(60) } },
+      { skip: { amount: 99, acquiredAt: agoDays(60), regularPriceCny: 120 } },
     );
-    expect(noteCount(summary, "已忽略费用")).toBe(1);
     expect(summary.monthlyCny).toBe(0);
     expect(summary.remainingCny).toBe(0);
     expect(summary.premiumTotalCny).toBe(0);
@@ -206,9 +228,10 @@ describe("calculateCostSummary — acquisition premiums", () => {
     expect(summary.premiumRemainingTotalCny).toBe(0);
     expect(summary.effectiveMonthlyCny).toBe(0);
     expect(summary.actualRemainingCny).toBe(0);
-    expect(summary.details[0].premiumCny).toBe(0);
-    expect(summary.details[0].premiumMonthlyCny).toBe(0);
-    expect(summary.details[0].payback.status).toBe("unconfigured");
+    expect(summary.details[0].billingIgnored).toBe(true);
+    expect(summary.details[0].counted).toBe(false);
+    expect(summary.details[0].premiumCny).toBe(99);
+    expect(summary.details[0].remainingCny).toBeCloseTo(70, 2);
   });
 });
 

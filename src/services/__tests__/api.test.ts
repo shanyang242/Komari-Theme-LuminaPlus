@@ -66,7 +66,7 @@ describe("modified backend RPC2", () => {
     }, undefined);
   });
 
-  it("filters overview records to visible nodes while retaining task assignments", async () => {
+  it("filters overview records to visible nodes and pushes down single-node uuid", async () => {
     rpcCallMock.mockResolvedValue({ count: 2, records: [
       pingRecord, { ...pingRecord, client: "node-b" },
     ], tasks: [pingTask] });
@@ -74,7 +74,7 @@ describe("modified backend RPC2", () => {
     expect(result.records.map((record) => record.client)).toEqual(["node-a"]);
     expect(result.tasks[0].clients).toEqual(["node-a"]);
     expect(rpcCallMock).toHaveBeenCalledWith("common:getRecords", expect.objectContaining({
-      type: "ping", task_id: 7,
+      type: "ping", task_id: 7, uuid: "node-a",
     }), expect.anything());
   });
 });

@@ -29,4 +29,24 @@ describe("MerchantLinkAction", () => {
     expect(html).toContain('rel="noopener noreferrer"');
     expect(html).toContain('src="https://cdn.example.com/logo.png"');
   });
+
+  it("blocks unsafe schemes and normalizes bare domains", () => {
+    const unsafeHtml = renderToStaticMarkup(
+      <MerchantLinkAction
+        className="card-action"
+        link={{ url: "javascript:alert(1)", iconUrl: "javascript:alert(2)" }}
+      />,
+    );
+    expect(unsafeHtml).toContain("merchant-link-action is-disabled");
+    expect(unsafeHtml).not.toContain("href=");
+
+    const domainHtml = renderToStaticMarkup(
+      <MerchantLinkAction
+        className="card-action"
+        link={{ url: "merchant.example.com:8443/store", iconUrl: "images/shop.svg" }}
+      />,
+    );
+    expect(domainHtml).toContain('href="https://merchant.example.com:8443/store"');
+    expect(domainHtml).toContain('src="images/shop.svg"');
+  });
 });

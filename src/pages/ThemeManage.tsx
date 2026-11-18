@@ -62,7 +62,10 @@ import {
   type HomepagePingNodeTaskIds,
 } from "@/utils/pingTasks";
 import {
+  hasInvalidNodeMerchantLinks,
   normalizeNodeMerchantLinks,
+  readRawNodeMerchantLinks,
+  resolveMerchantLinkUrl,
   type NodeMerchantLinks,
 } from "@/utils/merchantLinks";
 import {
@@ -129,6 +132,14 @@ function sortClients(clients: AdminClient[]) {
   });
 }
 
+function sortMerchantLinks(links: NodeMerchantLinks): NodeMerchantLinks {
+  return Object.fromEntries(
+    Object.keys(links)
+      .sort()
+      .map((uuid) => [uuid, links[uuid]]),
+  );
+}
+
 // 本页托管设置的键清单唯一来源:草稿类型(ThemeDraft)、seed(draftFromSettings)与内容签名
 // 都从它派生。新增一项设置只需在这里加一行,再到 JSX 里接 patch()。
 // 刻意不标注返回类型:让推断给出全字段必填的具体类型,ThemeDraft 才能安全地 Omit/扩展。
@@ -138,12 +149,9 @@ function pickManagedThemeSettings(settings: ResolvedThemeSettings) {
     desktopNodeViewMode: settings.desktopNodeViewMode,
     mobileNodeViewMode: settings.mobileNodeViewMode,
     hideAdminEntryWhenLoggedOut: settings.hideAdminEntryWhenLoggedOut,
+    showPingChart: settings.showPingChart,
     homepagePingNodeTaskIds: settings.homepagePingNodeTaskIds,
-    nodeMerchantLinks: Object.fromEntries(
-      Object.keys(settings.nodeMerchantLinks)
-        .sort()
-        .map((uuid) => [uuid, settings.nodeMerchantLinks[uuid]]),
-    ),
+    nodeMerchantLinks: sortMerchantLinks(settings.nodeMerchantLinks),
     fakePingForUnbound: settings.fakePingForUnbound,
     showHomeOverview: settings.showHomeOverview,
     showGroupTabs: settings.showGroupTabs,
@@ -190,7 +198,10 @@ type ThemeDraft = Omit<
 };
 
 // 服务端设置 → 表单草稿。reseed effect 和重置按钮都经 seedDrafts 走这里。
-function draftFromSettings(settings: ResolvedThemeSettings): ThemeDraft {
+function draftFromSettings(
+  settings: ResolvedThemeSettings,
+  rawMerchantLinks?: NodeMerchantLinks,
+): ThemeDraft {
   const {
     hiddenNodes,
     costIgnoredNodes,
@@ -198,6 +209,7 @@ function draftFromSettings(settings: ResolvedThemeSettings): ThemeDraft {
   } = pickManagedThemeSettings(settings);
   return {
     ...rest,
+    ...(rawMerchantLinks ? { nodeMerchantLinks: sortMerchantLinks(rawMerchantLinks) } : {}),
     hiddenNodesText: hiddenNodes.join("\n"),
     costIgnoredText: costIgnoredNodes.join("\n"),
   };
@@ -262,14 +274,15 @@ const PremiumList = memo(function PremiumList({
       {clients.map((client) => {
         const entry = costPremiums[client.uuid];
         const detail = detailByUuid.get(client.uuid);
+        const hasPrice = detail != null && detail.priceCny > 0;
         const referenceLabel = rateLoading
           ? "计算中"
           : detail
-            ? detail.counted
+            ? hasPrice
               ? formatCnyMoney(detail.remainingCny)
               : detail.note || "--"
             : "--";
-        const canCompute = detail != null && (detail.counted || detail.note === "免费");
+        const canCompute = detail != null && (hasPrice || detail.note === "免费");
         const payback = entry && detail && canCompute
           ? calculateCostPayback(
               entry.amount,
@@ -454,8 +467,11 @@ const PingNodeConfigControl = memo(function PingNodeConfigControl({
 
 const MerchantLinkConfigControl = memo(function MerchantLinkConfigControl({
   clients,
+  clientsKnown,
+  clientsLoading,
   links,
   configuredNodeCount,
+  orphanNodeCount,
   disabled,
   saving,
   saveDisabled,
@@ -464,8 +480,11 @@ const MerchantLinkConfigControl = memo(function MerchantLinkConfigControl({
   onSave,
 }: {
   clients: AdminClient[];
+  clientsKnown: boolean;
+  clientsLoading: boolean;
   links: NodeMerchantLinks;
   configuredNodeCount: number;
+  orphanNodeCount: number;
   disabled: boolean;
   saving: boolean;
   saveDisabled: boolean;
@@ -485,7 +504,13 @@ const MerchantLinkConfigControl = memo(function MerchantLinkConfigControl({
             实例商家官网
           </div>
           <p className="mt-1 text-[11px] text-[var(--text-tertiary)]">
-            {configuredNodeCount} / {clients.length} 台实例已配置跳转地址
+            {clientsLoading
+              ? "正在加载实例列表…"
+              : !clientsKnown
+                ? "后台节点列表读取失败，请先重试加载后再核对实例"
+                : `${configuredNodeCount} / ${clients.length} 台实例已配置跳转地址${
+                    orphanNodeCount > 0 ? ` · 另有 ${orphanNodeCount} 条已删除实例遗留记录` : ""
+                  }`}
           </p>
         </div>
         <button
@@ -503,6 +528,7 @@ const MerchantLinkConfigControl = memo(function MerchantLinkConfigControl({
         <MerchantLinkConfigPanel
           open
           clients={clients}
+          clientsKnown={clientsKnown}
           links={links}
           saving={saving}
           saveDisabled={saveDisabled}
@@ -570,6 +596,7 @@ export function ThemeManage() {
     data: pingTasks,
     isLoading: tasksLoading,
     error: tasksError,
+    refetch: refetchTasks,
   } = useQuery({
     queryKey: ["admin", "ping-tasks"],
     queryFn: ({ signal }) => getAdminPingTasks({ signal }),
@@ -580,15 +607,22 @@ export function ThemeManage() {
     data: adminClients,
     isLoading: clientsLoading,
     error: clientsError,
+    refetch: refetchClients,
   } = useQuery({
     queryKey: ["admin", "clients"],
     queryFn: ({ signal }) => getAdminClients({ signal }),
     staleTime: 30_000,
     retry: false,
   });
+  const clientsReady = Array.isArray(adminClients) && !clientsError;
+  const tasksReady = Array.isArray(pingTasks) && !tasksError;
 
   const sourceThemeSettings = useMemo(
     () => normalizeThemeSettings(config?.theme_settings),
+    [config?.theme_settings],
+  );
+  const rawSourceMerchantLinks = useMemo(
+    () => sortMerchantLinks(readRawNodeMerchantLinks(config?.theme_settings?.nodeMerchantLinks)),
     [config?.theme_settings],
   );
   // 按内容判断服务端设置是否真的变化，避免同内容 refetch 重置草稿。
@@ -596,12 +630,19 @@ export function ThemeManage() {
     () => JSON.stringify(pickManagedThemeSettings(sourceThemeSettings)),
     [sourceThemeSettings],
   );
+  const reseedSignature = useMemo(
+    () => `${sourceSignature}::${JSON.stringify(rawSourceMerchantLinks)}`,
+    [rawSourceMerchantLinks, sourceSignature],
+  );
   const lastSeededSignatureRef = useRef<string | null>(null);
 
   // 把服务端设置灌入草稿的唯一出口,reseed effect 和重置按钮都走它,避免两边逻辑漂移。
-  const seedDrafts = useCallback((next: ResolvedThemeSettings) => {
-    setDraft(draftFromSettings(next));
-  }, []);
+  const seedDrafts = useCallback(
+    (next: ResolvedThemeSettings, rawLinks: NodeMerchantLinks) => {
+      setDraft(draftFromSettings(next, rawLinks));
+    },
+    [],
+  );
 
   const sortedTasks = useMemo(() => sortTasks(pingTasks ?? []), [pingTasks]);
   const sortedClients = useMemo(() => sortClients(adminClients ?? []), [adminClients]);
@@ -646,7 +687,7 @@ export function ThemeManage() {
         const detail = premiumDetailByUuid.get(uuid);
         if (!detail) return null;
         if (detail.note === "免费") return 0;
-        return detail.counted ? detail.remainingCny : null;
+        return detail.priceCny > 0 ? detail.remainingCny : null;
       }
       return calculateCostPremiumBasisAt(
         allMeta,
@@ -763,6 +804,13 @@ export function ThemeManage() {
 
   const draftCostRateApiUrlInvalid =
     draft.costRateApiUrl.trim() !== "" && !isCostRateApiUrlValid(draft.costRateApiUrl.trim());
+  const draftMerchantLinksInvalid = useMemo(
+    () => hasInvalidNodeMerchantLinks(draft.nodeMerchantLinks),
+    [draft.nodeMerchantLinks],
+  );
+  const merchantLinksValidationError = draftMerchantLinksInvalid
+    ? "存在格式无效的商家官网或图标地址，请打开「配置商家链接」修正或清除对应记录后再保存。"
+    : null;
 
   // 由当前草稿拼出的设置 payload,保存请求和 dirty 判断都用它。草稿字段与设置同名,这里只做
   // 「编辑态 → 存储态」的换形与归一化;文本域解构出来换回存储字段。
@@ -788,12 +836,19 @@ export function ThemeManage() {
     () => managedSettingsSignature(draftThemeSettings as ThemeSettings & Record<string, unknown>),
     [draftThemeSettings],
   );
-  // draftSignature 用的是归一化后的 cost-rate URL,非法输入会被收敛回默认值,于是非法输入
-  // 不会被判为 dirty,用户既无法保存也无法重置出来。所以单独跟踪原始文本,让编辑始终把表单
-  // 标为 dirty(重置可用),而保存按钮再额外按合法性把关(见下文)。
+  // draftSignature 用的是归一化后的值,非法输入(costRateApiUrl / nodeMerchantLinks)会被收敛或过滤,
+  // 从而不会被判为 dirty。单独对比原始输入签名,保证编辑后「重置」始终可用,再由合法性门禁拦截保存。
   const costRateApiUrlDirty =
     draft.costRateApiUrl.trim() !== sourceThemeSettings.costRateApiUrl;
-  const isDirty = draftSignature !== sourceSignature || costRateApiUrlDirty;
+  const merchantLinksDirty = useMemo(
+    () =>
+      JSON.stringify(sortMerchantLinks(readRawNodeMerchantLinks(draft.nodeMerchantLinks))) !==
+      JSON.stringify(rawSourceMerchantLinks),
+    [draft.nodeMerchantLinks, rawSourceMerchantLinks],
+  );
+  const isDirty =
+    draftSignature !== sourceSignature || costRateApiUrlDirty || merchantLinksDirty;
+  const hasValidationError = draftCostRateApiUrlInvalid || draftMerchantLinksInvalid;
 
   // 用户重新编辑后清掉「已保存」提示,避免过期的成功提示和 dirty 表单并存。
   useEffect(() => {
@@ -804,11 +859,11 @@ export function ThemeManage() {
   // 避免 refetch / 其他端保存的回流静默覆盖用户草稿。
   useEffect(() => {
     if (!config) return;
-    if (lastSeededSignatureRef.current === sourceSignature) return;
+    if (lastSeededSignatureRef.current === reseedSignature) return;
     if (lastSeededSignatureRef.current !== null && isDirty) return;
-    lastSeededSignatureRef.current = sourceSignature;
-    seedDrafts(sourceThemeSettings);
-  }, [config, isDirty, sourceSignature, sourceThemeSettings, seedDrafts]);
+    lastSeededSignatureRef.current = reseedSignature;
+    seedDrafts(sourceThemeSettings, rawSourceMerchantLinks);
+  }, [config, isDirty, rawSourceMerchantLinks, reseedSignature, sourceThemeSettings, seedDrafts]);
 
   const pingConfiguredNodeCount = useMemo(
     () =>
@@ -820,16 +875,21 @@ export function ThemeManage() {
   const merchantConfiguredNodeCount = useMemo(
     () =>
       sortedClients.filter((client) =>
-        Boolean(draft.nodeMerchantLinks[client.uuid]?.url.trim()),
+        Boolean(resolveMerchantLinkUrl(draft.nodeMerchantLinks[client.uuid]?.url)),
       ).length,
     [draft.nodeMerchantLinks, sortedClients],
   );
+  const orphanMerchantNodeCount = useMemo(() => {
+    if (!clientsReady) return 0;
+    const existingUuids = new Set(sortedClients.map((client) => client.uuid));
+    return Object.keys(draft.nodeMerchantLinks).filter((uuid) => !existingUuids.has(uuid)).length;
+  }, [clientsReady, draft.nodeMerchantLinks, sortedClients]);
 
   const handleSave = async (): Promise<boolean> => {
     if (
       !config?.theme ||
       savingDraftRef.current ||
-      draftCostRateApiUrlInvalid
+      hasValidationError
     ) {
       return false;
     }
@@ -867,7 +927,7 @@ export function ThemeManage() {
   };
 
   const handleReset = () => {
-    seedDrafts(sourceThemeSettings);
+    seedDrafts(sourceThemeSettings, rawSourceMerchantLinks);
     setMessage(null);
     setError(null);
   };
@@ -924,7 +984,7 @@ export function ThemeManage() {
   const adminError =
     (tasksError instanceof Error ? tasksError.message : null) ||
     (clientsError instanceof Error ? clientsError.message : null);
-  const noTasksYet = !tasksLoading && !clientsLoading && sortedTasks.length === 0;
+  const noTasksYet = tasksReady && !clientsLoading && sortedTasks.length === 0;
   const draftBgAlignment = parseBackgroundAlignment(draft.backgroundAlignment);
   const setBgSize = (size: BackgroundSize) =>
     patch("backgroundAlignment", `${size},${draftBgAlignment.position}`);
@@ -953,11 +1013,7 @@ export function ThemeManage() {
             <button
               type="button"
               onClick={handleSave}
-              disabled={
-                !isDirty ||
-                saving ||
-                draftCostRateApiUrlInvalid
-              }
+              disabled={!isDirty || saving || hasValidationError}
               className="theme-manage-button is-primary"
             >
               {saving ? <Spinner size={14} /> : <Save size={14} />}
@@ -1001,9 +1057,20 @@ export function ThemeManage() {
           {adminError && (
             <div
               role="alert"
-              className="rounded-[12px] border border-[color-mix(in_srgb,var(--status-offline)_28%,transparent)] bg-[color-mix(in_srgb,var(--status-offline)_11%,var(--surface))] px-4 py-3 text-[13px] text-[var(--status-offline)]"
+              className="flex flex-wrap items-center justify-between gap-3 rounded-[12px] border border-[color-mix(in_srgb,var(--status-offline)_28%,transparent)] bg-[color-mix(in_srgb,var(--status-offline)_11%,var(--surface))] px-4 py-3 text-[13px] text-[var(--status-offline)]"
             >
-              无法读取后台 Ping 任务或节点列表: {adminError}
+              <span>无法读取后台 Ping 任务或节点列表: {adminError}</span>
+              <button
+                type="button"
+                onClick={() => {
+                  if (tasksError) void refetchTasks();
+                  if (clientsError) void refetchClients();
+                }}
+                className="theme-manage-button is-compact"
+              >
+                <RefreshCw size={12} />
+                重试加载
+              </button>
             </div>
           )}
         </div>
@@ -1339,13 +1406,19 @@ export function ThemeManage() {
             </div>
           )}
 
-          {!clientsLoading && sortedClients.length === 0 && (
+          {!clientsLoading && !clientsReady && (
+            <div className="theme-manage-empty-state">
+              <span>节点列表读取失败，请点击上方「重试加载」后再配置溢价。</span>
+            </div>
+          )}
+
+          {!clientsLoading && clientsReady && sortedClients.length === 0 && (
             <div className="theme-manage-empty-state">
               <span>还没有任何节点。</span>
             </div>
           )}
 
-          {!clientsLoading && sortedClients.length > 0 && (
+          {!clientsLoading && clientsReady && sortedClients.length > 0 && (
             <PremiumList
               clients={sortedClients}
               costPremiums={draft.costPremiums}
@@ -1368,7 +1441,9 @@ export function ThemeManage() {
           <div className="text-[11px] text-[var(--text-tertiary)]">
             {tasksLoading || clientsLoading
               ? "载入中"
-              : `${sortedTasks.length} 个任务`}
+              : !tasksReady
+                ? "读取失败"
+                : `${sortedTasks.length} 个任务`}
           </div>
         }
       >
@@ -1384,21 +1459,29 @@ export function ThemeManage() {
               overrides={draft.homepagePingNodeTaskIds}
               configuredNodeCount={pingConfiguredNodeCount}
               fakePingForUnbound={draft.fakePingForUnbound}
-              disabled={clientsLoading || tasksLoading}
+              disabled={clientsLoading || tasksLoading || !clientsReady || !tasksReady}
               saving={saving}
-              saveError={error}
-              saveDisabled={!isDirty || draftCostRateApiUrlInvalid}
+              saveError={error ?? merchantLinksValidationError}
+              saveDisabled={!isDirty || hasValidationError}
               onChange={patchPingNodeTaskIds}
               onSave={handleSave}
             />
           </div>
 
-          <ToggleRow
-            field="fakePingForUnbound"
-            title="未绑定探测点显示模拟延迟"
-            checked={draft.fakePingForUnbound}
-            onPatch={patch}
-          />
+          <div className="grid gap-3 md:grid-cols-2">
+            <ToggleRow
+              field="fakePingForUnbound"
+              title="未绑定探测点显示模拟延迟"
+              checked={draft.fakePingForUnbound}
+              onPatch={patch}
+            />
+            <ToggleRow
+              field="showPingChart"
+              title="实例详情显示 Ping 图表"
+              checked={draft.showPingChart}
+              onPatch={patch}
+            />
+          </div>
 
           {(tasksLoading || clientsLoading) && (
             <div className="flex min-h-[20vh] items-center justify-center">
@@ -1424,7 +1507,9 @@ export function ThemeManage() {
           <div className="text-[11px] text-[var(--text-tertiary)]">
             {clientsLoading
               ? "载入中"
-              : `已配置 ${merchantConfiguredNodeCount} 个节点`}
+              : !clientsReady
+                ? "节点列表读取失败"
+                : `已配置 ${merchantConfiguredNodeCount} 个节点`}
           </div>
         }
       >
@@ -1434,15 +1519,23 @@ export function ThemeManage() {
           </p>
           <MerchantLinkConfigControl
             clients={sortedClients}
+            clientsKnown={clientsReady}
+            clientsLoading={clientsLoading}
             links={draft.nodeMerchantLinks}
             configuredNodeCount={merchantConfiguredNodeCount}
-            disabled={clientsLoading}
+            orphanNodeCount={orphanMerchantNodeCount}
+            disabled={clientsLoading || (!clientsReady && !draftMerchantLinksInvalid)}
             saving={saving}
-            saveError={error}
-            saveDisabled={!isDirty || draftCostRateApiUrlInvalid}
+            saveError={error ?? merchantLinksValidationError}
+            saveDisabled={!isDirty || hasValidationError}
             onChange={patchMerchantLinks}
             onSave={handleSave}
           />
+          {merchantLinksValidationError && (
+            <p role="alert" className="mt-3 text-[12px] text-[var(--status-offline)]">
+              {merchantLinksValidationError}
+            </p>
+          )}
         </div>
       </InstancePanel>
 

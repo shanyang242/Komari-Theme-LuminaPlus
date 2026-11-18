@@ -15,10 +15,6 @@
     border-color 160ms ease,
     background 160ms ease;
 }
-.server-card::before,
-.compact-node-card::before {
-  content: none;
-}
 .server-card:hover,
 .compact-node-card:hover {
   border-color: var(--border-strong);
@@ -503,26 +499,30 @@
   padding-top: 0.125rem;
 }
 
-.dstatus-tags-measure {
-  position: absolute;
-  top: 0;
-  left: -9999px;
-  width: max-content;
-  overflow: visible;
-  visibility: hidden;
-  pointer-events: none;
+.dstatus-tags-lane {
+  display: flex;
+  flex: 0 1 auto;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  align-items: center;
+  gap: 0.375rem;
+  max-height: 24px;
+  overflow: hidden;
 }
 
 .dstatus-tag-chip {
-  /* 可收缩:单个超宽标签(无标签能完整放下时保留)会省略号截断到行宽而非溢出;
-     能放下的标签永不收缩,因为 measure 阶段已保证其总宽度放得下。 */
+  /* 放不下的标签自动折入被裁剪的第二行，不半词硬切；仅单个超宽标签超出整行时省略号截断。 */
+  display: inline-flex;
+  align-items: center;
   flex: 0 1 auto;
   min-width: 0;
   max-width: 10rem;
+  height: 24px;
   border-radius: 8px;
-  padding: 0.38rem 0.62rem;
+  padding: 0 0.62rem;
   font-size: 11px;
-  line-height: 1.15;
+  line-height: 1;
   font-weight: 600;
   white-space: nowrap;
   overflow: hidden;
@@ -531,20 +531,20 @@
 }
 
 .dstatus-price-chip {
-  /* 用可收缩(非 0 0 auto)配合 min-width:0 + overflow:hidden,让窄行优雅裁剪它,
-     而不是被父级 overflow:hidden 切成一块没内容的背景块。 */
-  flex: 0 1 auto;
+  flex: 0 0 auto;
+  margin-left: auto;
   min-width: 0;
   display: inline-flex;
   align-items: center;
   gap: 5px;
+  height: 24px;
   border: 1px solid color-mix(in srgb, var(--status-success) 18%, transparent);
   border-radius: 8px;
   background: color-mix(in srgb, var(--status-success) 10%, var(--surface-elev));
   color: var(--status-success);
-  padding: 0.38rem 0.62rem;
+  padding: 0 0.62rem;
   font-size: 11px;
-  line-height: 1.15;
+  line-height: 1;
   font-weight: 720;
   white-space: nowrap;
   overflow: hidden;

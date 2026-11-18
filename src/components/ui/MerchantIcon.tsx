@@ -26,6 +26,8 @@ export function MerchantIcon({
       alt=""
       width={size}
       height={size}
+      loading="lazy"
+      referrerPolicy="no-referrer"
       className="merchant-link-icon"
       onError={() => setFailed(true)}
     />

@@ -674,14 +674,6 @@ body::after {
   line-height: 1;
 }
 
-.theme-masthead-desc {
-  margin: 0;
-  max-width: 52ch;
-  color: var(--text-secondary);
-  font-size: 13px;
-  line-height: 1.5;
-}
-
 .theme-masthead-meta {
   display: flex;
   flex: 0 0 auto;
@@ -856,11 +848,6 @@ body::after {
   box-sizing: border-box;
   height: 52px;
   min-height: 52px;
-}
-
-.theme-home-control-input {
-  height: 28px;
-  padding: 0 12px;
 }
 
 .theme-premium-list {
@@ -1564,28 +1551,22 @@ body::after {
   background: var(--hover-bg);
 }
 
-/* 实例切换器弹出菜单。 */
+/* 实例切换器弹出菜单：紧贴标题左缘向右展开，节点多时可滚动且不超出移动端视口。 */
 .instance-switcher-panel {
   position: absolute;
   top: calc(100% + 6px);
+  left: 0;
   z-index: 30;
   display: flex;
   flex-direction: column;
   gap: 2px;
+  min-width: 200px;
+  max-width: min(280px, calc(100vw - 32px));
+  max-height: min(360px, 60vh);
   padding: 6px;
   border: 1px solid var(--border);
   border-radius: 14px;
   background: var(--surface);
-}
-
-.instance-switcher-panel {
-  /* 触发按钮现在紧贴标题（靠左），浮层从按钮左缘向右展开 */
-  left: 0;
-  min-width: 200px;
-  /* 移动端不超出视口宽度 */
-  max-width: min(280px, calc(100vw - 32px));
-  /* 节点多时可滚动，不撑爆页面 */
-  max-height: min(360px, 60vh);
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
 }
@@ -1593,6 +1574,7 @@ body::after {
 .instance-switcher-item {
   display: flex;
   align-items: center;
+  gap: 9px;
   width: 100%;
   min-height: 34px;
   padding: 0 10px;
@@ -1603,10 +1585,6 @@ body::after {
   text-align: left;
   cursor: pointer;
   transition: color 160ms ease, background 160ms ease;
-}
-
-.instance-switcher-item {
-  gap: 9px;
 }
 
 .instance-switcher-item:hover {
@@ -2002,9 +1980,11 @@ body::after {
   padding-bottom: 2px;
 }
 
+/* 折线入场：从左到右扫出，模拟逐渐画出（canvas 没法逐条 path 动画，用整体揭示近似） */
 .instance-uplot-wrap .uplot {
   color: var(--text-secondary);
   font-family: var(--font-sans);
+  animation: chart-reveal 0.7s ease-out;
 }
 
 .instance-uplot-wrap .u-title,
@@ -2014,11 +1994,6 @@ body::after {
 
 .instance-uplot-wrap.is-large {
   margin-top: 16px;
-}
-
-/* 折线入场：从左到右扫出，模拟逐渐画出（canvas 没法逐条 path 动画，用整体揭示近似） */
-.instance-uplot-wrap .uplot {
-  animation: chart-reveal 0.7s ease-out;
 }
 
 @keyframes chart-reveal {

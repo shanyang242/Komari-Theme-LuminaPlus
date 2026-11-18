@@ -1,5 +1,6 @@
 import type { NodeInfo, NodeMetrics, NodeRealtime, TrafficTrendSample } from "@/types/komari";
 import { getNodes, getNodesLatestStatus } from "@/services/api";
+import { parseTimestampMs } from "@/utils/format";
 
 type Listener = () => void;
 type RealtimePayload = Record<string, unknown>;
@@ -12,11 +13,11 @@ interface State {
   failureStreak: number;
 }
 
-export interface StoreStatusSnapshot {
+type StoreStatusSnapshot = {
   failureStreak: number;
   hydrated: boolean;
   nodeInfoError: boolean;
-}
+};
 
 export interface HomeNodeSummary {
   uuid: string;
@@ -37,9 +38,7 @@ export interface NodeOnlineSummary {
 }
 
 interface TrafficTrendSeries {
-  buffer: TrafficTrendSample[];
-  start: number;
-  size: number;
+  samples: TrafficTrendSample[];
   signature: string;
   snapshot: TrafficTrendSample[];
 }
@@ -69,9 +68,7 @@ const EMPTY_TRAFFIC_TREND_SNAPSHOT = Array.from(
   () => EMPTY_TRAFFIC_TREND_SAMPLE,
 );
 const EMPTY_TRAFFIC_TREND_SERIES: TrafficTrendSeries = {
-  buffer: [],
-  start: 0,
-  size: 0,
+  samples: [],
   signature: "",
   snapshot: EMPTY_TRAFFIC_TREND_SNAPSHOT,
 };
@@ -162,7 +159,7 @@ function mergeRealtime(
   const swapTotal = rt.swap.total;
   const diskUsed = rt.disk.used;
   const diskTotal = rt.disk.total;
-  const updatedAt = toTimestamp(rt.updated_at);
+  const updatedAt = parseTimestampMs(rt.updated_at);
   const trafficTotals = resolveTrafficTotals(
     metrics,
     rt.network?.totalUp ?? 0,
@@ -255,27 +252,6 @@ function shallowEqualNodeInfo(a: NodeInfo, b: NodeInfo) {
   );
 }
 
-function materializeTrafficTrendSnapshot(
-  buffer: TrafficTrendSample[],
-  start: number,
-  size: number,
-) {
-  if (size <= 0) return EMPTY_TRAFFIC_TREND_SNAPSHOT;
-
-  const snapshot = new Array<TrafficTrendSample>(TRAFFIC_TREND_SAMPLE_COUNT);
-  const padding = TRAFFIC_TREND_SAMPLE_COUNT - size;
-
-  for (let i = 0; i < padding; i++) {
-    snapshot[i] = EMPTY_TRAFFIC_TREND_SAMPLE;
-  }
-
-  for (let i = 0; i < size; i++) {
-    snapshot[padding + i] = buffer[(start + i) % TRAFFIC_TREND_SAMPLE_COUNT]!;
-  }
-
-  return snapshot;
-}
-
 function updateTrafficTrendSeries(
   prevSeries: TrafficTrendSeries,
   value: number,
@@ -283,7 +259,7 @@ function updateTrafficTrendSeries(
   online: boolean | null,
 ) {
   if (online === false) {
-    if (!prevSeries.signature && prevSeries.size === 0) {
+    if (!prevSeries.signature && prevSeries.samples.length === 0) {
       return { series: prevSeries, changed: false };
     }
     return { series: EMPTY_TRAFFIC_TREND_SERIES, changed: true };
@@ -296,9 +272,8 @@ function updateTrafficTrendSeries(
   }
 
   let visibleMax = safeValue > 0 ? safeValue : 1;
-  for (let i = 0; i < prevSeries.size; i++) {
-    const sample = prevSeries.buffer[(prevSeries.start + i) % TRAFFIC_TREND_SAMPLE_COUNT];
-    if (sample && sample.value > visibleMax) {
+  for (const sample of prevSeries.samples) {
+    if (sample.value > visibleMax) {
       visibleMax = sample.value;
     }
   }
@@ -310,35 +285,27 @@ function updateTrafficTrendSeries(
     opacity: safeValue > 0 ? 0.4 + level * 0.48 : 0.52,
   };
 
-  const buffer = new Array<TrafficTrendSample>(TRAFFIC_TREND_SAMPLE_COUNT);
-  const nextSize =
-    prevSeries.size < TRAFFIC_TREND_SAMPLE_COUNT
-      ? prevSeries.size + 1
-      : TRAFFIC_TREND_SAMPLE_COUNT;
-  const nextStart =
-    prevSeries.size < TRAFFIC_TREND_SAMPLE_COUNT
-      ? prevSeries.start
-      : (prevSeries.start + 1) % TRAFFIC_TREND_SAMPLE_COUNT;
-  const insertIndex =
-    prevSeries.size < TRAFFIC_TREND_SAMPLE_COUNT
-      ? (prevSeries.start + prevSeries.size) % TRAFFIC_TREND_SAMPLE_COUNT
-      : prevSeries.start;
-
-  if (prevSeries.size > 0) {
-    for (let i = 0; i < prevSeries.size; i++) {
-      buffer[(prevSeries.start + i) % TRAFFIC_TREND_SAMPLE_COUNT] =
-        prevSeries.buffer[(prevSeries.start + i) % TRAFFIC_TREND_SAMPLE_COUNT]!;
-    }
+  let samples: TrafficTrendSample[];
+  if (prevSeries.samples.length < TRAFFIC_TREND_SAMPLE_COUNT) {
+    samples = [...prevSeries.samples, nextSample];
+  } else {
+    samples = prevSeries.samples.slice(1);
+    samples.push(nextSample);
   }
-  buffer[insertIndex] = nextSample;
+  const padding = TRAFFIC_TREND_SAMPLE_COUNT - samples.length;
+  const snapshot =
+    padding > 0
+      ? [
+          ...EMPTY_TRAFFIC_TREND_SNAPSHOT.slice(0, padding),
+          ...samples,
+        ]
+      : samples;
 
   return {
     series: {
-      buffer,
-      start: nextStart,
-      size: nextSize,
+      samples,
       signature,
-      snapshot: materializeTrafficTrendSnapshot(buffer, nextStart, nextSize),
+      snapshot,
     },
     changed: true,
   };
@@ -492,19 +459,6 @@ function resolveOnline(rawRecord: unknown): boolean {
   if (typeof rawRecord === "boolean") return rawRecord;
   const record = asRecord(rawRecord);
   return asBoolean(record.online, Object.keys(record).length > 0);
-}
-
-function toTimestamp(value: string | number | undefined): number {
-  if (typeof value === "number") {
-    return value > 1_000_000_000_000 ? value : value * 1000;
-  }
-  if (!value) return 0;
-  const numeric = Number(value);
-  if (Number.isFinite(numeric) && numeric > 0) {
-    return numeric > 1_000_000_000_000 ? numeric : numeric * 1000;
-  }
-  const parsed = Date.parse(value);
-  return Number.isNaN(parsed) ? 0 : parsed;
 }
 
 function normalizeRealtime(
@@ -772,20 +726,26 @@ async function refreshLatestStatus() {
 const BOOTSTRAP_MAX_BACKOFF_TICKS = 15;
 let bootstrapBackoffTicks = 0;
 let bootstrapSkipTicks = 0;
+let bootstrapPromise: Promise<void> | null = null;
 
-async function bootstrap() {
-  try {
-    await syncNodeInfo();
-    await refreshLatestStatus();
-    bootstrapBackoffTicks = 0;
-    bootstrapSkipTicks = 0;
-  } catch {
-    bootstrapBackoffTicks = Math.min(
-      bootstrapBackoffTicks > 0 ? bootstrapBackoffTicks * 2 : 1,
-      BOOTSTRAP_MAX_BACKOFF_TICKS,
-    );
-    bootstrapSkipTicks = bootstrapBackoffTicks;
-  }
+function bootstrap() {
+  bootstrapPromise ??= (async () => {
+    try {
+      await syncNodeInfo();
+      await refreshLatestStatus();
+      bootstrapBackoffTicks = 0;
+      bootstrapSkipTicks = 0;
+    } catch {
+      bootstrapBackoffTicks = Math.min(
+        bootstrapBackoffTicks > 0 ? bootstrapBackoffTicks * 2 : 1,
+        BOOTSTRAP_MAX_BACKOFF_TICKS,
+      );
+      bootstrapSkipTicks = bootstrapBackoffTicks;
+    }
+  })().finally(() => {
+    bootstrapPromise = null;
+  });
+  return bootstrapPromise;
 }
 
 let started = false;
@@ -803,6 +763,7 @@ function ensureStarted() {
   // 实时指标与节点信息使用独立轮询节奏。
   liveStatusTimer = window.setInterval(() => {
     if (!hydrated) {
+      if (bootstrapPromise) return;
       if (bootstrapSkipTicks > 0) {
         bootstrapSkipTicks -= 1;
         return;
@@ -865,7 +826,10 @@ function stopStore() {
   }
   scrollActive = false;
   refreshDeferredWhileScrolling = false;
-  hydrated = false;
+  if (state.failureStreak > 0) {
+    state = { ...state, failureStreak: 0 };
+  }
+  // 保留上一次节点列表是否已完成首次水合的状态（含合法返回空数组 [] 的站点），避免切页返回转圈。
   nodeInfoError = false;
   started = false;
   bootstrapBackoffTicks = 0;

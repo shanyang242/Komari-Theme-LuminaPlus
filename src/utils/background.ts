@@ -90,6 +90,7 @@ const BACKGROUND_CACHE_KEY = "lumina-plus:background";
 
 interface BackgroundSettingsInput {
   enableBackgroundImage: boolean;
+  enableMapBackground?: boolean;
   backgroundImage: string;
   backgroundImageMobile: string;
   backgroundAlignment: string;
@@ -99,6 +100,7 @@ interface BackgroundSettingsInput {
 /** 可直接写入 CSS 的首帧背景缓存。 */
 interface BackgroundCache {
   v: 2;
+  mapBackground?: boolean;
   size: string;
   position: string;
   alpha: string;
@@ -114,17 +116,21 @@ function toCssUrl(url: string): string {
 }
 
 export function buildBackgroundCache(settings: BackgroundSettingsInput): BackgroundCache | null {
-  if (!settings.enableBackgroundImage) return null;
-  const lightDesktop = resolveBackgroundUrl(settings.backgroundImage, "light");
-  const darkDesktop = resolveBackgroundUrl(settings.backgroundImage, "dark");
-  const lightMobile = resolveBackgroundUrl(settings.backgroundImageMobile, "light") || lightDesktop;
-  const darkMobile = resolveBackgroundUrl(settings.backgroundImageMobile, "dark") || darkDesktop;
-  if (!lightDesktop && !darkDesktop && !lightMobile && !darkMobile) return null;
+  const mapBackground = settings.enableMapBackground === true;
+  if (!settings.enableBackgroundImage && !mapBackground) return null;
+  const desktopImage = settings.enableBackgroundImage ? settings.backgroundImage : "";
+  const mobileImage = settings.enableBackgroundImage ? settings.backgroundImageMobile : "";
+  const lightDesktop = resolveBackgroundUrl(desktopImage, "light");
+  const darkDesktop = resolveBackgroundUrl(desktopImage, "dark");
+  const lightMobile = resolveBackgroundUrl(mobileImage, "light") || lightDesktop;
+  const darkMobile = resolveBackgroundUrl(mobileImage, "dark") || darkDesktop;
+  if (!lightDesktop && !darkDesktop && !lightMobile && !darkMobile && !mapBackground) return null;
 
   const { size, position } = parseBackgroundAlignment(settings.backgroundAlignment);
   const scrimPct = computeBackgroundScrim(settings.surfaceOpacity);
   return {
     v: 2,
+    mapBackground,
     size,
     position,
     alpha: String(normalizeSurfaceOpacity(settings.surfaceOpacity)),
@@ -145,6 +151,7 @@ const BACKGROUND_VAR_NAMES = [
   "--bg-size",
   "--bg-position",
   "--surface-alpha",
+  "--map-surface-alpha",
   "--bg-scrim",
 ] as const;
 
@@ -154,6 +161,7 @@ export function applyBackgroundCache(
   appearance: ResolvedAppearance,
   options: {
     isMobile: boolean;
+    isHomeDashboard?: boolean;
   },
 ): void {
   if (typeof document === "undefined") return;
@@ -166,12 +174,16 @@ export function applyBackgroundCache(
   const desktop = dark ? cache.darkDesktop : cache.lightDesktop;
   const mobile = (dark ? cache.darkMobile : cache.lightMobile) || desktop;
   const selectedImage = options.isMobile ? mobile : desktop;
-  const active = selectedImage !== "none";
+  const hasImage = selectedImage !== "none";
+  const hasMap =
+    !options.isMobile &&
+    cache.mapBackground === true &&
+    options.isHomeDashboard !== false;
   root.style.setProperty("--bg-image-desktop", desktop);
   root.style.setProperty("--bg-image-mobile", mobile);
   root.style.setProperty("--bg-size", cache.size);
   root.style.setProperty("--bg-position", cache.position);
-  if (active) {
+  if (hasImage) {
     root.style.setProperty("--surface-alpha", cache.alpha);
     if (cache.scrim) root.style.setProperty("--bg-scrim", cache.scrim);
     else root.style.removeProperty("--bg-scrim");
@@ -179,6 +191,8 @@ export function applyBackgroundCache(
     root.style.removeProperty("--surface-alpha");
     root.style.removeProperty("--bg-scrim");
   }
+  if (hasMap) root.style.setProperty("--map-surface-alpha", cache.alpha);
+  else root.style.removeProperty("--map-surface-alpha");
 }
 
 export function persistBackgroundCache(cache: BackgroundCache | null): void {

@@ -147,6 +147,7 @@ export interface ThemeSettings {
   >;
   costRateApiUrl?: string;
   enableBackgroundImage?: boolean;
+  enableMapBackground?: boolean;
   backgroundImage?: string;
   backgroundImageMobile?: string;
   backgroundAlignment?: string;

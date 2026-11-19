@@ -4,6 +4,8 @@ import { readViewModeHint, useViewMode } from "@/hooks/useViewMode";
 
 interface ErrorBoundaryProps {
   children: ReactNode;
+  fallback?: ReactNode;
+  onError?: (error: Error) => void;
 }
 
 interface ErrorBoundaryState {
@@ -120,6 +122,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
   }
 
   componentDidCatch(error: Error, info: ErrorInfo) {
+    this.props.onError?.(error);
     // 类组件里用不了 hook,所以用 readViewModeHint。它给的是 device + override 而非最终解析的 mode,但区分 compact/large 排查问题足够了
     console.error(
       "[LuminaPlus] render error\n" + buildDiagnostics(error, readViewModeHint()),
@@ -129,6 +132,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
 
   render() {
     if (this.state.error) {
+      if (this.props.fallback !== undefined) return this.props.fallback;
       return (
         <ErrorFallback
           message={getErrorMessage(this.state.error)}

@@ -105,4 +105,12 @@ describe("normalizeThemeSettings", () => {
       normalizeThemeSettings({ hiddenNodes: "节点A, 节点A\nuuid-1；节点B" } as never).hiddenNodes,
     ).toEqual(["节点A", "uuid-1", "节点B"]);
   });
+
+  it("keeps desktop map background disabled unless explicitly true", () => {
+    expect(normalizeThemeSettings({}).enableMapBackground).toBe(false);
+    expect(normalizeThemeSettings({ enableMapBackground: true }).enableMapBackground).toBe(true);
+    expect(
+      normalizeThemeSettings({ enableMapBackground: "true" } as never).enableMapBackground,
+    ).toBe(false);
+  });
 });

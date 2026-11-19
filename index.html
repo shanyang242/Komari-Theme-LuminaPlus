@@ -100,11 +100,20 @@
               style.setProperty("--bg-image-mobile", mobile);
               style.setProperty("--bg-size", sizes.has(bg.size) ? bg.size : "cover");
               style.setProperty("--bg-position", positions.has(bg.position) ? bg.position : "center");
+              const isHome =
+                (window.location.pathname.replace(/\/+$/, "") || "/") === "/" &&
+                new URLSearchParams(window.location.search).get("view") !== "theme-manage";
               const selectedImage = isMobile ? mobile : desktopImage;
+              const mapActive = !isMobile && isHome && bg.mapBackground === true;
               if (selectedImage !== "none") {
                 style.setProperty("--surface-alpha", String(alpha));
               } else {
                 style.removeProperty("--surface-alpha");
+              }
+              if (mapActive) {
+                style.setProperty("--map-surface-alpha", String(alpha));
+              } else {
+                style.removeProperty("--map-surface-alpha");
               }
               if (selectedImage !== "none" && scrim) {
                 style.setProperty("--bg-scrim", scrim);

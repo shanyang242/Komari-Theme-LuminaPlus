@@ -1,6 +1,15 @@
-import { memo, useEffect, useMemo, useState } from "react";
+import {
+  lazy,
+  memo,
+  Suspense,
+  useEffect,
+  useMemo,
+  useState,
+  type CSSProperties,
+} from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Flag } from "@/components/ui/Flag";
+import { ErrorBoundary } from "@/components/shell/ErrorBoundary";
 import { useAuth } from "@/hooks/useAuth";
 import {
   useHomeNodeSummaries,
@@ -41,6 +50,10 @@ import { NodeCard } from "./NodeCard";
 import { RenewalReminder } from "./RenewalReminder";
 import { canViewCosts, type NodeViewMode } from "@/utils/themeSettings";
 import type { RenewalReminderSource } from "@/utils/renewalReminder";
+
+const NodeMapBackground = lazy(() =>
+  import("./NodeMapBackground").then((module) => ({ default: module.NodeMapBackground })),
+);
 
 // 卡片视图网格密度。
 const GRID_LAYOUT: Record<NodeViewMode, { className: string; minColumnWidth: number }> = {
@@ -84,6 +97,7 @@ function HomeBrand({ siteName }: { siteName: string }) {
 
 function HomeOverviewCards({
   visibleUuidSet,
+  mapBackground,
   costSummary,
   costLoading,
   showCosts,
@@ -91,6 +105,7 @@ function HomeOverviewCards({
   renewalNodes,
 }: {
   visibleUuidSet: ReadonlySet<string>;
+  mapBackground: boolean;
   costSummary: { remainingCny: number; premiumTotalCny: number } | null;
   costLoading: boolean;
   showCosts: boolean;
@@ -158,7 +173,10 @@ function HomeOverviewCards({
   const bandwidthDetailLabel = `↑ ${formatByteRateLabel(overview.netUp)} · ↓ ${formatByteRateLabel(overview.netDown)}`;
   const bandwidthCompactLabel = `↑${formatCompactBytes(overview.netUp)} ↓${formatCompactBytes(overview.netDown)}`;
   return (
-    <section className="home-overview" aria-label="首页总览">
+    <section
+      className={mapBackground ? "home-overview is-map" : "home-overview"}
+      aria-label="首页总览"
+    >
       <article className="overview-card" data-metric="online">
         <span className="overview-card-label">在线节点</span>
         <div className="overview-card-main">
@@ -292,13 +310,22 @@ const RegionTabs = memo(function RegionTabs({
   regions,
   selectedRegion,
   onSelectRegion,
+  mapGridClassName,
+  mapGridStyle,
 }: {
   regions: HomeRegionOption[];
   selectedRegion: string;
   onSelectRegion: (region: string) => void;
+  mapGridClassName?: string;
+  mapGridStyle?: CSSProperties;
 }) {
-  return (
-    <section className="home-region-bar" aria-label="地区筛选">
+  const isMapLayout = Boolean(mapGridClassName && mapGridStyle);
+  const bar = (
+    <section
+      className="home-region-bar"
+      data-map-span={isMapLayout ? (regions.length > 5 ? "2" : "1") : undefined}
+      aria-label="地区筛选"
+    >
       <div className="home-region-chips" role="group">
         {regions.map(({ code, count }) => {
           const active = selectedRegion === code;
@@ -312,7 +339,7 @@ const RegionTabs = memo(function RegionTabs({
               onClick={() => onSelectRegion(active ? HOME_ALL_REGION : code)}
               title={code}
             >
-              <Flag region={code} size={14} />
+              <Flag region={code} size={isMapLayout ? 12 : 14} />
               <span className="home-region-chip-code">{code}</span>
               <span className="home-region-chip-count">{count}</span>
             </button>
@@ -320,6 +347,13 @@ const RegionTabs = memo(function RegionTabs({
         })}
       </div>
     </section>
+  );
+
+  if (!isMapLayout) return bar;
+  return (
+    <div className={`${mapGridClassName} home-map-region-row`} style={mapGridStyle}>
+      {bar}
+    </div>
   );
 });
 
@@ -332,11 +366,12 @@ export function NodeGrid() {
   const { data: publicConfig } = usePublicConfig();
   const siteName = publicConfig?.sitename?.trim() || "节点概览";
   const themeSettings = useThemeSettings();
-  const { mode } = useViewMode();
+  const { mode, device } = useViewMode();
   const costsVisible =
     canViewCosts(themeSettings, !authError && me?.logged_in === true);
   const [selectedGroup, setSelectedGroup] = useState(HOME_ALL_GROUP);
   const [selectedRegion, setSelectedRegion] = useState(HOME_ALL_REGION);
+  const [mapFailed, setMapFailed] = useState(false);
   useHomepagePingOverview();
 
   const onlineByUuid = useMemo(
@@ -481,14 +516,17 @@ export function NodeGrid() {
       )),
     [orderedUuids, mode, costsVisible],
   );
+  const mapBackgroundEnabled =
+    themeSettings.isReady && themeSettings.enableMapBackground && device === "desktop" && !mapFailed;
   const { className: gridClassName, minColumnWidth } = GRID_LAYOUT[mode];
+  const gridTemplateStyle = useMemo(
+    () => ({
+      gridTemplateColumns: `repeat(auto-fill, minmax(min(100%, ${minColumnWidth}px), 1fr))`,
+    }),
+    [minColumnWidth],
+  );
   const gridElement = (
-    <div
-      className={gridClassName}
-      style={{
-        gridTemplateColumns: `repeat(auto-fill, minmax(min(100%, ${minColumnWidth}px), 1fr))`,
-      }}
-    >
+    <div className={gridClassName} style={gridTemplateStyle}>
       {cards}
     </div>
   );
@@ -510,19 +548,35 @@ export function NodeGrid() {
     );
   }
 
-  // 首页概览卡在「空节点」与正常两个分支里完全一致，提取一次复用。
+  const homeOverview = showHomeOverview && (
+    <HomeOverviewCards
+      visibleUuidSet={visibleUuidSet}
+      mapBackground={mapBackgroundEnabled}
+      showDetailButton={showCostDetailButton}
+      showCosts={costsVisible}
+      renewalNodes={renewalNodes}
+      costSummary={costSummary}
+      costLoading={costLoading}
+    />
+  );
+
+  // 空节点与正常列表复用同一页头；地图异常时恢复普通总览布局。
   const homeHeader = (
     <>
       <HomeBrand siteName={siteName} />
-      {showHomeOverview && (
-        <HomeOverviewCards
-          visibleUuidSet={visibleUuidSet}
-          showDetailButton={showCostDetailButton}
-          showCosts={costsVisible}
-          renewalNodes={renewalNodes}
-          costSummary={costSummary}
-          costLoading={costLoading}
-        />
+      {mapBackgroundEnabled ? (
+        <>
+          <ErrorBoundary fallback={null} onError={() => setMapFailed(true)}>
+            <Suspense fallback={null}>
+              <NodeMapBackground nodes={visibleNodes} />
+            </Suspense>
+          </ErrorBoundary>
+          <div className={`${gridClassName} home-map-header`} style={gridTemplateStyle}>
+            {homeOverview}
+          </div>
+        </>
+      ) : (
+        homeOverview
       )}
     </>
   );
@@ -531,7 +585,7 @@ export function NodeGrid() {
     return (
       <>
         {homeHeader}
-        <div className="flex h-[40vh] flex-col items-center justify-center gap-2 text-[var(--text-tertiary)]">
+        <div className="pointer-events-none flex h-[40vh] flex-col items-center justify-center gap-2 text-[var(--text-tertiary)]">
           <span className="text-[15px]">尚未连接到任何节点</span>
           <span className="text-[12px]">等待后端推送或前往管理后台添加</span>
         </div>
@@ -543,7 +597,14 @@ export function NodeGrid() {
     <>
       {homeHeader}
       {showGroupTabs && (
-        <div className="home-controls-bar mb-4">
+        <div
+          className={
+            mapBackgroundEnabled
+              ? `${gridClassName} home-controls-bar mb-4`
+              : "home-controls-bar mb-4"
+          }
+          style={mapBackgroundEnabled ? gridTemplateStyle : undefined}
+        >
           <GroupTabs
             groups={groupOptions}
             selectedGroup={selectedGroup}
@@ -556,6 +617,8 @@ export function NodeGrid() {
           regions={regionOptions}
           selectedRegion={selectedRegion}
           onSelectRegion={setSelectedRegion}
+          mapGridClassName={mapBackgroundEnabled ? gridClassName : undefined}
+          mapGridStyle={mapBackgroundEnabled ? gridTemplateStyle : undefined}
         />
       )}
       {gridElement}

@@ -878,14 +878,22 @@
 }
 
 /* 首页顶部为 36px 快捷设置按钮保留最小 48px 控制区：上下各约 6px。
-   iOS PWA 的状态栏安全区由 app-main 统一叠加。 */
+   iOS PWA 的状态栏安全区由 app-main 统一叠加。
+   isolation: isolate 为 z-index: -1 的地图背景建立独立层叠上下文，否则地图会落到
+   .home-dashboard 自身盒模型之后，导致鼠标悬停与 <title> 提示被父容器吞掉。 */
 .home-dashboard {
+  isolation: isolate;
   padding-top: 28px;
 }
 
-/* 首页分组控件条。 */
+/* 首页分组控件条：空余列透传指针事件，不遮挡下方地图悬停。 */
 .home-controls-bar {
   align-items: center;
+  pointer-events: none;
+}
+
+.home-controls-bar > * {
+  pointer-events: auto;
 }
 
 /* 移动端分组标签可横向滚动。 */
@@ -910,5 +918,337 @@
 
   .home-dashboard {
     padding-top: 24px;
+  }
+}
+
+/* 地图成功挂载后才应用其透明度，加载失败时由图片背景或实色表面接管。 */
+:root:has(.home-map-background) {
+  --surface-alpha: var(--map-surface-alpha, 100);
+}
+
+/* 总览复用实例网格的第一列，地图独立铺在首页内容下方。 */
+.home-map-header {
+  position: relative;
+  min-height: 280px;
+  margin-bottom: 16px;
+  align-items: center;
+  pointer-events: none;
+}
+
+.home-overview.is-map {
+  position: relative;
+  z-index: 20;
+  pointer-events: auto;
+  grid-column: 1;
+  grid-row: 1;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 0;
+  container-type: inline-size;
+}
+
+.home-overview.is-map .overview-card {
+  position: static;
+  min-height: 118px;
+  gap: 8px;
+  padding: 12px;
+  background: var(--surface-a);
+}
+
+.home-overview.is-map .overview-card-value {
+  font-size: clamp(16px, 8.2cqi, 28px);
+}
+
+.home-overview.is-map .overview-card[data-metric="asset"] .overview-card-value {
+  font-size: clamp(12px, 6.8cqi, 24px);
+}
+
+.home-overview.is-map .overview-card-unit {
+  font-size: clamp(9px, 4cqi, 12px);
+}
+
+.home-overview.is-map .overview-card-asset-main {
+  flex-wrap: wrap;
+  align-content: center;
+  column-gap: 7px;
+  row-gap: 4px;
+}
+
+.home-overview.is-map .overview-card-premium {
+  font-size: 8.5px;
+}
+
+.home-overview.is-map .overview-card-premium strong {
+  font-size: 10px;
+}
+
+.home-overview.is-map .overview-card-sub {
+  font-size: 11px;
+}
+
+.home-overview.is-map .overview-card-caption {
+  font-size: 10.5px;
+}
+
+@container (max-width: 365px) {
+  .home-overview.is-map .overview-card-sub-full {
+    display: none;
+  }
+
+  .home-overview.is-map .overview-card-sub-compact {
+    display: inline;
+  }
+}
+
+/* 地图模式下总览位于第 1 列最左侧，续费提醒弹窗锚定在总览块下方左对齐向右展开，避免超出视口左边缘。 */
+.home-overview.is-map .renewal-reminder {
+  position: static;
+}
+
+.home-overview.is-map .renewal-reminder-panel {
+  top: calc(100% + 10px);
+  left: 0;
+  right: auto;
+}
+
+/* 地图模式下的地区筛选栏：≤5 个地区固定占 1 张实例卡宽，>5 个地区固定占 2 张实例卡宽，
+   内部均分对称排布，右侧空余列透传地图悬停。 */
+.home-map-region-row {
+  margin-bottom: 12px;
+  pointer-events: none;
+}
+
+.home-map-region-row .home-region-bar {
+  min-width: 0;
+  margin-bottom: 0;
+  padding: 5px;
+  pointer-events: auto;
+}
+
+@media (min-width: 800px) {
+  .home-map-region-row .home-region-bar[data-map-span="2"] {
+    grid-column: span 2;
+  }
+}
+
+.home-map-region-row .home-region-chips {
+  flex-wrap: nowrap;
+  gap: 3px;
+}
+
+.home-map-region-row .home-region-chip {
+  flex: 1 1 0;
+  min-width: 0;
+  justify-content: center;
+  gap: 4px;
+  padding: 0 4px;
+  font-size: 11.5px;
+}
+
+.home-map-region-row .home-region-chip-count {
+  min-width: 16px;
+  height: 17px;
+  padding: 0 4px;
+}
+
+.home-map-background {
+  position: absolute;
+  z-index: -1;
+  top: 0;
+  right: 0;
+  width: 75%;
+  aspect-ratio: 1000 / 420;
+  pointer-events: none;
+}
+
+.home-map-background svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.node-map-country {
+  --map-highlight: var(--accent-500);
+  --map-hover-fill: color-mix(in srgb, var(--accent-500) 26%, transparent);
+  fill: color-mix(in srgb, var(--text-tertiary) 12%, transparent);
+  stroke: color-mix(in srgb, var(--text-tertiary) 20%, transparent);
+  stroke-width: 0.6;
+  stroke-linejoin: round;
+  pointer-events: visiblePainted;
+  transition: fill 180ms ease, stroke 180ms ease, stroke-width 180ms ease;
+}
+
+.node-map-country[data-interactive="false"] {
+  pointer-events: none;
+}
+
+.node-map-country[data-status="online"] {
+  --map-highlight: var(--status-success);
+  --map-hover-fill: color-mix(in srgb, var(--status-success) 46%, transparent);
+  fill: color-mix(in srgb, var(--status-success) 34%, transparent);
+  stroke: color-mix(in srgb, var(--status-success) 75%, transparent);
+}
+
+.node-map-country[data-status="offline"] {
+  --map-highlight: var(--status-warning);
+  --map-hover-fill: color-mix(in srgb, var(--status-warning) 38%, transparent);
+  fill: color-mix(in srgb, var(--status-warning) 26%, transparent);
+  stroke: var(--status-warning);
+}
+
+.node-map-point {
+  color: var(--status-success);
+  fill: currentColor;
+  pointer-events: visiblePainted;
+}
+
+.node-map-point[data-status="offline"] {
+  color: var(--status-warning);
+}
+
+.node-map-point[data-status="unknown"] {
+  color: var(--text-tertiary);
+}
+
+.node-map-point-hit {
+  fill: transparent;
+  pointer-events: all;
+}
+
+.node-map-point-core {
+  stroke: white;
+  stroke-width: 1.2;
+}
+
+.node-map-point-pulse {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.2;
+  pointer-events: none;
+  animation: node-map-pulse 3s ease-out infinite;
+}
+
+.home-map-background[data-paused="true"] .node-map-point-pulse {
+  animation-play-state: paused;
+}
+
+@keyframes node-map-pulse {
+  0% {
+    opacity: 0.5;
+    transform: scale(1);
+  }
+  80%,
+  100% {
+    opacity: 0;
+    transform: scale(2.5);
+  }
+}
+
+.node-map-meteors {
+  pointer-events: none;
+}
+
+.node-map-meteor {
+  animation-name: node-map-meteor-appear, node-map-meteor-disappear;
+  animation-timing-function: linear;
+  animation-fill-mode: backwards, forwards;
+}
+
+.node-map-route,
+.node-map-route-tip {
+  fill: none;
+  stroke: color-mix(in srgb, var(--status-success) 75%, white);
+  stroke-opacity: 0.65;
+  stroke-linecap: round;
+}
+
+.node-map-route {
+  stroke-width: 2;
+  stroke-dasharray: 5 4;
+}
+
+.node-map-route-tip {
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+}
+
+.node-map-route-reveal {
+  animation: node-map-route-draw linear both;
+}
+
+@keyframes node-map-route-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes node-map-meteor-appear {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes node-map-meteor-disappear {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@media (any-hover: hover) and (any-pointer: fine) {
+  .node-map-country:hover {
+    fill: var(--map-hover-fill);
+    stroke: var(--map-highlight);
+    stroke-width: 1.5;
+  }
+
+  .node-map-point-core {
+    transition: transform 180ms ease, stroke-width 180ms ease;
+  }
+
+  .node-map-point:hover .node-map-point-core {
+    transform: scale(1.25);
+    stroke-width: 1.6;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .node-map-country,
+  .node-map-point-core {
+    transition: none;
+  }
+
+  .node-map-point-pulse {
+    animation: none;
+    display: none;
+  }
+
+  .node-map-meteors {
+    display: none;
+  }
+}
+
+@media (max-width: 1200px) {
+  .home-map-background {
+    position: relative;
+    width: 100%;
+    margin-bottom: 16px;
+  }
+
+  .home-map-header {
+    min-height: 0;
+  }
+
+  .home-overview.is-map {
+    grid-column: 1 / -1;
   }
 }

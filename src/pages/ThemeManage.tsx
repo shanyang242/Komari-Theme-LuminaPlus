@@ -25,6 +25,8 @@ import { Spinner } from "@/components/ui/Spinner";
 import { Flag } from "@/components/ui/Flag";
 import { usePublicConfig } from "@/hooks/usePublicConfig";
 import { useHourlyClock } from "@/hooks/useClock";
+import { useMediaQuery } from "@/hooks/useMediaQuery";
+import { MOBILE_VIEWPORT_QUERY } from "@/utils/mediaQuery";
 import { queryClient } from "@/services/queryClient";
 import {
   ApiRequestError,
@@ -173,6 +175,7 @@ function pickManagedThemeSettings(settings: ResolvedThemeSettings) {
     ),
     costRateApiUrl: settings.costRateApiUrl,
     enableBackgroundImage: settings.enableBackgroundImage,
+    enableMapBackground: settings.enableMapBackground,
     backgroundImage: settings.backgroundImage,
     backgroundImageMobile: settings.backgroundImageMobile,
     backgroundAlignment: settings.backgroundAlignment,
@@ -543,6 +546,7 @@ const MerchantLinkConfigControl = memo(function MerchantLinkConfigControl({
 });
 
 export function ThemeManage() {
+  const isMobileViewport = useMediaQuery(MOBILE_VIEWPORT_QUERY, true);
   const now = useHourlyClock();
   const {
     data: config,
@@ -1151,12 +1155,22 @@ export function ThemeManage() {
         aside={<Wallpaper size={16} />}
       >
         <div className="flex flex-col gap-4">
-          <ToggleRow
-            field="enableBackgroundImage"
-            title="启用自定义背景"
-            checked={draft.enableBackgroundImage}
-            onPatch={patch}
-          />
+          <div className={isMobileViewport ? "flex flex-col gap-3" : "grid gap-3 md:grid-cols-2"}>
+            <ToggleRow
+              field="enableBackgroundImage"
+              title="启用自定义背景"
+              checked={draft.enableBackgroundImage}
+              onPatch={patch}
+            />
+            {!isMobileViewport && (
+              <ToggleRow
+                field="enableMapBackground"
+                title="启用桌面地图背景"
+                checked={draft.enableMapBackground}
+                onPatch={patch}
+              />
+            )}
+          </div>
 
           <div className="grid gap-4 md:grid-cols-2">
             <label className="flex min-w-0 flex-col gap-2">

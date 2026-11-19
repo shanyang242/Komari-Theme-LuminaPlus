@@ -6,13 +6,36 @@ import { applyBackgroundCache, buildBackgroundCache, persistBackgroundCache } fr
 import { MOBILE_VIEWPORT_QUERY } from "@/utils/mediaQuery";
 
 /** 图片由 body 伪元素首帧绘制。 */
-export function BackgroundLayer() {
+export function BackgroundLayer({ isHomeDashboard }: { isHomeDashboard: boolean }) {
   const { resolvedAppearance } = usePreferences();
-  const { enableBackgroundImage, backgroundImage, backgroundImageMobile, backgroundAlignment, surfaceOpacity, isReady } = useThemeSettings();
+  const {
+    enableBackgroundImage,
+    enableMapBackground,
+    backgroundImage,
+    backgroundImageMobile,
+    backgroundAlignment,
+    surfaceOpacity,
+    isReady,
+  } = useThemeSettings();
   const isMobile = useMediaQuery(MOBILE_VIEWPORT_QUERY, true);
   const backgroundCache = useMemo(
-    () => buildBackgroundCache({ enableBackgroundImage, backgroundImage, backgroundImageMobile, backgroundAlignment, surfaceOpacity }),
-    [enableBackgroundImage, backgroundImage, backgroundImageMobile, backgroundAlignment, surfaceOpacity],
+    () =>
+      buildBackgroundCache({
+        enableBackgroundImage,
+        enableMapBackground,
+        backgroundImage,
+        backgroundImageMobile,
+        backgroundAlignment,
+        surfaceOpacity,
+      }),
+    [
+      enableBackgroundImage,
+      enableMapBackground,
+      backgroundImage,
+      backgroundImageMobile,
+      backgroundAlignment,
+      surfaceOpacity,
+    ],
   );
 
   useEffect(() => {
@@ -20,8 +43,13 @@ export function BackgroundLayer() {
   }, [isReady, backgroundCache]);
 
   useEffect(() => {
-    if (isReady) applyBackgroundCache(backgroundCache, resolvedAppearance, { isMobile });
-  }, [isReady, backgroundCache, resolvedAppearance, isMobile]);
+    if (isReady) {
+      applyBackgroundCache(backgroundCache, resolvedAppearance, {
+        isMobile,
+        isHomeDashboard,
+      });
+    }
+  }, [isReady, backgroundCache, resolvedAppearance, isMobile, isHomeDashboard]);
 
   return null;
 }

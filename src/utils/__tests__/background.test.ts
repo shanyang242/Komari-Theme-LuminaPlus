@@ -19,6 +19,7 @@ const BACKGROUND_STYLE_VARS = [
   "--bg-size",
   "--bg-position",
   "--surface-alpha",
+  "--map-surface-alpha",
   "--bg-scrim",
 ] as const;
 
@@ -266,5 +267,47 @@ describe("applyBackgroundCache", () => {
     expect(properties.get("--surface-alpha")).toBe("100");
     expect(properties.has("--bg-scrim")).toBe(false);
     expect(style.removeProperty).toHaveBeenCalledWith("--bg-scrim");
+  });
+
+  it("reserves map opacity for a mounted desktop map and clears it on other pages", () => {
+    const mapOnlyCache = buildBackgroundCache({
+      ...base,
+      enableBackgroundImage: false,
+      enableMapBackground: true,
+      backgroundImage: "/ignored.webp",
+      surfaceOpacity: 65,
+    });
+    expect(mapOnlyCache).not.toBeNull();
+    expect(mapOnlyCache?.lightDesktop).toBe("none");
+
+    const { properties } = installDocumentStyle();
+
+    // 地图挂载后由 CSS 使用预留的透明度，加载失败时表面保持实色。
+    applyBackgroundCache(mapOnlyCache, "dark", { isMobile: false, isHomeDashboard: true });
+    expect(properties.get("--map-surface-alpha")).toBe("65");
+    expect(properties.has("--surface-alpha")).toBe(false);
+    expect(properties.has("--bg-scrim")).toBe(false);
+
+    // 切到详情页/资产页/主题管理页时底下无地图，恢复实色表面避免发灰。
+    applyBackgroundCache(mapOnlyCache, "dark", { isMobile: false, isHomeDashboard: false });
+    expect(properties.has("--map-surface-alpha")).toBe(false);
+    expect(properties.has("--surface-alpha")).toBe(false);
+
+    // 移动端不显示地图背景，同样保持实色表面。
+    applyBackgroundCache(mapOnlyCache, "dark", { isMobile: true, isHomeDashboard: true });
+    expect(properties.has("--map-surface-alpha")).toBe(false);
+    expect(properties.has("--surface-alpha")).toBe(false);
+
+    // 同时启用自定义背景图时，非首页仍保留自定义背景的半透明与遮罩。
+    const comboCache = buildBackgroundCache({
+      ...base,
+      enableBackgroundImage: true,
+      enableMapBackground: true,
+      backgroundImage: "/wall.webp",
+      surfaceOpacity: 65,
+    });
+    applyBackgroundCache(comboCache, "dark", { isMobile: false, isHomeDashboard: false });
+    expect(properties.get("--surface-alpha")).toBe("65");
+    expect(properties.get("--bg-scrim")).toContain("color-mix");
   });
 });

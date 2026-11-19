@@ -20,6 +20,16 @@ describe("getCountryCodeFromRegion", () => {
     expect(getCountryCodeFromRegion("UK")).toBe("GB");
   });
 
+  it.each([
+    ["XK", "🇽🇰"],
+    ["DG", "🇩🇬"],
+  ])("resolves %s consistently as text and emoji", (code, flag) => {
+    expect(getCountryCodeFromRegion(code)).toBe(code);
+    expect(getCountryCodeFromRegion(code.toLowerCase())).toBe(code);
+    expect(getCountryCodeFromRegion(flag)).toBe(code);
+    expect(getDisplayRegionCode(code)).toBe(getDisplayRegionCode(flag));
+  });
+
   it("still extracts an embedded ISO code from free text", () => {
     expect(getCountryCodeFromRegion("DE Frankfurt")).toBe("DE");
   });

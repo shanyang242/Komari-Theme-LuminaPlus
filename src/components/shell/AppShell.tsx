@@ -44,7 +44,7 @@ export function AppShell() {
   return (
     <div className="relative flex min-h-screen flex-col">
       <PwaPullToRefresh active={pullRefreshActive} />
-      <BackgroundLayer />
+      <BackgroundLayer isHomeDashboard={isHomeDashboard} />
       <main className="app-main flex-1 px-3 pb-8 sm:px-5 md:px-6 lg:px-8">
         <div className="mx-auto w-full max-w-[1720px]">
           {isCheckingShell ? (

@@ -62,4 +62,8 @@ describe("home responsive layout contracts", () => {
     expect(routerSource).not.toMatch(/const Home\s*=\s*lazy/);
     expect(routerSource).toContain("element: <Home />");
   });
+
+  it("isolates the home dashboard stacking context so the negative-z map receives hover events", () => {
+    expect(homeCss).toMatch(/\.home-dashboard\s*\{[^}]*isolation:\s*isolate;/);
+  });
 });

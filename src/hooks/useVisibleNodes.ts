@@ -9,7 +9,6 @@ let cachedMeta: NodeInfo[] | null = null;
 let cachedHidden: string[] | null = null;
 let cachedResult: Set<string> | null = null;
 
-// 同帧内多个消费者(首页网格/overview 拉取/资产页/流量页)共享一次名称匹配解析。
 function resolveHiddenNodeUuids(allMeta: NodeInfo[], hiddenNodes: string[]): Set<string> {
   if (cachedResult && cachedMeta === allMeta && cachedHidden === hiddenNodes) {
     return cachedResult;
@@ -20,7 +19,6 @@ function resolveHiddenNodeUuids(allMeta: NodeInfo[], hiddenNodes: string[]): Set
   return cachedResult;
 }
 
-/** 主题级隐藏列表 → uuid 集合。名称匹配需要完整 meta。 */
 export function useHiddenNodeUuids(): Set<string> {
   const allMeta = useAllNodeMeta();
   const themeSettings = useThemeSettings();
@@ -28,10 +26,7 @@ export function useHiddenNodeUuids(): Set<string> {
   return useMemo(() => resolveHiddenNodeUuids(allMeta, hiddenNodes), [allMeta, hiddenNodes]);
 }
 
-/**
- * 全站统一的节点可见性口径:后台 hidden 仅登录管理员可见,主题级隐藏对所有人剔除,
- * auth 未就绪按访客处理(fail-closed)。
- */
+/** 节点可见性：后台 hidden 仅管理员可见，主题隐藏全员剔除，未就绪按访客处理。 */
 export function useVisibleNodes(): NodeInfo[] {
   const allNodes = useAllNodeMeta();
   const { data: me } = useAuth();

@@ -200,7 +200,6 @@ describe("homepage single-ping polling selection", () => {
     await buildPingOverviewMap(1, ["node-a"], {}, undefined, load);
     expect(getTasksSpy).toHaveBeenCalledTimes(1);
 
-    // 超过 60s TTL 后自动重新拉取公开任务列表。
     vi.advanceTimersByTime(60_000);
     await buildPingOverviewMap(1, ["node-a"], {}, undefined, load);
     expect(getTasksSpy).toHaveBeenCalledTimes(2);
@@ -233,7 +232,6 @@ describe("homepage single-ping polling selection", () => {
       tasks: [],
     }));
 
-    // 第 1 次进入首页发起请求，尚未返回即离开首页并清空任务缓存。
     const firstAbort = new AbortController();
     const firstPending = buildPingOverviewMap(1, ["node-a"], {}, firstAbort.signal, load);
     firstAbort.abort();
@@ -241,7 +239,6 @@ describe("homepage single-ping polling selection", () => {
     expect(firstSignal?.aborted).toBe(true);
     await expect(firstPending).rejects.toThrow();
 
-    // 立即返回首页：新请求先拿到线路 2，随后旧请求晚到返回线路 1。
     const secondPending = buildPingOverviewMap(1, ["node-a"], {}, undefined, load);
     resolveSecond([task(2, 1, ["node-a"], 15)]);
     const secondResult = await secondPending;
@@ -250,7 +247,6 @@ describe("homepage single-ping polling selection", () => {
     resolveFirst([task(1, 1, ["node-a"], 15)]);
     await Promise.resolve();
 
-    // 下一轮轮询命中缓存时必须保持线路 2，不能被晚到的旧响应切回线路 1。
     load.mockClear();
     vi.advanceTimersByTime(15_000);
     const nextResult = await buildPingOverviewMap(1, ["node-a"], {}, undefined, load);

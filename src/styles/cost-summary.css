@@ -1,4 +1,3 @@
-/* 资产统计(/assets 页) */
 .cost-summary-action {
   display: grid;
   width: 32px;
@@ -29,7 +28,6 @@
   animation: cost-summary-spin 900ms linear infinite;
 }
 
-/* 报表头:剩余价值大数 + 右侧账目分行。 */
 .assets-hero {
   position: relative;
   display: grid;
@@ -419,8 +417,6 @@
   }
 }
 
-/* 资产页明细：桌面账本表格，窄屏使用卡片布局。 */
-
 .assets-table-wrap {
   overflow-x: auto;
   border: 1px solid var(--hairline);
@@ -451,7 +447,6 @@
   font-size: 11px;
   font-weight: 680;
   letter-spacing: 0.08em;
-  /* double 双细线:账本表头签名 */
   border-bottom: 3px double color-mix(in srgb, var(--text-tertiary) 30%, transparent);
 }
 

@@ -1,18 +1,11 @@
-/* LuminaPlus 共享表面样式 */
-
-/* 固定的全视口背景图,画在 body::before 上以便首帧即存在(index.html 内联脚本在 React
-   挂载前就注入这些变量,避免不透明→玻璃的闪烁)。位于 body 的 --bg-0 兜底之上、#root 内容
-   之下。设备图片纯靠 CSS 选择,url 与 size/position 通过 <html> 上继承的自定义属性传入。
-   未配置背景时变量默认为 `none`,这一层不绘制任何内容。 */
+/* 背景图绘于 body::before，变量由 index.html 首帧注入 */
 body::before {
   content: "";
   position: fixed;
   top: 0;
   left: 0;
   z-index: -2;
-  /* 稳定、与滚动无关的尺寸。用 100vw/100vh(不用 inset:0 或 dvh)把这一层与动态视口解耦:
-     移动端滚动时 URL 栏收起、桌面端滚动条切换都不再改变盒子,因此 `background-size: cover`
-     不会在滚动中途重算——那次重算正是缩放抖动的来源。 */
+  /* 用 100vw/100vh 避开动态视口变化引起的缩放抖动 */
   width: 100vw;
   height: 100vh;
   background-image: var(--bg-image-desktop, none);
@@ -28,8 +21,7 @@ body::before {
   }
 }
 
-/* 图片上的可读性遮罩层。用 --bg-0(注入 --bg-scrim),从而暗色模式自动变暗、亮色模式自动
-   变亮;玻璃关闭时透明。尺寸与图片层一样保持稳定。 */
+/* 背景图可读性遮罩 */
 body::after {
   content: "";
   position: fixed;
@@ -42,11 +34,7 @@ body::after {
   pointer-events: none;
 }
 
-/* 有意不做卡片磨砂(backdrop-filter):它依赖 GPU 合成,不同设备/浏览器渲染差异大
-   (关闭硬件加速的桌面浏览器甚至完全不画),还会和卡片的 content-visibility 优化冲突
-   (Chromium 把 paint containment 视为 backdrop root,吞掉元素自身的 backdrop-filter)。
-   半透明观感 = 纯半透明表面(--surface-a) + 图片上的可读性遮罩(--bg-scrim),
-   两者都是普通绘制,所有设备逐像素一致。 */
+/* 卡片不加 backdrop-filter（与 content-visibility 冲突且跨端差异大），改用 --surface-a + --bg-scrim */
 
 .surface-inset {
   background: var(--surface-sunken);
@@ -145,7 +133,6 @@ body::after {
   transform: scale(0.96);
 }
 
-/* 普通页面只处理页面边距与 iOS PWA 安全区，不为首页专属悬浮卡留空。 */
 .app-main {
   --app-gutter: 0.75rem;
   position: relative;
@@ -154,7 +141,6 @@ body::after {
   padding-top: calc(env(safe-area-inset-top, 0px) + 1.25rem);
 }
 
-/* iOS 主屏独立模式没有浏览器刷新入口；仅在下拉手势发生时露出，不占页面布局。 */
 .pwa-pull-refresh {
   position: fixed;
   top: env(safe-area-inset-top, 0px);
@@ -206,8 +192,7 @@ body::after {
   position: absolute;
   top: -14px;
   right: 0;
-  /* 快捷栏及其调色盘应始终覆盖概览卡内弹层（续费提醒为 70），否则提醒红点
-     会穿透到配色面板上。 */
+  /* 高于续费提醒弹层（z-index: 70/80），防穿透 */
   z-index: 90;
   display: inline-flex;
   flex: 0 0 auto;
@@ -252,8 +237,6 @@ body::after {
     transform 220ms cubic-bezier(0.32, 0.72, 0, 1);
 }
 
-/* 外观选择与其他快捷按钮共用同一个 36px 圆形规格；分组仅保留语义，不再额外
-   包一层会把整行撑高的胶囊。 */
 .floating-controls .floating-controls-appearance {
   flex: 0 0 auto;
   gap: 8px;
@@ -313,12 +296,10 @@ body::after {
   background: var(--status-offline);
 }
 
-/* 悬浮控制卡里的"卡片配色"取色面板 */
 .metric-color-picker {
   align-self: flex-end;
   width: 244px;
   max-width: calc(100vw - 2rem);
-  /* 项目较多时面板可滚动，不超出视口 */
   max-height: min(70vh, 560px);
   overflow-y: auto;
   display: flex;
@@ -342,7 +323,6 @@ body::after {
   gap: 7px;
 }
 
-/* 分组标题:eyebrow 小标 + 两侧发丝线,与主题其余分区排版一致。 */
 .metric-color-group-title {
   display: flex;
   align-items: center;
@@ -525,7 +505,6 @@ body::after {
   width: 38px;
   height: 24px;
   border-radius: 8px;
-  /* 双圈:内层白/黑发丝 + 外层描边,让浅色块在浅背景上也有边界。 */
   box-shadow:
     inset 0 0 0 1px color-mix(in srgb, white 40%, transparent),
     inset 0 0 0 2px color-mix(in srgb, var(--text-primary) 12%, transparent);
@@ -538,7 +517,7 @@ body::after {
   transform: scale(1.06);
 }
 
-/* 原生取色器铺满色块并透明，色块本身的 background 显示当前色 */
+/* 透明原生取色器铺满色块 */
 .metric-color-swatch input[type="color"] {
   position: absolute;
   inset: -4px;
@@ -567,7 +546,7 @@ body::after {
   color: var(--text-primary);
   background: color-mix(in srgb, var(--hover-bg) 60%, transparent);
 }
-/* 没改过这一项就没东西可重置：隐藏按钮（仍占位避免错位），消除暗黑下看不清的幽灵图标 */
+/* 未修改时隐藏但保留占位防错位 */
 .metric-color-reset:disabled {
   visibility: hidden;
 }
@@ -615,7 +594,6 @@ body::after {
   }
 }
 
-/* 主题管理报头:eyebrow + 大标题 + 右侧账目式元信息,和资产页同一套编辑排版语言。 */
 .theme-masthead {
   display: flex;
   flex-direction: column;
@@ -768,7 +746,6 @@ body::after {
 .theme-manage-button.is-primary {
   color: var(--text-on-strong);
   border-color: color-mix(in srgb, var(--accent-strong) 70%, black 30%);
-  /* azure(--accent-500)顶 → indigo(--accent-strong)底,给主按钮一点体积感而非平涂。 */
   background:
     linear-gradient(
       180deg,
@@ -1465,7 +1442,6 @@ body::after {
   gap: 5px;
 }
 
-/* 编号分区小标(仅主题管理传入 kicker 时出现):两位序号用品牌色 + 分区名。 */
 .instance-panel-kicker {
   display: inline-flex;
   align-items: center;
@@ -1485,13 +1461,11 @@ body::after {
   font-variant-numeric: tabular-nums;
 }
 
-/* 带 kicker 的面板(主题管理各分区)标题区加一道发丝下线,读作报告的分节。 */
 .instance-panel.has-kicker .instance-panel-header {
   border-bottom: 1px solid color-mix(in srgb, var(--hairline) 82%, transparent);
   padding-bottom: 12px;
 }
 
-/* 标题 + 紧随其后的内联控件（如服务器切换器）同一行居中对齐 */
 .instance-panel-title-row {
   display: flex;
   align-items: center;
@@ -1516,7 +1490,6 @@ body::after {
   color: var(--text-tertiary);
 }
 
-/* 详情页标题旁的快速切换服务器下拉 */
 .instance-switcher {
   position: relative;
   display: inline-flex;
@@ -1527,7 +1500,6 @@ body::after {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  /* 紧凑、轻量：默认透明 ghost，只在 hover/展开时显底，避免和标题文字挤在一起突兀 */
   width: 22px;
   height: 22px;
   padding: 0;
@@ -1539,7 +1511,6 @@ body::after {
   transition: color 160ms ease, background 160ms ease, border-color 160ms ease;
 }
 
-/* 图标块级居中，消除 svg 行内基线带来的偏移 */
 .instance-switcher-trigger svg {
   display: block;
 }
@@ -1551,7 +1522,6 @@ body::after {
   background: var(--hover-bg);
 }
 
-/* 实例切换器弹出菜单：紧贴标题左缘向右展开，节点多时可滚动且不超出移动端视口。 */
 .instance-switcher-panel {
   position: absolute;
   top: calc(100% + 6px);
@@ -1690,7 +1660,6 @@ body::after {
   word-break: break-word;
 }
 
-/* 流量项带进度条，保留竖排 */
 .instance-info-item.is-stack {
   display: block;
 }
@@ -1900,7 +1869,6 @@ body::after {
   font-weight: 700;
 }
 
-/* 把覆盖/采样/断点连线/实时并入标题行右侧，省掉单独一行工具栏 */
 .instance-chart-headmeta {
   display: flex;
   flex-wrap: wrap;
@@ -1980,7 +1948,6 @@ body::after {
   padding-bottom: 2px;
 }
 
-/* 折线入场：从左到右扫出，模拟逐渐画出（canvas 没法逐条 path 动画，用整体揭示近似） */
 .instance-uplot-wrap .uplot {
   color: var(--text-secondary);
   font-family: var(--font-sans);
@@ -2137,7 +2104,6 @@ body::after {
   font-size: 13px;
 }
 
-/* 图表加载态:居中转圈 + 文案,明确告诉用户在加载而非卡死。 */
 .instance-chart-loading {
   display: flex;
   min-height: 260px;

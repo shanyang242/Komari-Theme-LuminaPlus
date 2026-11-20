@@ -64,14 +64,12 @@ export function getRenewalReminders(
     const expiresAt = resolveExpireTimestamp(node.expired_at);
     if (expiresAt == null) continue;
 
-    // 与节点卡、列表和资产页共用同一套向下取整口径，避免同屏出现 2 天/3 天。
     const daysRemaining = getExpireDaysRemaining(expiresAt, now);
     if (daysRemaining == null) continue;
     if (daysRemaining > RENEWAL_WARNING_DAYS) continue;
 
     const expired = daysRemaining < 0;
-    // 首页可要求过期节点必须明确在线：状态尚未返回（null/undefined）时先不展示，
-    // 避免刷新时红点短暂出现；资产风险视图不启用此门槛，继续展示真实到期数据。
+    // 启用在线门槛时，状态未就绪也暂不提示防红点闪烁
     if (expired && options.requireOnlineForExpired && node.online !== true) continue;
     const critical = daysRemaining <= 3;
     reminders.push({

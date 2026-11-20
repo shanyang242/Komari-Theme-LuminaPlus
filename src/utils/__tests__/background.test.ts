@@ -136,8 +136,6 @@ describe("computeBackgroundScrim", () => {
   });
 
   it("ramps the scrim gently as opacity drops (no blur involved)", () => {
-    // 半透明观感只由"纯半透明表面 + 可读性遮罩"构成,刻意没有 backdrop-filter 磨砂
-    // (GPU 渲染差异会让双端观感不一致,防回归)。
     const mid = computeBackgroundScrim(50);
     expect(mid).toBeGreaterThan(0);
 
@@ -161,7 +159,6 @@ describe("buildBackgroundCache", () => {
   });
 
   it("returns null when the toggle is off, even with urls configured", () => {
-    // 开关关闭 = 与未配置等价:不写变量、不发图片请求;URL 仍保留在设置里。
     expect(
       buildBackgroundCache({
         ...base,
@@ -180,7 +177,6 @@ describe("buildBackgroundCache", () => {
     expect(cache).not.toBeNull();
     expect(cache?.lightDesktop).toBe('url("/light.webp")');
     expect(cache?.darkDesktop).toBe('url("/dark.webp")');
-    // 没设置移动端图时回退到桌面端
     expect(cache?.darkMobile).toBe('url("/dark.webp")');
   });
 
@@ -282,23 +278,19 @@ describe("applyBackgroundCache", () => {
 
     const { properties } = installDocumentStyle();
 
-    // 地图挂载后由 CSS 使用预留的透明度，加载失败时表面保持实色。
     applyBackgroundCache(mapOnlyCache, "dark", { isMobile: false, isHomeDashboard: true });
     expect(properties.get("--map-surface-alpha")).toBe("65");
     expect(properties.has("--surface-alpha")).toBe(false);
     expect(properties.has("--bg-scrim")).toBe(false);
 
-    // 切到详情页/资产页/主题管理页时底下无地图，恢复实色表面避免发灰。
     applyBackgroundCache(mapOnlyCache, "dark", { isMobile: false, isHomeDashboard: false });
     expect(properties.has("--map-surface-alpha")).toBe(false);
     expect(properties.has("--surface-alpha")).toBe(false);
 
-    // 移动端不显示地图背景，同样保持实色表面。
     applyBackgroundCache(mapOnlyCache, "dark", { isMobile: true, isHomeDashboard: true });
     expect(properties.has("--map-surface-alpha")).toBe(false);
     expect(properties.has("--surface-alpha")).toBe(false);
 
-    // 同时启用自定义背景图时，非首页仍保留自定义背景的半透明与遮罩。
     const comboCache = buildBackgroundCache({
       ...base,
       enableBackgroundImage: true,

@@ -23,7 +23,6 @@ function oklchHue(color: string): number {
 
 describe("latencyHeatColor", () => {
   it("treats 0ms (sub-millisecond success) as the greenest latency, not neutral", () => {
-    // 后端把往返 <1ms 取整成 0；0 是最优延迟，不能当无数据画成中性灰。
     const color = latencyHeatColor(0);
     expect(color).not.toBe("var(--text-tertiary)");
     expect(color).toBe("var(--latency-excellent)");
@@ -66,13 +65,11 @@ describe("trafficUsageColor", () => {
   });
 
   it("stays green while at least half the quota remains", () => {
-    // used ≤ 50% 时处于绿色区(约 140–150°),健康配额不会被误显示成警告色
     expect(hue(trafficUsageColor(0.1))).toBeGreaterThan(140);
     expect(hue(trafficUsageColor(0.5))).toBeGreaterThan(140);
   });
 
   it("actually reaches red near the limit — the regression it fixes", () => {
-    // 以前 85% 以下根本到不了红色(hue ≲ 15°),整个常用区间都只是绿→浅绿
     expect(hue(trafficUsageColor(0.95))).toBeLessThan(20);
     expect(hue(trafficUsageColor(1))).toBeLessThan(12);
   });
@@ -89,19 +86,17 @@ describe("trafficUsageColor", () => {
 
 describe("trafficQuotaSegmentColor", () => {
   it("returns OKLCH and holds solid green across the short safe zone", () => {
-    // 按位置取色,所以每段颜色固定、与填充量无关。绿色保持区很短(约 10%),避免绿色占主导,
-    // 过了这段 hue 就往黄色下降
     expect(trafficQuotaSegmentColor(0)).toBe("oklch(0.7200 0.1600 150.00)");
     expect(trafficQuotaSegmentColor(0.05)).toBe("oklch(0.7200 0.1600 150.00)");
     expect(oklchHue(trafficQuotaSegmentColor(0.3))).toBeLessThan(128);
   });
 
   it("rotates the OKLCH hue green→yellow→orange→red so the zones stay distinct", () => {
-    expect(oklchHue(trafficQuotaSegmentColor(0.03))).toBeGreaterThan(145); // 绿
-    expect(oklchHue(trafficQuotaSegmentColor(0.44))).toBeGreaterThan(95); // 黄
+    expect(oklchHue(trafficQuotaSegmentColor(0.03))).toBeGreaterThan(145);
+    expect(oklchHue(trafficQuotaSegmentColor(0.44))).toBeGreaterThan(95);
     expect(oklchHue(trafficQuotaSegmentColor(0.44))).toBeLessThan(125);
-    expect(oklchHue(trafficQuotaSegmentColor(0.72))).toBeLessThan(70); // 橙
-    expect(oklchHue(trafficQuotaSegmentColor(1))).toBeLessThan(35); // 红
+    expect(oklchHue(trafficQuotaSegmentColor(0.72))).toBeLessThan(70);
+    expect(oklchHue(trafficQuotaSegmentColor(1))).toBeLessThan(35);
   });
 
   it("warms monotonically — OKLCH hue never rises with position", () => {
@@ -124,7 +119,6 @@ describe("speedRateColor", () => {
     expect(speedRateColor("KB/s")).toBe("var(--speed-low)");
     expect(speedRateColor("MB/s")).toBe("var(--speed-high)");
     expect(speedRateColor("GB/s")).toBe("var(--speed-max)");
-    // TB/s·PB/s 现实到不了,并入急速顶档(--speed-max)而非各占一档。
     expect(speedRateColor("TB/s")).toBe("var(--speed-max)");
     expect(speedRateColor("PB/s")).toBe("var(--speed-max)");
   });

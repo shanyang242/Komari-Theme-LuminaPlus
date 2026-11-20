@@ -6,7 +6,7 @@ export function useAuth() {
     queryKey: ["me"],
     queryFn: ({ signal }) => getMe({ signal }),
     staleTime: 30_000,
-    // 后台在新标签页登录后，返回时必须立即校验。
+    // 切回标签页时即时同步后台登录态
     refetchOnWindowFocus: "always",
   });
 }

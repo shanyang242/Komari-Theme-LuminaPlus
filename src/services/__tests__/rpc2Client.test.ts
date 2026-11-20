@@ -73,21 +73,17 @@ describe("RPC2Client handshake & reconnect backoff", () => {
     const client = new RPC2Client("/api/rpc2");
     expect(FakeWebSocket.instances).toHaveLength(1);
 
-    // 首次握手失败并伴随 close 事件：不应把状态回退为 disconnected。
     FakeWebSocket.instances[0].emitErrorThenClose();
     await Promise.resolve();
 
-    // 在退避等待窗口内发起 RPC 调用：走 HTTP 兜底，但绝不绕过退避立即新建 WebSocket。
     await client.call("common:getNodes");
     expect(FakeWebSocket.instances).toHaveLength(1);
 
-    // 第 1 次退避为 3000ms：2999ms 时仍未重连，3000ms 触发第 2 次连接尝试。
     await vi.advanceTimersByTimeAsync(2_999);
     expect(FakeWebSocket.instances).toHaveLength(1);
     await vi.advanceTimersByTimeAsync(1);
     expect(FakeWebSocket.instances).toHaveLength(2);
 
-    // 第 2 次握手再次失败：退避翻倍为 6000ms。
     FakeWebSocket.instances[1].emitErrorThenClose();
     await Promise.resolve();
 
@@ -103,7 +99,6 @@ describe("RPC2Client handshake & reconnect backoff", () => {
     const client = new RPC2Client("/api/rpc2");
     expect(FakeWebSocket.instances).toHaveLength(1);
 
-    // 10s 握手超时后关闭旧 socket，异步 close 不应破坏重连调度。
     await vi.advanceTimersByTimeAsync(10_000);
     expect(FakeWebSocket.instances).toHaveLength(1);
 

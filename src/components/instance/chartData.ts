@@ -3,23 +3,16 @@ import { inferMedianIntervalSeconds, medianValue } from "@/utils/historyRange";
 
 export type TimedMetricPoint = {
   time: number;
-  // null = 真实断点 (丢包或检测到的中断)——切断线条。
-  // undefined = 该 task 在这个对齐 anchor 上根本没有采样 (anchor 是另一个 task 建的)——
-  // 须跨过、不当作断点。区分这两者，uPlot 才能跨越 off-phase 列画连续线，同时在真实空缺处断开。
+  // null=真实断点（断线），undefined=错相未采（uPlot 跨过）
   [key: string]: number | null | undefined;
 };
 
-// 每个检测到的 gap 最多插入的 null 标记点数上限，避免长时间中断把对齐数组撑成上千个点。
 const MAX_SENTINELS_PER_GAP = 6;
-
-// 空缺超过「桥接阈值」才算真实中断、插 null 断点；更小的空缺留给 uPlot 跨过，避免漏采把线切碎。
-// 阈值：周期 × 6，再钳到 [2min, 30min]。
+// 断线阈值：周期 × 6，钳制在 [2min, 30min]
 const GAP_BREAK_INTERVAL_MULTIPLIER = 6;
-const GAP_BREAK_MIN_SECONDS = 120; // 下限 2min：短周期任务偶尔抖动不至于一漏就断
-const GAP_BREAK_MAX_SECONDS = 1800; // 上限 30min：再长的洞一定断，不画跨越超长空缺的假线
+const GAP_BREAK_MIN_SECONDS = 120;
+const GAP_BREAK_MAX_SECONDS = 1800;
 
-// 在升序 `times` 上二分查找与 `target` 相差在 `tolerance` 内的下标，没有则返回 -1。
-// 用于把断点 null 合并到已有的他 task anchor 上，而不是新建一个近重复列。
 function findPointNearTime(times: number[], target: number, tolerance: number) {
   let low = 0;
   let high = times.length - 1;
@@ -40,10 +33,7 @@ function findPointNearTime(times: number[], target: number, tolerance: number) {
   return -1;
 }
 
-// `spanMissing` 决定缺失的 task key 填成什么。false (默认) 填 `null`——把缺采样当真实断点，
-// 适用于 LoadChart 的 fillMissingMetricPoints 这类单序列填充。true 填 `undefined`，让 off-phase
-// anchor (另一个 task 建的列) 保持可跨越而非切断每条线。(用布尔而非填充值，因为给有默认值的参数
-// 传 `undefined` 只会再次触发默认值。)
+// spanMissing: true 填 undefined（跨过错相列），false 填 null（断线）
 function normalizePoints(points: TimedMetricPoint[], spanMissing = false) {
   if (points.length === 0) {
     return { points: [] as TimedMetricPoint[], keys: [] as string[] };
@@ -62,8 +52,7 @@ function normalizePoints(points: TimedMetricPoint[], spanMissing = false) {
   const base = Object.fromEntries(keys.map((key) => [key, fillValue] as const));
   const deduped = new Map<number, TimedMetricPoint>();
 
-  // 对同一时间戳的点做合并 (而非覆盖)，这样落在已有 anchor 上的某 task 哨兵 null
-  // 不会丢掉该 anchor 上其他 task 的值。Map 天然保持首次插入的升序顺序，无需二次排序。
+  // 同时间戳合并而非覆盖，保留其他 task 的值
   for (const point of [...points].sort((a, b) => a.time - b.time)) {
     const prev = deduped.get(point.time);
     deduped.set(point.time, prev ? { ...prev, ...point } : { ...base, ...point });
@@ -90,11 +79,7 @@ function isSeparatedAscending<T extends { time: number }>(points: readonly T[]):
   return true;
 }
 
-/**
- * 合并历史种子点与实时流采样点：
- * - 两段各自严格递增（间隔 >= 1s）且实时段完全位于历史段之后时，直接线性拼接切片；
- * - 出现时间交错、近邻重复（< 1s）或乱序帧时，回退排序与去重以保证单调时间轴且不丢历史点。
- */
+/** 合并历史与实时点：有序无交错时直接拼接，否则排序并按 1s 去重。 */
 export function mergeRealtimeMetricPoints<T extends { time: number }>(
   initial: readonly T[],
   realtimePoints: readonly T[],
@@ -168,8 +153,7 @@ export function fillMissingMetricPoints(
         ? sortedPoints[pointer]
         : null;
 
-    // 内部采样吸附到网格时间，但保留最新采样自己的时间戳——否则不在网格上的末点会被前移
-    // 半个 interval，导致图表右边缘和覆盖范围标签都偏移。
+    // 末点保留原始时间戳，避免右边缘与覆盖范围偏移
     const isLastSample = matched === sortedPoints[sortedPoints.length - 1];
     filled.push(
       matched
@@ -234,9 +218,7 @@ export function insertMetricGapSentinels(
       const current = validTimes[index];
       if (current - previous <= breakThreshold) continue;
 
-      // 一个 null 就足以断线。把当前 task 在 gap 内标为断开：若此处已有别的 task 的 anchor，
-      // 就把 null 设到它上面 (不新建近重复列)；否则加一个本 task 的哨兵——合并而非覆盖，这样多个
-      // task 同时中断也都能保留。每个 gap 有上限，避免长时间中断把点数撑爆。
+      // 优先复用已有 anchor 写入 null，否则新增合并哨兵
       let added = 0;
       for (
         let expected = previous + interval;
@@ -339,8 +321,7 @@ export function cutPeakValues<T extends { [key: string]: number | null | undefin
   const halfWindow = Math.floor(windowSize / 2);
 
   for (const key of keys) {
-    // 记下哪些点本来就没值 (丢包/空缺)。下面的 EWMA 过程绝不能回填这些点——只能补它自己
-    // 移除的尖峰——否则丢包空缺会被渲染成假的延迟。
+    // 记录原始空缺，EWMA 仅回填被削尖峰，不回填丢包
     const originallyMissing = new Uint8Array(result.length);
     for (let index = 0; index < result.length; index += 1) {
       const value = result[index][key];
@@ -385,7 +366,6 @@ export function cutPeakValues<T extends { [key: string]: number | null | undefin
         ewma = ewma == null ? currentValue : alpha * currentValue + (1 - alpha) * ewma;
         result[index][key] = ewma;
       } else if (ewma != null && originallyMissing[index] === 0) {
-        // 平滑掉刚移除的尖峰，但真实丢包空缺保持 null。
         result[index][key] = ewma;
       }
     }
@@ -394,8 +374,7 @@ export function cutPeakValues<T extends { [key: string]: number | null | undefin
   return result as T[];
 }
 
-// 桶内偏离均值超过这个相对比例才判定为「真尖峰」，保峰模式下输出极值而非均值。
-// 调小 → 更多波动被保留（线更跳）；调大 → 只有非常突出的尖峰才显出来。
+// 保峰模式下偏离均值超过此比例视为尖峰
 const PEAK_PRESERVE_SPIKE_RATIO = 0.3;
 
 interface AlignedBucketReducer {
@@ -461,12 +440,7 @@ function downsampleAlignedWith(
   return { times: outTimes, perTask: outPerTask };
 }
 
-// 按时间等宽分桶降采样：降到 uPlot 抽稀阈值以下避免尖刺。
-// 三态保留：默认任一 null 都使桶断开；Ping 可用 "all" 模式，仅在桶内没有成功值时断开。
-// 全 off-phase 始终为 undefined。
-// preservePeaks=false（默认）：桶内取均值——平滑，但单点尖峰会被均值吞掉。
-// preservePeaks=true：平坦桶仍取均值（基线干净），但桶内极值偏离均值超过 PEAK_PRESERVE_SPIKE_RATIO
-//   时输出该极值——让真实尖峰/突降穿透降采样显示出来（配合关闭额外滑动平均使用）。
+/** 等宽时间分桶降采样；preservePeaks 保留超阈值极值，nullBucketMode="all" 仅整桶无值时断开。 */
 export function downsampleAligned(
   times: number[],
   perTask: Array<Array<number | null | undefined>>,
@@ -481,7 +455,6 @@ export function downsampleAligned(
     const valueCount = Array.from({ length: seriesCount }, () =>
       new Array<number>(bucketCount).fill(0),
     );
-    // 仅保峰模式需要：记录每桶每序列的最大/最小值，用来判断并输出尖峰极值。
     const valueMax = preservePeaks
       ? Array.from({ length: seriesCount }, () =>
           new Array<number>(bucketCount).fill(Number.NEGATIVE_INFINITY),
@@ -506,11 +479,10 @@ export function downsampleAligned(
       },
       getValue(seriesIndex, bucket) {
         const count = valueCount[seriesIndex][bucket];
-        if (count === 0) return undefined; // 全 off-phase：跨过、不当断点
+        if (count === 0) return undefined;
         const mean = valueSum[seriesIndex][bucket] / count;
         if (!preservePeaks || !valueMax || !valueMin) return mean;
 
-        // 保峰：取偏离均值更大的一侧极值；只有偏离超过阈值才用极值，否则保持均值基线干净。
         const upDev = valueMax[seriesIndex][bucket] - mean;
         const downDev = mean - valueMin[seriesIndex][bucket];
         const extreme =
@@ -522,9 +494,7 @@ export function downsampleAligned(
   }, nullBucketMode);
 }
 
-// 按点数的滑动平均：每个数值点取前后各 floor(window/2) 个点取均值。降采样后各时段点数一致，
-// 用固定点窗能让 1h/4h/1d 获得一致的平滑度（按时间窗会因每点时间跨度不同而力度不均）。
-// null/undefined（断点/off-phase）原样保留。
+/** 固定点数滑动平均，保持各时段平滑度一致，保留 null/undefined。 */
 export function smoothByCount(
   perTask: Array<Array<number | null | undefined>>,
   windowPoints: number,

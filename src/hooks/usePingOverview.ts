@@ -227,12 +227,7 @@ async function loadCachedPublicPingTasks(options?: { signal?: AbortSignal }): Pr
   });
 }
 
-/**
- * 先解析可见节点实际使用的 Ping 任务，再按需请求对应线路记录：
- * - 无绑定任务时不发历史记录请求；
- * - 单任务或少量任务子集时传入 `task_id` 精准拉取，避免无关线路占用带宽与 4000 条采样额度；
- * - 公开任务列表默认走短 TTL 缓存，减少高频轮询下的重复请求。
- */
+/** 按可见节点绑定精准拉取对应 Ping 任务概览，减少冗余请求与采样额度消耗。 */
 export async function buildPingOverviewMap(
   hours: number,
   clientUuids: string[],
@@ -485,7 +480,7 @@ function ensurePingOverviewStarted(
     pingAbortController?.abort();
     if (pingRefreshTimer != null) window.clearTimeout(pingRefreshTimer);
     pingRefreshTimer = null;
-    // 保留未变更节点的已有 Ping 数据，避免节点增删或登录态就绪时整屏闪烁回 pending。
+    // 保留未变更节点数据，避免整屏闪回 pending
     const preservedItems = new Map<string, PingOverviewItem>();
     for (const uuid of normalizedVisibleUuids) {
       const hasPrev = Object.prototype.hasOwnProperty.call(previousOverrides, uuid);

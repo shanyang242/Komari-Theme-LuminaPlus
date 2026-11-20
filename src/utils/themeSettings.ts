@@ -126,7 +126,7 @@ export function canViewCosts(
   },
   loggedIn: boolean,
 ) {
-  // 配置尚未读取或读取失败时，不能用默认的公开值展示费用。
+  // 配置未就绪或失败时默认隐藏费用
   return settings.isReady && !settings.isError && (loggedIn || settings.showCostsToGuests);
 }
 
@@ -150,13 +150,11 @@ export function normalizeThemeSettings(
       settings?.homepagePingNodeTaskIds,
     ),
     nodeMerchantLinks: normalizeNodeMerchantLinks(settings?.nodeMerchantLinks),
-    // 默认关闭(需手动开启):给访客展示的是模拟数据,必须由站长显式决定。
     fakePingForUnbound: settings?.fakePingForUnbound === true,
     showHomeOverview: enabledUnlessFalse(settings?.showHomeOverview),
     showGroupTabs: enabledUnlessFalse(settings?.showGroupTabs),
     showRegionBar: enabledUnlessFalse(settings?.showRegionBar),
     showCardGroup: enabledUnlessFalse(settings?.showCardGroup),
-    // 默认公开；站长可显式关闭访客费用展示。
     showCostsToGuests: enabledUnlessFalse(settings?.showCostsToGuests),
     showCostSummary: enabledUnlessFalse(settings?.showCostSummary),
     compactShowTrafficTotal: enabledUnlessFalse(settings?.compactShowTrafficTotal),
@@ -166,7 +164,6 @@ export function normalizeThemeSettings(
     costIgnoredNodes: normalizeCostIgnoredNodes(settings?.costIgnoredNodes),
     costPremiums: normalizeCostPremiums(settings?.costPremiums),
     costRateApiUrl: normalizeCostRateApiUrl(settings?.costRateApiUrl),
-    // 默认开启；关闭时保留 URL 但不加载背景图。
     enableBackgroundImage: enabledUnlessFalse(settings?.enableBackgroundImage),
     enableMapBackground: settings?.enableMapBackground === true,
     backgroundImage: normalizeBackgroundUrl(settings?.backgroundImage),

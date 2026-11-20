@@ -39,7 +39,7 @@ export interface MeteorRouteGeometry {
 }
 
 const MASK_STROKE_PADDING = 8;
-/** 近邻标记的目标中心间距，命中圆半径为 6。 */
+/** 近邻标记最小中心距（命中圆半径 6）。 */
 export const MIN_POINT_SEPARATION = 12;
 const VIEWBOX_MIN_X = 8;
 const VIEWBOX_MAX_X = 992;
@@ -47,7 +47,7 @@ const VIEWBOX_MIN_Y = 8;
 const VIEWBOX_MAX_Y = 412;
 const RELAXATION_PASSES = 6;
 
-/** 补充 geo.ts 支持但上游 world-map.json 未内置点位的泛区域坐标(如欧盟/泛欧节点)。 */
+/** 补充 world-map.json 未内置的泛区域坐标。 */
 export const EXTRA_MAP_POINTS: Record<string, readonly [number, number]> = {
   EU: [520.5, 99.5],
 };
@@ -77,7 +77,6 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
 
-/** 安全解析地区中文展示名并做静态缓存；无归属多边形返回空串。 */
 export function getRegionDisplayName(code: string, fallbackName = ""): string {
   const normalizedCode = code.trim();
   const normalizedFallback = fallbackName.trim();
@@ -93,7 +92,7 @@ export function getRegionDisplayName(code: string, fallbackName = ""): string {
       const localized = getRegionDisplayNamesInstance()?.of(normalizedCode)?.trim();
       if (localized) resolved = localized;
     } catch {
-      // 非标准两位地区码(如部分自定义/争议代号)回退到原始名称或代号。
+      // 非标准地区码回退原始值
     }
   }
 
@@ -114,10 +113,6 @@ export function getPointMapStatus(region: MapRegionStats): MapStatus {
   return "unknown";
 }
 
-/**
- * 单次遍历按地区聚合计数，仅对去重后的地区键排序生成紧凑签名，
- * 避免对大批量节点逐台拼接字符串并重复全量排序。
- */
 export function buildMapSignature(
   nodes: ReadonlyArray<MapNodeInput>,
   coordinates: Record<string, readonly number[]>,
@@ -146,7 +141,7 @@ export function buildMapSignature(
     .join(",");
 }
 
-/** 对同时激活的极近邻标记做确定性微偏移(如香港与澳门)，保证各自点位都可独立悬停查看。 */
+/** 对近邻标记做确定性微偏移，避免重叠遮挡。 */
 export function resolveMapPointPositions<T extends MapPointPosition>(
   items: ReadonlyArray<T>,
   minDistance = MIN_POINT_SEPARATION,
@@ -247,7 +242,7 @@ export function buildMapRegionSummary(
   };
 }
 
-/** 计算二次贝塞尔航线路径及其局部遮罩包围盒，避免全画布离屏光栅化。 */
+/** 计算航线贝塞尔路径及局部遮罩包围盒。 */
 export function buildMeteorRoute(
   from: readonly number[],
   to: readonly number[],
@@ -266,7 +261,6 @@ export function buildMeteorRoute(
   const ex = round1(x2);
   const ey = round1(y2);
 
-  // 二次贝塞尔曲线严格位于起点、控制点、终点构成的凸包之内。
   const maskX = Math.floor(Math.min(sx, ex, cx) - MASK_STROKE_PADDING);
   const maskY = Math.floor(Math.min(sy, ey, cy) - MASK_STROKE_PADDING);
   const maskWidth = Math.max(1, Math.ceil(Math.max(sx, ex, cx) + MASK_STROKE_PADDING) - maskX);

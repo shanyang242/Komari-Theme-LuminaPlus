@@ -35,7 +35,6 @@ describe("getCountryCodeFromRegion", () => {
   });
 
   it("prefers a real alias over a stray uppercase token (regression)", () => {
-    // "hong kong" 要解析成 HK,不能被串里别处一个松散的两字母正则匹配抢先盖掉
     expect(getCountryCodeFromRegion("Hong Kong")).toBe("HK");
   });
 

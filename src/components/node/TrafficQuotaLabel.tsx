@@ -8,7 +8,6 @@ export function TrafficQuotaLabel({
   remainingLabel: string;
   reset: TrafficResetDisplay | null;
 }) {
-  // 仅压缩卡片提示，保留原始精度；其他流量展示继续使用完整单位。
   const compactRemaining = remainingLabel.replace(
     /^(\d+(?:\.\d+)?)\s+([KMGTPE]?)B$/,
     (_, value: string, unit: string) => `${Number(value)}${unit || "B"}`,

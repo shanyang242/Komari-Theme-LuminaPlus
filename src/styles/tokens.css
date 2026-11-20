@@ -1,8 +1,4 @@
-/* LuminaPlus 配色 tokens。dark 模式调色板逐像素取自参考卡片图
-   (2026-04-21_01-07-38.png),这里每个 hex 都对应参考图中真实的像素颜色。 */
-
-/* token 只声明在根元素上：用 :root 限定，避免卡片等带 data-appearance 的元素
-   重新声明 token、把写在 <html> 上的自定义配色覆盖给“盖住”（大卡文字/图标曾因此不生效）。 */
+/* 仅声明在 :root，避免子节点 [data-appearance] 覆盖 <html> 自定义配色 */
 :root,
 :root[data-appearance="light"] {
   --bg-0: #f4f4f5;
@@ -33,11 +29,7 @@
   --progress-disk: #e97b35;
   --progress-network: #10b981;
   --progress-load: #ec4899;
-  /* compact 卡分段流量条的 heat 曲线 —— 与大卡 OKLCH trafficQuotaSegmentColor()
-     的色标一致(metricTone.ts),`in oklch` 插值使各档感知均匀、相邻色不互相污浊。
-     色相 green→chartreuse→yellow→orange→red,亮度在 yellow 处最高,绿色只占约 10%。
-     compact 条会在其上叠一层中性遮罩,覆盖到 --compact-gauge-fill 处。
-     OKLCH 需 2023+ 浏览器,与主题 color-mix() 的基线一致。 */
+  /* 与 metricTone.ts 的 trafficQuotaSegmentColor 色标同步 */
   --traffic-heat-spectrum: linear-gradient(
     to right in oklch,
     oklch(0.72 0.16 150) 0%,
@@ -54,23 +46,18 @@
   --status-warning: #e9a23b;
   --status-error: #dc2626;
   --status-info: #3b82f6;
-  /* 延迟状态阶梯：绿 → 黄绿 → 偏黄绿 → 暖金黄 → 红，避免高延迟档突兀跳橙。 */
   --latency-excellent: #2fc66e;
   --latency-good: #9fe339;
   --latency-moderate: #cbd83a;
   --latency-elevated: #e2a928;
   --latency-critical: #dc2626;
-  /* 品牌强调色,Spinner 转动弧、ThemeManage 复选框等引用。 */
   --accent-500: #3b82f6;
-  /* 品牌深调:比 --accent-500 更沉、微偏靛,只用于主 CTA / 报头 / 激活态渐变的暗端,
-     让品牌蓝有「azure→indigo」的体积感而非一块平涂色。数据色(--progress-cpu 等)不受影响。 */
   --accent-strong: #2f5be0;
-  /* 速率热力四档(现实可见区间):B/s 超低速绿 → KB/s 低速琥珀 → MB/s 高速橙 → GB/s 及以上 急速红。 */
+  /* 速率热力四档：B / KB / MB / GB+ */
   --speed-idle: #3aa76a;
   --speed-low: #d9992b;
   --speed-high: #e07a35;
   --speed-max: #d6463d;
-  /* 流量上/下行方向色（图标、出站/入站箭头） */
   --traffic-up: #3b82f6;
   --traffic-down: #2f9e65;
   --status-online: #2f9e65;
@@ -83,8 +70,7 @@
 
   --ring: rgba(59, 130, 246, 0.35);
 
-  /* 画布氛围层(只在纯色模式可见——透明模式的 body::before 图片会盖住 <html> 背景)。
-     顶部一道极淡的品牌冷光,给平铺画布一点「顶光」的纵深;亮色下几乎不可察,仅去掉死板。 */
+  /* 纯色模式顶光，背景图模式下被 body::before 遮盖 */
   --canvas-glow: radial-gradient(
     1100px 560px at 50% -8%,
     color-mix(in srgb, var(--accent-500) 5%, transparent) 0%,
@@ -93,7 +79,6 @@
 }
 
 :root[data-appearance="dark"] {
-  /* --dark-depth 只加深画布，卡片与边框仍保留层级。 */
   --bg-0: color-mix(in srgb, #212830, #000000 calc(var(--dark-depth, 0) * 1%));
 
   --surface: color-mix(in srgb, #262c36, #080a0d calc(var(--dark-depth, 0) * 1%));
@@ -122,7 +107,6 @@
   --progress-disk: #e0823d;
   --progress-network: #57ab5a;
   --progress-load: #e275ad;
-  /* --traffic-heat-spectrum 不重定义,继承 :root 的 OKLCH heat 曲线(dark 轨道上同样清晰)。 */
 
   --status-success: #57ab5a;
   --status-warning: #daaa3f;
@@ -139,7 +123,6 @@
   --speed-low: #daaa3f;
   --speed-high: #e0823d;
   --speed-max: #f47067;
-  /* 流量上/下行方向色（图标、出站/入站箭头） */
   --traffic-up: #539bf5;
   --traffic-down: #57ab5a;
   --status-online: #57ab5a;
@@ -155,7 +138,6 @@
   --canvas-glow: none;
 }
 
-/* 标签配色 — DStatus 风格 pill,按标签颜色名取色 */
 [data-tag="ruby"],
 [data-tag="red"],
 [data-tag="tomato"],

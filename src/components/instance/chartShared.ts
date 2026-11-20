@@ -3,8 +3,6 @@ import type uPlot from "uplot";
 import { parseTimestampMs } from "@/utils/format";
 import { clamp } from "@/utils/hsl";
 
-// 共享的图表配色。LoadChart 按指标 (cpu/memory/…) 取色，PingChart 按 task 循环取色；
-// 两者都取自这一处单一来源，避免 hex 值在两个图表间漂移。
 export const CHART_PALETTE = {
   cpu: "#5d88ff",
   memory: "#a35cf5",
@@ -13,18 +11,17 @@ export const CHART_PALETTE = {
   warning: "#d4a54a",
 } as const;
 
-// 备用定性色板（仅缺少总数时用）；正常走下面的 OKLCH 生成。
 const CHART_SERIES_COLORS = [
-  "#4878d0", // 蓝
-  "#ee854a", // 橙
-  "#6acc64", // 绿
-  "#d65f5f", // 红
-  "#956cb4", // 紫
-  "#8c613c", // 棕
-  "#dc7ec0", // 粉
-  "#4aa7a0", // 青
-  "#c7b446", // 芥黄
-  "#82c6e2", // 浅蓝
+  "#4878d0",
+  "#ee854a",
+  "#6acc64",
+  "#d65f5f",
+  "#956cb4",
+  "#8c613c",
+  "#dc7ec0",
+  "#4aa7a0",
+  "#c7b446",
+  "#82c6e2",
 ] as const;
 
 let oklchSupported: boolean | null = null;
@@ -40,19 +37,16 @@ function supportsOklch(): boolean {
 }
 
 export function colorForSeries(index: number, total?: number): string {
-  // 没有总数时（防御性调用）退回精选板。
   if (typeof total !== "number" || total <= 0) {
     return CHART_SERIES_COLORS[index % CHART_SERIES_COLORS.length];
   }
-  // 色相按总数均分，用 OKLCH 渲染：固定明度让每条线一样亮、中等彩度不刺眼、0.85 透明度让密集区
-  // 混色不互相盖死；不支持则降级 HSL。
+  // 按总数均分 OKLCH 色相，不支持时降级 HSL
   const hue = Math.round((index * 360) / total);
   return supportsOklch()
     ? `oklch(0.7 0.2 ${hue} / 0.95)`
     : `hsl(${hue}, 50%, 60%)`;
 }
 
-// uPlot 图表的坐标轴网格/文字颜色。单一来源，避免 LoadChart 和 PingChart 在 dark/light 字面量上漂移。
 export function getAxisColors(isDark: boolean): { grid: string; text: string } {
   return {
     grid: isDark ? "rgba(255,255,255,0.065)" : "rgba(0,0,0,0.08)",
@@ -60,7 +54,6 @@ export function getAxisColors(isDark: boolean): { grid: string; text: string } {
   };
 }
 
-// uPlot 图表 (LoadChart / PingChart) 共享的悬停 tooltip 状态结构。
 export interface ChartTooltipState {
   show: boolean;
   left: number;
@@ -74,7 +67,6 @@ interface TimeRangeOption {
   value: number;
 }
 
-// Ping 详情允许查看最长 7 天；负载历史只保留一天范围。
 const LOAD_TIME_RANGE_OPTIONS: TimeRangeOption[] = [
   { label: "1 小时", value: 1 },
   { label: "4 小时", value: 4 },
@@ -110,8 +102,7 @@ function buildHistoryRangeOptions(
   const hasExactMatch = resolved.some((option) => option.value === safeMaxHours);
   const largestPreset = presets[presets.length - 1]?.value ?? 0;
 
-  // 保留时间大于前端最长快捷档时，不再把它动态追加成 90 天等超长按钮。
-  // 小于最长档的非标准保留时间仍会显示，避免让用户选到后端已清理的数据范围。
+  // 仅在保留时间短于最长预设档时追加自定义档位
   if (safeMaxHours > 0 && safeMaxHours < largestPreset && !hasExactMatch) {
     resolved.push({
       label: formatRangeLabel(safeMaxHours),

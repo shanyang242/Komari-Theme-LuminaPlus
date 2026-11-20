@@ -18,8 +18,7 @@ function getErrorMessage(error: unknown) {
   return "页面渲染时发生异常";
 }
 
-// 只取 path 和 view 标记,不带完整 query/hash:以后这些里可能夹带 token,
-// 会通过用户截图泄露出去。
+// 仅保留 path 和 view，防截图泄露敏感 query/hash
 function safeLocation(): string {
   if (typeof location === "undefined") return "(n/a)";
   const view = /[?&]view=([^&]+)/.exec(location.search || "");
@@ -42,7 +41,7 @@ async function copyDiagnostics(text: string) {
   try {
     await navigator.clipboard?.writeText(text);
   } catch {
-    // 文本仍保留在页面中，可手动复制。
+    // 剪贴板不可用时静默忽略
   }
 }
 
@@ -123,7 +122,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
 
   componentDidCatch(error: Error, info: ErrorInfo) {
     this.props.onError?.(error);
-    // 类组件里用不了 hook,所以用 readViewModeHint。它给的是 device + override 而非最终解析的 mode,但区分 compact/large 排查问题足够了
+    // 类组件无法调用 hook，改用非响应式模式提示
     console.error(
       "[LuminaPlus] render error\n" + buildDiagnostics(error, readViewModeHint()),
       info,
@@ -147,7 +146,6 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
 
 export function RouteErrorFallback() {
   const error = useRouteError();
-  // error element 渲染在 providers 内部,所以这里 hook 可用,拿到的是崩溃那棵树实际用的最终 view mode
   const { mode, device } = useViewMode();
   const diagnostics = buildDiagnostics(error, `${device}/${mode}`);
 

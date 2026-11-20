@@ -46,8 +46,6 @@ export function formatBytes(n: number | undefined | null): string {
 function formatRateValue(value: number): string {
   if (value >= 100) return Math.round(value).toString();
   if (value >= 10) return trimFixed(value, 1);
-  // 只会以 bitsPerSec / divisor 的形式调用,且 bitsPerSec >= divisor,所以 value 恒 >= 1,
-  // 不存在小于 1 的分支。
   return trimFixed(value, 2);
 }
 
@@ -85,8 +83,6 @@ export interface ByteRateDisplay {
   unit: string;
 }
 
-// 按字节算的速率(KB/s · MB/s · GB/s · TB/s)——和 formatBytes 同一套 1024 进制,只是加了 "/s" 后缀。
-// 用在传输速度按字节比按比特更自然的地方(如首页实时带宽和节点卡速度),而不是 bps/Kbps/Mbps。
 export function formatByteRate(bytesPerSec: number | undefined | null): ByteRateDisplay {
   const [value, unit = "B"] = formatBytes(bytesPerSec).split(" ");
   return { value, unit: `${unit}/s` };
@@ -103,12 +99,12 @@ export function formatUptimeDays(seconds: number): { value: string; unit: string
   if (days >= 1) return { value: Math.floor(days).toString(), unit: "天" };
   const hours = seconds / 3600;
   if (hours >= 1) return { value: Math.floor(hours).toString(), unit: "小时" };
-  // 不足 1 分钟向上取整,避免刚上线显示成「0 分钟」而 <=0 又显示「—」的口径分裂。
+  // 不足 1 分钟按 1 分钟计，避免刚上线显示 0 分钟
   const minutes = Math.max(1, Math.floor(seconds / 60));
   return { value: minutes.toString(), unit: "分钟" };
 }
 
-/** 统一解析数字秒/毫秒、数字字符串或日期字符串为毫秒时间戳；无效或非正值返回 0。 */
+/** 解析秒/毫秒数字或日期串为毫秒时间戳，无效返回 0。 */
 export function parseTimestampMs(value: string | number | null | undefined): number {
   if (typeof value === "number") {
     if (!Number.isFinite(value) || value <= 0) return 0;
@@ -126,7 +122,7 @@ export function parseTimestampMs(value: string | number | null | undefined): num
   return Number.isNaN(parsed) || parsed <= 0 ? 0 : parsed;
 }
 
-// 将 `expired_at` 解析为毫秒；空值、Go 零时和 0/-1 哨兵均表示无到期。
+// 空值、Go 零时及 0/-1 哨兵均视为无到期
 export function resolveExpireTimestamp(
   iso: string | number | null | undefined,
 ): number | null {
@@ -178,7 +174,7 @@ function inferPlainTagColor(label: string): string {
   return "violet";
 }
 
-/** 把 `tag1<color>;tag2<color2>` 解析成 [{ label, color }]。 */
+/** 解析 "tag<color>;..." 格式标签。 */
 export function parseTags(raw: string | undefined | null): Array<{ label: string; color: string }> {
   if (!raw) return [];
   return raw

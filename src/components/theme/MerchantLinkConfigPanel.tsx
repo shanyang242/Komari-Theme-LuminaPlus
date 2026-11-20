@@ -19,11 +19,7 @@ function isInvalid(links: NodeMerchantLinks, uuid: string) {
   return Boolean(urlError || iconUrlError);
 }
 
-/**
- * 将已不在当前节点列表中的遗留商家配置按 UUID 追加到面板列表末尾，供管理员查看、修正或显式清除。
- * 当后台节点列表尚未成功加载（`clientsKnown === false`，如接口 503）时，绝不将现存节点误判为已删除实例；
- * 仅在存在阻塞保存的格式错误记录时按 UUID 列出待修正项。
- */
+/** 追加已删除节点的遗留配置；节点列表未加载时仅列出格式错误项。 */
 export function buildMerchantPanelClients(
   clients: readonly AdminClient[],
   links: NodeMerchantLinks,
@@ -96,8 +92,7 @@ export function MerchantLinkConfigPanel({
     [clients],
   );
 
-  // 记录本次打开期间出现过的额外 UUID：在输入框中退格清空文本时不立即从列表抽走该行，
-  // 防止编辑焦点跳到其他节点；仅在点击清除按钮或重开面板时移除。
+  // 保留本次打开出现过的遗留 UUID，避免清空输入时行消失导致失焦
   const [retainedOrphanUuids, setRetainedOrphanUuids] = useState<string[]>(() =>
     clientsKnown
       ? Object.keys(links).filter((uuid) => !existingUuidSet.has(uuid))

@@ -80,7 +80,6 @@ function subscribeToVisibility(element: HTMLElement, listener: VisibilityListene
   };
 }
 
-// 缓存 CSS 变量，避免每张卡片每次重绘都触发样式计算。
 const cssColorCache = new Map<string, string>();
 let cssColorCacheKey: string | null = null;
 let colorValidationContext: CanvasRenderingContext2D | null | undefined;
@@ -108,8 +107,7 @@ export const CANVAS_COLOR_FALLBACKS = {
     "--status-offline": "#dc2626",
     "--text-tertiary": "#71717a",
   },
-  // 与 tokens.css 深色 token 保持同值(color-mix 变量取 depth=0 的基色),只在首帧/样式
-  // 未就绪时命中,避免回退色与 DOM 侧漂移。
+  // 与 tokens.css 深色 token（depth=0 基色）同步
   dark: {
     "--progress-bg": "#343b45",
     "--progress-cpu": "#539bf5",
@@ -146,7 +144,7 @@ function fallbackCanvasColor(varName: string | null): string {
   ] ?? "#000000";
 }
 
-// 自定义配色不改变 appearance，需要显式失效。
+// 自定义配色变更时显式失效
 export function clearCssColorCache() {
   cssColorCache.clear();
   cssColorCacheKey = null;
@@ -166,13 +164,12 @@ function resolveCssColor(color: string): string {
   if (cached !== undefined) return cached || color;
 
   const resolved = getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
-  // 首帧空值不缓存，样式就绪后可重新解析。
+  // 首帧空值不缓存
   if (resolved) cssColorCache.set(varName, resolved);
   return resolved || color;
 }
 
-// canvas 的颜色解析器不认 color-mix()/calc()(如深色 --progress-bg 随 --dark-depth 混色),
-// 借 DOM 的 color 属性让 CSS 引擎算成 rgb。键含替换后的变量值,深度/配色一变即天然失效。
+// Canvas 不识别 color-mix()/calc()，借 DOM 计算为 rgb
 let cssEngineProbe: HTMLElement | null = null;
 const cssEngineColorCache = new Map<string, string | null>();
 
@@ -238,7 +235,6 @@ function hslToRgb(h: number, s: number, l: number): { r: number; g: number; b: n
   };
 }
 
-// 统一解析并校验 Canvas 颜色，不支持时回退到主题色。
 export function safeCanvasColor(color: string): string {
   const varName = extractCssVarName(color);
   let value = (varName ? resolveCssColor(color) : color).trim();
@@ -290,9 +286,7 @@ export function fillRoundedRect(
   ctx.fill();
 }
 
-// 拖到不同缩放比的显示器时 DPR 会在 CSS 宽度不变的情况下变化,位图必须按新 DPR 重建,
-// 否则整条发虚。matchMedia 的 resolution 查询只在离开当前值时触发一次,变化后要重新
-// 绑定新值的查询;所有 CanvasStrip 共享一个监听。
+// 跨屏缩放时重建位图；resolution 查询触发后需按新 DPR 重绑
 const dprListeners = new Set<() => void>();
 let dprQuery: MediaQueryList | null = null;
 
@@ -354,7 +348,7 @@ export function CanvasStrip({
     }
 
     const current = interactionRef.current;
-    // 横向扫过相邻柱时沿用当前强度，避免每跨一格都从 0 开始造成闪烁。
+    // 跨柱时沿用当前进度防闪烁
     const startProgress = current.hoverProgress;
     const start = performance.now();
     const duration = 150 * Math.abs(target - startProgress);
@@ -412,7 +406,7 @@ export function CanvasStrip({
     const pixelWidth = Math.max(1, Math.round(width * dpr));
     const pixelHeight = Math.max(1, Math.round(height * dpr));
 
-    // 重设 canvas 尺寸会清空状态并重新分配位图；数据重绘时尺寸通常没有变化。
+    // 仅尺寸变化时重设，避免重分配位图
     if (canvas.width !== pixelWidth) canvas.width = pixelWidth;
     if (canvas.height !== pixelHeight) canvas.height = pixelHeight;
 

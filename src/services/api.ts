@@ -65,7 +65,6 @@ const PingMetricStatsResponseSchema = z
 const LOAD_RECORDS_PER_HOUR = 12;
 const MAX_RPC_RECORDS = 20_000;
 const OVERVIEW_PING_MAX_COUNT = 4_000;
-// HTTP 接口统一设置传输超时，避免连接半开时无限等待。
 const DEFAULT_API_TIMEOUT_MS = 12_000;
 
 interface RpcRecordsPayload {
@@ -156,8 +155,7 @@ async function apiGet<T>(
   }
   const rawResult = schema.safeParse(json);
   if (rawResult.success) return rawResult.data;
-  // 两种解析错误都抛出来:enveloped 接口看 envelope 错误,裸 array/object 接口看 raw
-  // 错误,而这里无法判断接口本该返回哪种结构。
+  // 同时附带 envelope 与 raw 错误，便于排查两种返回结构
   throw new Error(
     `Schema mismatch on ${path}: envelope=${
       envelopeResult.success ? "" : envelopeResult.error.issues[0]?.message ?? ""
@@ -190,7 +188,7 @@ function isValidRecordTime(value: unknown): value is string | number {
   return typeof value === "string" || (typeof value === "number" && Number.isFinite(value));
 }
 
-// 轻量原生校验替代逐条 Zod safeParse，丢掉单条异常记录，避免上万条历史数据阻塞主线程。
+// 原生轻量校验，避免海量历史记录逐条 Zod 校验阻塞主线程
 function parseLoadRecords(value: unknown): LoadRecord[] {
   if (!Array.isArray(value)) return [];
   const out: LoadRecord[] = [];
@@ -368,8 +366,7 @@ function normalizePingMetricStats(
 }
 
 export async function getMe(options?: ApiCallOptions): Promise<Me> {
-  // 必须 cast:zod `.passthrough()` schema 经 apiGet 推断出的是 input 类型(默认字段
-  // 变可选),这里要重新收窄回来。
+  // 收窄 passthrough schema 推断出的可选默认字段类型
   return (await apiGet("/api/me", MeSchema, options)) as Me;
 }
 
@@ -390,7 +387,6 @@ export async function getNodesLatestStatus(
 }
 
 export async function getNodes(options?: ApiCallOptions): Promise<NodeInfo[]> {
-  // 修改版后端通过 RPC2 按访客权限下发 V4/V6 标识。
   const map = await rpcCall(
     "common:getNodes",
     {},
@@ -435,7 +431,7 @@ export async function getPingRecords(
         uuid,
         hours,
         type: "ping",
-        // 图表在浏览器内降采样；保留原始丢包记录供时间标记使用。
+        // 前端自行降采样，保留原始丢包点
         maxCount: -1,
       },
       RpcRecordsSchema,
@@ -458,7 +454,6 @@ export async function getAdminPingTasks(options?: ApiCallOptions): Promise<PingT
   return (await apiGet("/api/admin/ping", z.array(PingTaskSchema), options)) as PingTask[];
 }
 
-/** 公开任务列表由 Komari 后端按 weight、id 排好，并包含真实 clients 绑定。 */
 export async function getPublicPingTasks(options?: ApiCallOptions): Promise<PingTask[]> {
   return rpcCall(
     "public:getPublicPingTasks",
@@ -494,7 +489,7 @@ export async function saveThemeSettings(
         message = json.message;
       }
     } catch {
-      // body 不是 JSON 时保留兜底错误信息。
+      // 非 JSON 响应保留兜底文案
     }
     throw new ApiRequestError(message, resp.status, "/api/admin/theme/settings");
   }

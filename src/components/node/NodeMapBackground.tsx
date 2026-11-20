@@ -1,5 +1,7 @@
 import { memo, useEffect, useMemo, useRef, useState } from "react";
+import type { PointerEvent } from "react";
 import worldMap from "@/assets/world-map.json";
+import { supportsFineHover } from "@/utils/mediaQuery";
 import {
   buildMapRegionSummary,
   buildMapSignature,
@@ -54,6 +56,12 @@ const CountryShapes = memo(function CountryShapes({
 export function NodeMapBackground({ nodes }: { nodes: ReadonlyArray<MapNodeInput> }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [active, setActive] = useState(() => typeof document === "undefined" || !document.hidden);
+  const [hoverEnabled, setHoverEnabled] = useState(false);
+
+  const updateHoverInput = (event: PointerEvent<SVGSVGElement>) => {
+    const next = supportsFineHover(event.pointerType);
+    if (next !== hoverEnabled) setHoverEnabled(next);
+  };
 
   useEffect(() => {
     const element = containerRef.current;
@@ -76,7 +84,7 @@ export function NodeMapBackground({ nodes }: { nodes: ReadonlyArray<MapNodeInput
     };
   }, []);
 
-  // 仅在有效地区计数变化时重建地图摘要；2 秒实时流量跳动零重绘。
+  // 仅地区计数变化时重建地图摘要
   const signature = useMemo(() => buildMapSignature(nodes, coordinates), [nodes]);
   const { regionsByCode, points, onlinePoints } = useMemo(
     () => buildMapRegionSummary(signature, coordinates),
@@ -88,8 +96,18 @@ export function NodeMapBackground({ nodes }: { nodes: ReadonlyArray<MapNodeInput
       ref={containerRef}
       className="home-map-background"
       data-paused={active ? undefined : "true"}
+      data-hover-enabled={hoverEnabled ? "true" : undefined}
     >
-      <svg viewBox="0 0 1000 420" role="img" aria-label="节点地区分布地图">
+      <svg
+        viewBox="0 0 1000 420"
+        role="img"
+        aria-label="节点地区分布地图"
+        onPointerEnter={updateHoverInput}
+        onPointerMove={updateHoverInput}
+        onPointerDown={updateHoverInput}
+        onPointerLeave={() => setHoverEnabled(false)}
+        onPointerCancel={() => setHoverEnabled(false)}
+      >
         <CountryShapes regionsByCode={regionsByCode} />
         <NodeMapMeteors points={onlinePoints} active={active} />
         {points.map((point, index) => (

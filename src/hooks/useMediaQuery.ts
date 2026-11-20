@@ -1,7 +1,6 @@
 import { useCallback, useMemo, useSyncExternalStore } from "react";
 import { subscribeMediaQuery } from "@/utils/mediaQuery";
 
-/** 订阅单个 CSS 媒体查询。 */
 export function useMediaQuery(query: string, serverFallback = false) {
   const mediaQuery = useMemo(
     () => (typeof window !== "undefined" && window.matchMedia ? window.matchMedia(query) : null),

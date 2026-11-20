@@ -45,8 +45,7 @@ const HEARTBEAT_INTERVAL_MS = 15_000;
 const RECONNECT_INTERVAL_MS = 3_000;
 const MAX_RECONNECT_INTERVAL_MS = 30_000;
 
-// 服务端 RPC 错误不可再用 HTTP 重试，否则可能重复处理请求。
-// 注意:WS 超时(结果未知)也会自动用 HTTP 重放同一调用,因此本客户端只可用于幂等的只读方法。
+// 服务端 RPC 错误不走 HTTP 重试；WS 超时会回退 HTTP 重放，仅用于幂等只读调用
 class RpcResponseError extends Error {
   constructor(
     message: string,
@@ -86,7 +85,6 @@ export class RPC2Client {
       try {
         return await this.callViaWebSocket<TParams, TResult>(method, params, options);
       } catch (error) {
-        // 服务端已拒绝的 RPC 不能再用 HTTP 重试。
         if (error instanceof RpcResponseError) throw error;
         if (options.signal?.aborted) throw error;
         return await this.callViaHttp<TParams, TResult>(method, params, options);
@@ -99,7 +97,7 @@ export class RPC2Client {
   private autoConnect() {
     if (this.closed) return;
     void this.connect().catch(() => {
-      // socket 不可用时仍可走 HTTP 兜底。
+      // 失败时由 HTTP 兜底
     });
   }
 
@@ -179,7 +177,7 @@ export class RPC2Client {
         reject(new Error("RPC2 WebSocket connection failed"));
       };
 
-      // 握手关闭可能没有 error 事件，需立即结算 promise 并调度退避重连。
+      // 握手关闭可能无 error 事件，需在此结算并重连
       const handleConnectClose = () => {
         cleanup();
         if (this.ws === ws) this.ws = null;
@@ -205,7 +203,7 @@ export class RPC2Client {
         const payload = JSON.parse(String(event.data)) as JsonRpcResponse;
         this.handleMessage(payload);
       } catch {
-        // 忽略传输层的非法帧。
+        // 忽略非法帧
       }
     };
 
@@ -217,8 +215,6 @@ export class RPC2Client {
       this.rejectPendingRequests(new Error("RPC2 WebSocket disconnected"));
       this.scheduleReconnect();
     };
-
-    // 握手后的传输错误由 close 事件统一处理。
   }
 
   private handleMessage(payload: JsonRpcResponse) {
@@ -376,7 +372,6 @@ export class RPC2Client {
   private scheduleReconnect() {
     if (this.closed || this.reconnectTimer) return;
 
-    // 指数退避并持续重试，连接成功后归零。
     this.state = "reconnecting";
     const delay = Math.min(
       RECONNECT_INTERVAL_MS * 2 ** this.reconnectAttempts,

@@ -19,9 +19,7 @@
 :root {
   color-scheme: light dark;
 
-  /* 卡片表面不透明度(0–100),由背景「卡片不透明度」设置驱动。默认 100 → --surface-a
-     等于 --surface,在背景图调低它之前,表面与纯色主题逐像素一致。-a 系列变量才是浮层
-     内容表面实际绘制用的色。 */
+  /* 卡片表面不透明度（0–100），-a 变量供实际表面绘制 */
   --surface-alpha: 100;
   --surface-a: color-mix(in srgb, var(--surface) calc(var(--surface-alpha) * 1%), transparent);
   --surface-elev-a: color-mix(in srgb, var(--surface-elev) calc(var(--surface-alpha) * 1%), transparent);
@@ -44,12 +42,7 @@ body {
   color: var(--text-primary);
 }
 
-/* --bg-0 只挂在 <html>(画布)上,不挂 <body>。自定义背景图画在负 z-index 的
-   body::before 上,而 CSS 绘制顺序里 body 自身背景在负 z 子元素之后绘制 —— 所以若
-   把 --bg-0 放到 <body> 会盖住背景图。保持 <body> 透明让图显示;未配置背景图时,
-   <html> 仍提供纯色 --bg-0 兜底。
-   氛围层(顶光 --canvas-glow)也画在 <html> 背景上,天然只在纯色模式出现——透明模式的
-   body::before 图片盖在其上,所以两者互不干扰。变量未定义时回退为 none,该层不绘制。 */
+/* --bg-0 与顶光挂在 <html> 而非 <body>，避免遮盖负 z-index 的 body::before 背景图 */
 html {
   background-color: var(--bg-0);
   background-image: var(--canvas-glow, none);
@@ -107,7 +100,7 @@ html.theme-flip *::after {
 }
 ::-webkit-scrollbar-thumb:hover {
   background: var(--border-strong);
-  /* background 简写会把 clip 重置回 border-box,这里必须重新声明;border 沿用基础规则。 */
+  /* background 简写会重置 clip，需重新声明 */
   background-clip: padding-box;
 }
 ::-webkit-scrollbar-track {

@@ -1,7 +1,5 @@
 import { z } from "zod";
 
-/** Schema 接受服务端发来的宽松/不完整数据,并填充合理默认值。 */
-
 const looseString = z
   .union([z.string(), z.number(), z.boolean()])
   .transform((v) => String(v))
@@ -81,11 +79,9 @@ export interface NodeRealtime {
   uptime: number;
   process: number;
   updated_at?: string | number;
-  /** 后端返回的校准后配额已用量。 */
   trafficUsedEffective: number;
 }
 
-/** 展示用模型:扁平化的节点信息 + 实时指标 + 在线标志。 */
 export interface NodeMetrics {
   online: boolean | null;
   cpuPct: number;
@@ -253,7 +249,6 @@ export interface PingRecordsResponse {
   tasks: PingTask[];
   rangeStartMs?: number;
   rangeEndMs?: number;
-  /** 修改版后端返回的节点 Ping 区间统计。 */
   stats?: PingTaskStats[];
 }
 
@@ -281,9 +276,7 @@ export type PingOverviewTaskLoadState = "pending" | "ready" | "error";
 export interface PingOverviewItem {
   client: string;
   isAssigned: boolean;
-  /** 当前首页使用的探测点名称；模拟数据使用“模拟延迟”。 */
   taskName?: string;
-  /** 当前任务本轮请求状态；模拟 Ping 不设置此字段。 */
   loadState?: PingOverviewTaskLoadState;
   lastValue: number | null;
   samples: Array<{

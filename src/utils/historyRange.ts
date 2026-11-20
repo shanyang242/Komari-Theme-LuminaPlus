@@ -24,7 +24,6 @@ function extractSortedPositiveIntervals(timesSeconds: Iterable<number>): number[
   return intervals.sort((left, right) => left - right);
 }
 
-/** 计算一组数值的中位数；输入为空时返回 undefined。 */
 export function medianValue(values: readonly number[]): number | undefined {
   if (values.length === 0) return undefined;
   const sorted = [...values].sort((left, right) => left - right);
@@ -34,7 +33,6 @@ export function medianValue(values: readonly number[]): number | undefined {
     : sorted[mid];
 }
 
-/** 从一组秒级时间戳中推导中位数采样间隔；有效间隔不足时返回 undefined。 */
 export function inferMedianIntervalSeconds(timesSeconds: Iterable<number>): number | undefined {
   const sorted = extractSortedPositiveIntervals(timesSeconds);
   if (sorted.length === 0) return undefined;
@@ -44,7 +42,7 @@ export function inferMedianIntervalSeconds(timesSeconds: Iterable<number>): numb
     : sorted[mid];
 }
 
-/** 从记录时间戳推导典型采样周期（偶数个间隔时取偏大的上中位数以宽容边缘损失），供覆盖率补边判断。 */
+/** 推导典型采样周期（偶数取上中位数以宽容边缘损失）。 */
 export function inferHistoryIntervalSeconds(
   records: Array<{ time: HistoryTimeValue }>,
 ) {

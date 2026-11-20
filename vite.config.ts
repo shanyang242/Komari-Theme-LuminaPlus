@@ -11,8 +11,7 @@ export default defineConfig({
     },
   },
   build: {
-    // 与 CSS 实际基线对齐:全站大量 color-mix()/oklch(需 Chrome 111 / Safari 16.2+),
-    // JS 没必要为更老的引擎转译。
+    // 与 CSS color-mix()/oklch 浏览器基线对齐
     target: ["es2022", "chrome111", "safari16.2", "firefox113"],
     rollupOptions: {
       output: {

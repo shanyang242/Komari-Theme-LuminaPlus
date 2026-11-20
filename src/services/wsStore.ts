@@ -54,7 +54,6 @@ interface NodeTrafficTrend {
 
 const LIVE_STATUS_REFRESH_INTERVAL_MS = 2_000;
 const NODE_INFO_REFRESH_INTERVAL_MS = 30_000;
-// 较短超时可让 half-open 连接尽快重试。
 const LIVE_STATUS_REQUEST_TIMEOUT_MS = 8_000;
 const SCROLL_IDLE_DELAY_MS = 160;
 const TRAFFIC_TREND_SAMPLE_COUNT = 18;
@@ -136,7 +135,7 @@ function alignEmptyMetricsTotals(metrics: NodeMetrics, info: NodeInfo): NodeMetr
   };
 }
 
-// 累计流量直接跟随后端计数器下降；0 视为本帧缺样，避免局部帧闪零。
+// 0 视为本帧缺样，保留上次值防闪零
 export function resolveTrafficTotal(previous: number, raw: number): number {
   return Number.isFinite(raw) && raw > 0 ? raw : previous;
 }
@@ -248,7 +247,7 @@ function shallowEqualNodeInfo(a: NodeInfo, b: NodeInfo) {
     a.traffic_limit_type === b.traffic_limit_type &&
     a.traffic_reset_day === b.traffic_reset_day &&
     a.created_at === b.created_at
-    // updated_at 是未展示的心跳字段，不应触发整个节点列表重渲染。
+    // 忽略心跳字段 updated_at，避免全表重渲染
   );
 }
 
@@ -382,9 +381,7 @@ function commit(next: State, touches: CommitTouches = {}) {
         )
       : false);
   state = next;
-  // 派生快照以 storeVersion 作缓存键。
   storeVersion += 1;
-  // 空集合也是 truthy，需检查内容才能避免误广播。
   const homeTouched =
     Boolean(touches.nodeList || touches.allNodes) ||
     hasAny(touches.meta) ||
@@ -504,7 +501,6 @@ function normalizeRealtime(
 function applyLatestStatus(records: Record<string, unknown>) {
   const touchedMetrics = new Set<string>();
   const touchedTrafficTrends = new Set<string>();
-  // 安静 tick 不克隆整个索引。
   let nextMetricsByUuid = state.metricsByUuid;
   let nextTrafficTrends = state.trafficTrends;
 
@@ -652,7 +648,6 @@ async function performNodeInfoSync() {
         {
           meta: touchedMeta,
           metrics: touchedMetrics,
-          // traffic trend 只由 refreshLatestStatus 改动;syncNodeInfo 原样带过来,这里无需通知。
           nodeList: nodeListChanged,
           allNodes: orderChanged || touchedMeta.size > 0,
           storeStatus: storeStatusChanged,
@@ -722,7 +717,7 @@ async function refreshLatestStatus() {
   }
 }
 
-// 连续失败时按 tick 数指数退避(2s→4s→…→30s),避免后端不可用期间每 2 秒打注定失败的请求。
+// 启动失败指数退避上限（tick 数）
 const BOOTSTRAP_MAX_BACKOFF_TICKS = 15;
 let bootstrapBackoffTicks = 0;
 let bootstrapSkipTicks = 0;
@@ -760,7 +755,6 @@ function ensureStarted() {
 
   ensureScrollTrackingStarted();
   void bootstrap();
-  // 实时指标与节点信息使用独立轮询节奏。
   liveStatusTimer = window.setInterval(() => {
     if (!hydrated) {
       if (bootstrapPromise) return;
@@ -829,7 +823,7 @@ function stopStore() {
   if (state.failureStreak > 0) {
     state = { ...state, failureStreak: 0 };
   }
-  // 保留上一次节点列表是否已完成首次水合的状态（含合法返回空数组 [] 的站点），避免切页返回转圈。
+  // 保留 hydrated 状态，避免切页返回重新转圈
   nodeInfoError = false;
   started = false;
   bootstrapBackoffTicks = 0;

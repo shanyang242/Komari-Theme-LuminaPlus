@@ -43,10 +43,7 @@ function isBareHostCandidate(value: string): boolean {
   return DOMAIN_HOST_RE.test(host);
 }
 
-/**
- * 校验并规范化商家跳转链接：仅允许 http/https 或以 /、./、../ 开头的站内路径；
- * 裸域名（含带端口的 host:port/path）自动补全 https://，阻断 javascript:/data: 等非 http 协议。
- */
+/** 校验商家链接：允许 http(s)、站内路径及裸域名（补 https://），阻断伪协议。 */
 export function resolveMerchantLinkUrl(raw: string | null | undefined): string {
   const trimmed = raw?.trim() ?? "";
   if (!trimmed || UNSAFE_OR_WHITESPACE_RE.test(trimmed)) return "";
@@ -72,7 +69,7 @@ export function resolveMerchantLinkUrl(raw: string | null | undefined): string {
     if (lowerPrefix === "http" || lowerPrefix === "https") {
       return /^https?:\/\//i.test(trimmed) && isSafeHttpUrl(trimmed) ? trimmed : "";
     }
-    // 区分真正的协议头与裸主机端口（如 example.com:8443/shop 或 localhost:3000）。
+    // 区分协议头与 host:port
     const isHostWithPort =
       HOST_PORT_REST_RE.test(rest) &&
       (lowerPrefix === "localhost" || prefix.includes("."));
@@ -89,10 +86,7 @@ export function resolveMerchantLinkUrl(raw: string | null | undefined): string {
   return "";
 }
 
-/**
- * 校验商家图标地址：允许 http/https、协议相对 //，以及安全的站内相对路径（含 /logo.png 与旧版 images/shop.svg），
- * 阻断 javascript:/data: 等伪协议与破损的 http(s) 地址。
- */
+/** 校验商家图标：允许 http(s)、// 及站内相对路径，阻断伪协议。 */
 export function resolveMerchantIconUrl(raw: string | null | undefined): string {
   const trimmed = raw?.trim() ?? "";
   if (!trimmed || UNSAFE_OR_WHITESPACE_RE.test(trimmed)) return "";
@@ -128,7 +122,7 @@ export function resolveMerchantIconUrl(raw: string | null | undefined): string {
     return "";
   }
 
-  // 无协议头的站内相对路径（如 images/shop.svg、assets/v1.2/logo.png、logo.svg）直接按同源相对资源放行。
+  // 其余无协议头路径按同源相对资源放行
   return trimmed;
 }
 
@@ -160,9 +154,7 @@ export function hasInvalidNodeMerchantLinks(links: NodeMerchantLinks): boolean {
   return false;
 }
 
-/**
- * 为后台编辑器读取原始商家链接草稿：仅做空白修剪与空项剔除，保留已有原始值以便与主动清空区分。
- */
+/** 读取编辑器草稿，保留非法原始值以便与主动清空区分。 */
 export function readRawNodeMerchantLinks(value: unknown): NodeMerchantLinks {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
 
@@ -182,9 +174,6 @@ export function readRawNodeMerchantLinks(value: unknown): NodeMerchantLinks {
   return result;
 }
 
-/**
- * 归一化商家链接存储结构，过滤空白与不安全协议。
- */
 export function normalizeNodeMerchantLinks(value: unknown): NodeMerchantLinks {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
 

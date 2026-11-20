@@ -142,9 +142,7 @@ function sortMerchantLinks(links: NodeMerchantLinks): NodeMerchantLinks {
   );
 }
 
-// 本页托管设置的键清单唯一来源:草稿类型(ThemeDraft)、seed(draftFromSettings)与内容签名
-// 都从它派生。新增一项设置只需在这里加一行,再到 JSX 里接 patch()。
-// 刻意不标注返回类型:让推断给出全字段必填的具体类型,ThemeDraft 才能安全地 Omit/扩展。
+// 托管设置唯一键清单；省略返回类型以保留全字段精确推断
 function pickManagedThemeSettings(settings: ResolvedThemeSettings) {
   return {
     defaultAppearance: settings.defaultAppearance,
@@ -166,8 +164,7 @@ function pickManagedThemeSettings(settings: ResolvedThemeSettings) {
     compactShowUptime: settings.compactShowUptime,
     hiddenNodes: settings.hiddenNodes,
     costIgnoredNodes: settings.costIgnoredNodes,
-    // 按键排序:costPremiums 的键序随编辑历史漂移(删掉再加回同一键会排到最后),而 dirty /
-    // reseed 判断都走 JSON.stringify 签名——不排序会把"内容相同、键序不同"误判成有未保存改动。
+    // 按键排序，避免键序差异被 JSON.stringify 误判 dirty
     costPremiums: Object.fromEntries(
       Object.keys(settings.costPremiums)
         .sort()
@@ -189,8 +186,6 @@ function managedSettingsSignature(settings: ThemeSettings & Record<string, unkno
 
 type ManagedThemeSettings = ReturnType<typeof pickManagedThemeSettings>;
 
-// 表单草稿:与托管设置同名同构，仅隐藏/忽略列表以多行文本编辑
-// (提交时再归一化回数组)。其余字段直接透传,不维护第二份键清单。
 type ThemeDraft = Omit<
   ManagedThemeSettings,
   | "hiddenNodes"
@@ -200,7 +195,6 @@ type ThemeDraft = Omit<
   costIgnoredText: string;
 };
 
-// 服务端设置 → 表单草稿。reseed effect 和重置按钮都经 seedDrafts 走这里。
 function draftFromSettings(
   settings: ResolvedThemeSettings,
   rawMerchantLinks?: NodeMerchantLinks,
@@ -222,7 +216,6 @@ type BooleanDraftKey = {
   [K in keyof ThemeDraft]: ThemeDraft[K] extends boolean ? K : never;
 }[keyof ThemeDraft];
 
-// 统一的开关行。memo + 稳定的 patch 引用:编辑无关字段的击键不再重渲这些行。
 const ToggleRow = memo(function ToggleRow({
   field,
   title,
@@ -249,8 +242,6 @@ const ToggleRow = memo(function ToggleRow({
 
 type PremiumDetail = ReturnType<typeof calculateCostSummary>["details"][number];
 
-// 溢价录入列表。memo:编辑其他设置的击键不重渲整表——引用变化只来自
-// costPremiums 切片与汇率加载态。
 const PremiumList = memo(function PremiumList({
   clients,
   costPremiums,
@@ -347,7 +338,7 @@ const PremiumList = memo(function PremiumList({
                 min="0"
                 value={entry?.paidCny ?? ""}
                 onChange={(event) => {
-                  // 键入 `-`/`e` 等非法中间态时 value 为空串,不能误当"留空即清除"删掉记录。
+                  // 忽略非法数字中间态，避免误删记录
                   if (event.target.validity.badInput) return;
                   onPatchPaid(client.uuid, event.target.value);
                 }}
@@ -382,8 +373,6 @@ const PremiumList = memo(function PremiumList({
                   max={acquiredAtMax}
                   value={entry?.acquiredAt ?? ""}
                   onChange={(event) => onPatchAcquiredAt(client.uuid, event.target.value)}
-                  // 与收购价同门槛:汇率/基准未就绪时 patchPremiumAcquiredAt 无法回算,
-                  // 放开输入只会被静默丢弃(受控值弹回旧日期)。
                   disabled={!entry || !canCompute}
                   aria-label={`${client.name} 的收购日期`}
                   className="theme-premium-input surface-inset"
@@ -397,7 +386,6 @@ const PremiumList = memo(function PremiumList({
   );
 });
 
-// 弹窗开关留在这个小组件内，打开面板时不再让整个设置页跟着重渲染。
 const PingNodeConfigControl = memo(function PingNodeConfigControl({
   clients,
   tasks,
@@ -554,8 +542,6 @@ export function ThemeManage() {
     error: configError,
     refetch: refetchConfig,
   } = usePublicConfig();
-  // 全部托管设置收敛为单个草稿对象。之前是 30 个平行 useState,每新增一项设置要同步维护
-  // 声明/seedDrafts/payload/依赖数组四处清单;现在键清单只在 pickManagedThemeSettings 一处。
   const [draft, setDraft] = useState<ThemeDraft>(() =>
     draftFromSettings(DEFAULT_THEME_SETTINGS),
   );
@@ -566,8 +552,6 @@ export function ThemeManage() {
   const savingDraftRef = useRef<ThemeDraft | null>(null);
   const editVersionRef = useRef(0);
 
-  // 单字段更新收口,所有表单控件都走它。值未变时原样返回 prev,保留旧的独立 useState
-  // 在同值 set 时不触发重渲染的行为。
   const patch = useCallback(
     <K extends keyof ThemeDraft>(key: K, value: ThemeDraft[K]) => {
       editVersionRef.current += 1;
@@ -629,7 +613,6 @@ export function ThemeManage() {
     () => sortMerchantLinks(readRawNodeMerchantLinks(config?.theme_settings?.nodeMerchantLinks)),
     [config?.theme_settings],
   );
-  // 按内容判断服务端设置是否真的变化，避免同内容 refetch 重置草稿。
   const sourceSignature = useMemo(
     () => JSON.stringify(pickManagedThemeSettings(sourceThemeSettings)),
     [sourceThemeSettings],
@@ -640,7 +623,6 @@ export function ThemeManage() {
   );
   const lastSeededSignatureRef = useRef<string | null>(null);
 
-  // 把服务端设置灌入草稿的唯一出口,reseed effect 和重置按钮都走它,避免两边逻辑漂移。
   const seedDrafts = useCallback(
     (next: ResolvedThemeSettings, rawLinks: NodeMerchantLinks) => {
       setDraft(draftFromSettings(next, rawLinks));
@@ -651,10 +633,7 @@ export function ThemeManage() {
   const sortedTasks = useMemo(() => sortTasks(pingTasks ?? []), [pingTasks]);
   const sortedClients = useMemo(() => sortClients(adminClients ?? []), [adminClients]);
 
-  // 溢价表格里"当前剩余价值"仅供参考,用已保存的汇率源/忽略名单算(不用草稿里还没保存的
-  // 编辑),口径与资产统计页完全一致(同一个 calculateCostSummary),但不叠加溢价本身。
-  // 刻意用一次性 getNodes 查询而不是 useAllNodeMeta():后者会启动全局节点 store 的实时
-  // 状态轮询(wsStore),设置页只需要静态 meta,不该为一列参考值挂一个常驻轮询。
+  // 用一次性 getNodes 替代 useAllNodeMeta，避免在设置页启动常驻 wsStore 轮询
   const { data: allMeta = [] } = useQuery({
     queryKey: ["theme-manage", "node-meta"],
     queryFn: ({ signal }) => getNodes({ signal }),
@@ -682,8 +661,6 @@ export function ThemeManage() {
     return map;
   }, [allMeta, now, sourceThemeSettings.costIgnoredNodes, premiumRateQuery.data]);
 
-  // 使用当前价格、周期、到期日和汇率回算指定收购日的剩余价值；结果只在用户编辑
-  // 收购价/日期时用于固化溢价，不会因后续续费或汇率变化自动改写。
   const premiumBasisAt = useCallback(
     (uuid: string, acquiredAt?: string): number | null => {
       if (!premiumRateQuery.data) return null;
@@ -716,7 +693,7 @@ export function ThemeManage() {
     [draft.costPremiums],
   );
 
-  // 收购价清空即删条目；溢价按收购日的回算剩余价值算出并固化，不随后续续费/汇率漂移。
+  // 清空收购价即删除；溢价按收购日基准固化
   const patchPremiumPaid = useCallback(
     (uuid: string, rawValue: string) => {
       editVersionRef.current += 1;
@@ -750,7 +727,7 @@ export function ThemeManage() {
     [premiumBasisAt],
   );
 
-  // 主动修改收购日期时重新回算该日剩余价值并固化新溢价；保存后仍保持固定。
+  // 改日期时按新日期基准重算并固化溢价
   const patchPremiumAcquiredAt = useCallback(
     (uuid: string, rawValue: string) => {
       editVersionRef.current += 1;
@@ -816,8 +793,6 @@ export function ThemeManage() {
     ? "存在格式无效的商家官网或图标地址，请打开「配置商家链接」修正或清除对应记录后再保存。"
     : null;
 
-  // 由当前草稿拼出的设置 payload,保存请求和 dirty 判断都用它。草稿字段与设置同名,这里只做
-  // 「编辑态 → 存储态」的换形与归一化;文本域解构出来换回存储字段。
   const draftThemeSettings = useMemo<ThemeSettings>(() => {
     const { hiddenNodesText, costIgnoredText, ...rest } = draft;
     return {
@@ -835,13 +810,11 @@ export function ThemeManage() {
       backgroundAlignment: normalizeBackgroundAlignment(rest.backgroundAlignment),
     };
   }, [draft]);
-  // 只比较本页实际管理的设置；未在表单中展示的设置不影响 dirty 状态。
   const draftSignature = useMemo(
     () => managedSettingsSignature(draftThemeSettings as ThemeSettings & Record<string, unknown>),
     [draftThemeSettings],
   );
-  // draftSignature 用的是归一化后的值,非法输入(costRateApiUrl / nodeMerchantLinks)会被收敛或过滤,
-  // 从而不会被判为 dirty。单独对比原始输入签名,保证编辑后「重置」始终可用,再由合法性门禁拦截保存。
+  // 原始输入单独判 dirty，避免非法值被归一化后无法触发重置
   const costRateApiUrlDirty =
     draft.costRateApiUrl.trim() !== sourceThemeSettings.costRateApiUrl;
   const merchantLinksDirty = useMemo(
@@ -854,13 +827,11 @@ export function ThemeManage() {
     draftSignature !== sourceSignature || costRateApiUrlDirty || merchantLinksDirty;
   const hasValidationError = draftCostRateApiUrlInvalid || draftMerchantLinksInvalid;
 
-  // 用户重新编辑后清掉「已保存」提示,避免过期的成功提示和 dirty 表单并存。
   useEffect(() => {
     if (isDirty) setMessage(null);
   }, [isDirty]);
 
-  // 服务端设置真正变化时灌入草稿。首次灌入之后,只要表单有未保存编辑(含保存中)就跳过,
-  // 避免 refetch / 其他端保存的回流静默覆盖用户草稿。
+  // 首次灌入后若有未保存编辑，跳过服务端回流覆盖
   useEffect(() => {
     if (!config) return;
     if (lastSeededSignatureRef.current === reseedSignature) return;
@@ -1244,7 +1215,7 @@ export function ThemeManage() {
                   inputMode="numeric"
                   value={draft.surfaceOpacity}
                   onChange={(event) => {
-                    // Number("") === 0,没有这行的话清空输入框(想重新输入)会把值跳成 0。
+                    // 防止空输入被 Number("") 转为 0
                     if (event.target.value.trim() === "") return;
                     const next = Number(event.target.value);
                     if (!Number.isFinite(next)) return;

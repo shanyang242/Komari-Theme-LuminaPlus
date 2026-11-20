@@ -1,4 +1,4 @@
-/* 首页品牌铭牌：只保留站点名，绝对定位到 AppShell 已经存在的顶部留白里。 */
+/* 绝对定位到 AppShell 顶部留白 */
 .home-brand {
   position: absolute;
   top: -14px;
@@ -40,7 +40,7 @@
 
 }
 
-/* 中小屏的完整快捷栏会占用顶部大部分宽度；折叠后站点名立即恢复。 */
+/* 窄屏快捷栏展开时隐藏站点名 */
 @media (max-width: 1023px) {
   .home-dashboard:has(.floating-controls:not(.is-collapsed)) .home-brand {
     visibility: hidden;
@@ -49,7 +49,6 @@
   }
 }
 
-/* 分组栏与总览共用列宽和间距，桌面端分组仅占第一列。 */
 .home-overview,
 .home-controls-bar {
   display: grid;
@@ -58,7 +57,6 @@
 }
 
 .home-overview {
-  /* 在线/离线配色,块状与柱状共用一处确保同步;比纯 status 色稍淡,贴合主题。 */
   --overview-online: color-mix(in srgb, var(--status-success) 72%, transparent);
   --overview-offline: color-mix(in srgb, var(--status-error) 55%, transparent);
   margin-bottom: 12px;
@@ -93,8 +91,6 @@
 .overview-card[data-metric="bandwidth"] { --metric-accent: var(--speed-high); }
 .overview-card[data-metric="asset"] { --metric-accent: var(--accent-500); }
 
-/* 暗色依靠表面色阶建立层级，不叠白色顶光或指标色氛围。背景图模式仍由 --surface-a
-   保留用户配置的透明度。 */
 :root[data-appearance="dark"] .overview-card {
   background: var(--surface-a);
 }
@@ -153,8 +149,6 @@
   transform: scale(0.94);
 }
 
-/* 续费提醒复用资产入口，不另占首页内容流。平时只露一个轻量角标，弹层覆盖展开，
-   因此不会把概览、筛选或节点卡向下推。 */
 .renewal-reminder {
   position: relative;
   z-index: 70;
@@ -530,7 +524,6 @@
   color: color-mix(in srgb, var(--status-success) 68%, var(--text-secondary));
 }
 
-/* 在线数量是首卡的辅助状态，略小于流量、带宽等核心指标。 */
 .overview-card[data-metric="online"] .overview-card-value {
   font-size: 24px;
 }
@@ -565,7 +558,6 @@
   gap: 10px;
 }
 
-/* 底部小字说明(如资产卡的「实时汇率计算」)。 */
 .overview-card-caption {
   flex: 1 1 auto;
   min-width: 0;
@@ -578,9 +570,7 @@
   text-overflow: ellipsis;
 }
 
-/* 在线条:左绿=在线、右红=离线,中间中性轨道=未知。初始用中性而非红色,避免指标
-   到达前首帧闪红;随后绿/红从两端同时长入。准确的「12 / 14」就在其上方,所以这条
-   只作快速一瞥用。 */
+/* 左绿在线、右红离线、中灰未知，避免首帧闪红 */
 .overview-bar {
   display: flex;
   justify-content: space-between;
@@ -605,9 +595,6 @@
   background: var(--overview-offline);
 }
 
-/* 块状版(节点数 5–10):每台一格,规格与主题分段格(MetricBar 的 canvas 分段)
-   一致——10px 高、2px 间隙、2px 圆角、内阴影,读作有厚度的格子而非切条。颜色与
-   .overview-bar-online/offline 同源,保持同步;默认格为中性底色,只有真离线才变红,避免条状那种「首帧闪红」。 */
 .overview-blocks {
   display: flex;
   gap: 2px;
@@ -635,8 +622,6 @@
 
 .home-group-tabs {
   display: flex;
-  /* 渲染在与总览对齐的 grid 里，正好占一个总览列、边缘与首张总览卡
-     对齐。min-width:0 让它能在列内收缩,使溢出的 tab 组改为滚动。 */
   min-width: 0;
   align-items: center;
   gap: 4px;
@@ -652,8 +637,6 @@
 
 .home-group-tabs button {
   display: inline-flex;
-  /* 有空间时均分宽度、从不收缩(溢出时滚动而非挤压)。max-width 上限防止单个长组名
-     独占,同时仍够宽,保证 2 个 tab 也能填满一张卡。 */
   flex: 1 0 auto;
   min-height: 32px;
   max-width: 240px;
@@ -682,7 +665,6 @@
   background: color-mix(in srgb, var(--hover-bg-a) 72%, transparent);
 }
 
-/* 分组与区域选中状态共用描边、背景和阴影。 */
 .home-group-tabs button[data-active="true"],
 .home-region-chip[data-active="true"] {
   border-color: rgba(82, 82, 91, 0.28);
@@ -723,7 +705,6 @@
 }
 
 @media (max-width: 680px) {
-  /* 2 列布局已由上面 1100px 断点给出,这里只收紧间距。 */
   .home-overview {
     gap: 10px;
   }
@@ -798,8 +779,6 @@
   }
 }
 
-/* 地区筛选栏:与分组栏同一套面板视觉(surface-a + 描边 + 圆角 + 浮起阴影);国旗 chip 换行铺开。
-   chip 的悬停/选中态与分组 tab、费用抽屉排序 tab 共用同一组样式。 */
 .home-region-bar {
   margin-bottom: 12px;
   padding: 10px 12px;
@@ -849,7 +828,6 @@
   letter-spacing: 0.02em;
 }
 
-/* 数量角标:圆角小胶囊,选中时不额外变色,靠 chip 整体高亮即可。 */
 .home-region-chip-count {
   display: inline-flex;
   align-items: center;
@@ -877,16 +855,13 @@
   }
 }
 
-/* 首页顶部为 36px 快捷设置按钮保留最小 48px 控制区：上下各约 6px。
-   iOS PWA 的状态栏安全区由 app-main 统一叠加。
-   isolation: isolate 为 z-index: -1 的地图背景建立独立层叠上下文，否则地图会落到
-   .home-dashboard 自身盒模型之后，导致鼠标悬停与 <title> 提示被父容器吞掉。 */
+/* isolation 为 z-index: -1 的地图建独立层叠上下文，避免 hover 被父容器吞掉 */
 .home-dashboard {
   isolation: isolate;
   padding-top: 28px;
 }
 
-/* 首页分组控件条：空余列透传指针事件，不遮挡下方地图悬停。 */
+/* 空余列透传事件，不遮挡地图 hover */
 .home-controls-bar {
   align-items: center;
   pointer-events: none;
@@ -896,7 +871,6 @@
   pointer-events: auto;
 }
 
-/* 移动端分组标签可横向滚动。 */
 @media (max-width: 768px) {
   .home-controls-bar {
     display: flex;
@@ -921,12 +895,11 @@
   }
 }
 
-/* 地图成功挂载后才应用其透明度，加载失败时由图片背景或实色表面接管。 */
+/* 仅在地图挂载后应用其透明度 */
 :root:has(.home-map-background) {
   --surface-alpha: var(--map-surface-alpha, 100);
 }
 
-/* 总览复用实例网格的第一列，地图独立铺在首页内容下方。 */
 .home-map-header {
   position: relative;
   min-height: 280px;
@@ -1000,7 +973,7 @@
   }
 }
 
-/* 地图模式下总览位于第 1 列最左侧，续费提醒弹窗锚定在总览块下方左对齐向右展开，避免超出视口左边缘。 */
+/* 地图模式续费弹层改为左对齐展开，防溢出左边缘 */
 .home-overview.is-map .renewal-reminder {
   position: static;
 }
@@ -1011,8 +984,7 @@
   right: auto;
 }
 
-/* 地图模式下的地区筛选栏：≤5 个地区固定占 1 张实例卡宽，>5 个地区固定占 2 张实例卡宽，
-   内部均分对称排布，右侧空余列透传地图悬停。 */
+/* 地图模式地区栏占 1–2 列，空余列透传地图 hover */
 .home-map-region-row {
   margin-bottom: 12px;
   pointer-events: none;
@@ -1122,6 +1094,7 @@
 .node-map-point-core {
   stroke: white;
   stroke-width: 1.2;
+  transition: transform 180ms ease, stroke-width 180ms ease;
 }
 
 .node-map-point-pulse {
@@ -1204,21 +1177,16 @@
   }
 }
 
-@media (any-hover: hover) and (any-pointer: fine) {
-  .node-map-country:hover {
-    fill: var(--map-hover-fill);
-    stroke: var(--map-highlight);
-    stroke-width: 1.5;
-  }
+/* 按实际指针启用 :hover，避免触摸粘滞高亮 */
+.home-map-background[data-hover-enabled="true"] .node-map-country:hover {
+  fill: var(--map-hover-fill);
+  stroke: var(--map-highlight);
+  stroke-width: 1.5;
+}
 
-  .node-map-point-core {
-    transition: transform 180ms ease, stroke-width 180ms ease;
-  }
-
-  .node-map-point:hover .node-map-point-core {
-    transform: scale(1.25);
-    stroke-width: 1.6;
-  }
+.home-map-background[data-hover-enabled="true"] .node-map-point:hover .node-map-point-core {
+  transform: scale(1.25);
+  stroke-width: 1.6;
 }
 
 @media (prefers-reduced-motion: reduce) {

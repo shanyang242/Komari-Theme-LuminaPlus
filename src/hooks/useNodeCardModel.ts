@@ -55,8 +55,6 @@ export function useNodeCardModel(
     metrics?.online === true,
     fakePingForUnbound,
   );
-  // 状态跟随每条任务数据进入 Store,不再订阅全局 isRefreshing。这样后台轮询开始/结束
-  // 时不会让所有节点卡片仅因一个布尔值变化而重渲染。
   const pingLoading =
     hasRealHomepagePingBinding && (ping.loadState ?? "pending") === "pending";
   const pingError =
@@ -102,7 +100,6 @@ export function useNodeCardModel(
     };
   }, [meta, now, showCardGroup]);
 
-  // ping 派生的颜色只在 ping item 变化时才变。
   const pingModel = useMemo(
     () => ({
       latencyColor: latencyHeatColor(ping.lastValue),
@@ -133,15 +130,11 @@ export function useNodeCardModel(
 
     const { loadBaseline } = metaModel;
 
-    // 后端提供校准后的已用流量；在这里一次性算出剩余和使用占比，
-    // 让两种卡片布局共用这套计算。
     const trafficUsage = resolveTrafficUsage(
       meta.traffic_limit,
       metrics.trafficUsedEffective,
     );
     const trafficUsedLabel = formatBytes(trafficUsage.used);
-    // 不限量时渲染成 ∞，让剩余值和"已用/上限"那行与限量情况保持一致
-    //（"剩余 ∞" + "2.73 GB / ∞"）。
     const trafficLimitLabel = trafficUsage.unlimited ? "∞" : formatBytes(trafficUsage.limit);
     const trafficColor = trafficUsage.unlimited
       ? "var(--status-success)"

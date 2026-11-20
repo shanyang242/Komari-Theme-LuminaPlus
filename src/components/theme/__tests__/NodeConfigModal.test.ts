@@ -74,7 +74,6 @@ describe("NodeConfigModal selection pinning & group fallback", () => {
   it("resets the active group filter to all groups when the last item in that group disappears (regression)", () => {
     expect(resolveEffectiveConfigGroup(["Default", ORPHAN_MERCHANT_CLIENT_GROUP], ORPHAN_MERCHANT_CLIENT_GROUP))
       .toBe(ORPHAN_MERCHANT_CLIENT_GROUP);
-    // 清除最后一条“已删除实例”记录后，该分组从下拉选项中消失，过滤条件同步回退为 ""（全部分组）。
     const effectiveGroup = resolveEffectiveConfigGroup(["Default"], ORPHAN_MERCHANT_CLIENT_GROUP);
     expect(effectiveGroup).toBe("");
     const remaining = filterConfigClients({
@@ -119,7 +118,6 @@ describe("buildMerchantPanelClients — orphaned & failed client-list guards", (
       "node-2": { url: "https://shop-2.example.com", iconUrl: "" },
     };
 
-    // clientsKnown=false（如 503）：不把正常节点塞进已删除实例列表
     const panelClients = buildMerchantPanelClients([], links, [], false);
     expect(panelClients).toEqual([]);
   });

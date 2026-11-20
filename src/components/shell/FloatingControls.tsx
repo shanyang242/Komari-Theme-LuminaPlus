@@ -16,8 +16,7 @@ const MetricColorPicker = lazy(() =>
   import("./MetricColorPicker").then((module) => ({ default: module.MetricColorPicker })),
 );
 
-// 悬浮球切换按钮展示"下一档"的图标/文案(点击后会切到的视图),而不是当前视图——
-// 与 ThemeManage 里 NODE_VIEW_MODE_OPTIONS 的图标语义保持一致。
+// 展示点击后将切换到的下一档视图图标
 const VIEW_MODE_META: Record<NodeViewMode, { icon: typeof LayoutGrid; label: string }> = {
   large: { icon: LayoutGrid, label: "大视图" },
   compact: { icon: Rows3, label: "小视图" },
@@ -39,7 +38,6 @@ export function FloatingControls() {
   const [colorsOpen, setColorsOpen] = useState(false);
   const [colorsMounted, setColorsMounted] = useState(false);
   const settingsReady = themeSettings.isReady;
-  // 主题管理入口与配色取色器都仅对登录管理员开放（配色存后端、全局生效）。
   const loggedIn = Boolean(me?.logged_in);
   const showAdmin =
     settingsReady && shouldShowAdminEntry(themeSettings, loggedIn);
@@ -49,10 +47,8 @@ export function FloatingControls() {
   const hiddenTabIndex = collapsed ? -1 : undefined;
   const ToggleIcon = collapsed ? ChevronLeft : ChevronRight;
   const ViewIcon = VIEW_MODE_META[nextMode].icon;
-  // 只要不在最宽松的大卡默认态,就视为"已切换"，按钮保持高亮。
   const isReducedView = mode !== "large";
   const toggleControls = () => {
-    // 收起快捷栏时同时结束子面板状态，避免下次展开时调色盘自动复现。
     const nextCollapsed = !collapsed;
     if (nextCollapsed) setColorsOpen(false);
     setCollapsed(nextCollapsed);

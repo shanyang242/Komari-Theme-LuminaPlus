@@ -64,7 +64,6 @@ export function InstanceSwitcher({ currentUuid }: { currentUuid: string }) {
     target?.focus();
   }, [open]);
 
-  // 只有一个（或没有）节点时没必要显示切换器。
   if (nodes.length <= 1) return null;
 
   const select = (uuid: string) => {

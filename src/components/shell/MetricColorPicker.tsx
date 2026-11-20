@@ -56,7 +56,6 @@ export function MetricColorPicker({ hidden = false }: { hidden?: boolean }) {
     [resolvedAppearance],
   );
 
-  // 拖动时取色框的值直接来自草稿（无 getComputedStyle），其余指标用稳定的默认色。
   const valueOf = useCallback(
     (key: MetricColorKey) => colors[key] ?? base[key],
     [colors, base],

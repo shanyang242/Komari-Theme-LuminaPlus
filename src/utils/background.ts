@@ -4,8 +4,6 @@ export type ResolvedAppearance = Exclude<Appearance, "system">;
 
 export const DEFAULT_BACKGROUND_ALIGNMENT = "cover,center";
 export const DEFAULT_SURFACE_OPACITY = 100;
-
-// 低于此不透明度时才叠加背景可读性遮罩。
 export const SURFACE_SCRIM_THRESHOLD = 95;
 
 const BACKGROUND_SIZE_VALUES = ["cover", "contain", "auto"] as const;
@@ -15,15 +13,13 @@ export type BackgroundSize = (typeof BACKGROUND_SIZE_VALUES)[number];
 export type BackgroundPosition = (typeof BACKGROUND_POSITION_VALUES)[number];
 
 const MAX_URL_LENGTH = 2048;
-
-// 移除可能逃出 CSS url("…") 上下文的字符；空格需由 URL 自身编码。
+// 过滤可逃出 CSS url("…") 的字符
 const UNSAFE_URL_CHARS = new RegExp("[\\x00-\\x1f\\x7f\"'`()<>\\\\\\s]", "g");
 
 function sanitizeUrlPart(part: string): string {
   return part.replace(UNSAFE_URL_CHARS, "").slice(0, MAX_URL_LENGTH);
 }
 
-/** 规范化 `lightUrl|darkUrl`，清理两段 URL 并折叠相同值。 */
 export function normalizeBackgroundUrl(value: unknown): string {
   if (typeof value !== "string") return "";
   const parts = value.split("|").map((part) => sanitizeUrlPart(part.trim()));
@@ -33,7 +29,6 @@ export function normalizeBackgroundUrl(value: unknown): string {
   return light;
 }
 
-/** 从规范化的单 URL 或 `light|dark` 对中选择当前外观。 */
 export function resolveBackgroundUrl(
   raw: string,
   appearance: ResolvedAppearance,
@@ -78,11 +73,10 @@ export function normalizeSurfaceOpacity(value: unknown): number {
   return Math.min(100, Math.max(0, Math.round(num)));
 }
 
-/** 由卡片不透明度推导 0–16% 的背景遮罩；高于阈值时不绘制。 */
 export function computeBackgroundScrim(opacity: unknown): number {
   const resolved = normalizeSurfaceOpacity(opacity);
   if (resolved >= SURFACE_SCRIM_THRESHOLD) return 0;
-  const t = (SURFACE_SCRIM_THRESHOLD - resolved) / SURFACE_SCRIM_THRESHOLD; // 取值 0–1
+  const t = (SURFACE_SCRIM_THRESHOLD - resolved) / SURFACE_SCRIM_THRESHOLD;
   return Math.round(t * 16);
 }
 
@@ -97,7 +91,6 @@ interface BackgroundSettingsInput {
   surfaceOpacity: number;
 }
 
-/** 可直接写入 CSS 的首帧背景缓存。 */
 interface BackgroundCache {
   v: 2;
   mapBackground?: boolean;
@@ -155,7 +148,7 @@ const BACKGROUND_VAR_NAMES = [
   "--bg-scrim",
 ] as const;
 
-/** 将缓存写入 `<html>`，与 index.html 的首帧逻辑保持一致。 */
+/** 将背景变量写入 `<html>`，须与 index.html 首帧脚本同步。 */
 export function applyBackgroundCache(
   cache: BackgroundCache | null,
   appearance: ResolvedAppearance,
@@ -201,6 +194,6 @@ export function persistBackgroundCache(cache: BackgroundCache | null): void {
     if (cache) localStorage.setItem(BACKGROUND_CACHE_KEY, JSON.stringify(cache));
     else localStorage.removeItem(BACKGROUND_CACHE_KEY);
   } catch {
-    // 大不了下次首屏背景没缓存而已,非致命。
+    // 忽略存储异常
   }
 }

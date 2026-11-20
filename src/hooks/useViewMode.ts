@@ -42,7 +42,7 @@ function writeOverride(key: string, value: NodeViewMode) {
   try {
     sessionStorage.setItem(key, value);
   } catch {
-    // session storage 不可用时，保留内存里的行为。
+    // 忽略存储异常
   }
 }
 
@@ -50,7 +50,7 @@ function clearOverride(key: string) {
   try {
     sessionStorage.removeItem(key);
   } catch {
-    // session storage 不可用时没什么可清的。
+    // 忽略存储异常
   }
 }
 
@@ -87,9 +87,7 @@ function refreshSnapshot() {
 let snapshotInitialized = false;
 
 function getSnapshot(): ViewModeState {
-  // useSyncExternalStore 每次 render 都会调 getSnapshot，所以它必须便宜且稳定。
-  // 只读一次 storage/matchMedia 来初始化缓存；之后由 media/storage/setMode
-  // 处理器保持 snapshot 新鲜。
+  // 首次懒初始化缓存，后续由事件与 setMode 维护
   if (!snapshotInitialized) {
     snapshotInitialized = true;
     refreshSnapshot();
@@ -122,9 +120,6 @@ function clearMediaSubscription() {
   subscribedMediaQuery = null;
 }
 
-// override 存 sessionStorage(按标签页隔离),storage 事件只覆盖共享同一 session 的
-// window.open/iframe 场景,普通独立标签页之间不同步。整个模块只注册一次(在第一个
-// 订阅者时),所有消费者共享同一份全局状态,否则 N 个组件会装 N 个一样的 listener。
 const handleStorage = (event: StorageEvent) => {
   if (event.key === DESKTOP_OVERRIDE_KEY || event.key === MOBILE_OVERRIDE_KEY) {
     refreshSnapshot();
@@ -176,8 +171,7 @@ export function useViewMode() {
   const setMode = useCallback(
     (next: NodeViewMode) => {
       const key = getOverrideKey(state.device);
-      // 选中当前主题默认值时，清掉 session override 重新跟随默认值，而不是钉一个
-      // 永远去不掉的 override（那样还会让未来的默认值变化无法生效）。
+      // 切回默认值时清除 override，以继续跟随主题默认变更
       if (next === defaultMode) {
         clearOverride(key);
       } else {
@@ -202,9 +196,7 @@ export function useViewMode() {
   };
 }
 
-// 给用不了 hook 的场景做非响应式读取（如 class ErrorBoundary 的诊断）。返回
-// device + 任意 session override；不含主题默认值，因为解析它需要 themeSettings（一个
-// hook），但 device + override 在常见情况下已能区分 compact 和 large。
+/** 非响应式读取视图模式提示（供 class ErrorBoundary 诊断使用）。 */
 export function readViewModeHint(): string {
   try {
     const { device, override } = readSnapshot();

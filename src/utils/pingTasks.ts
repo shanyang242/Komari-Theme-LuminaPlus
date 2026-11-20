@@ -1,11 +1,6 @@
 import type { PingTask } from "@/types/komari";
 
-/**
- * 首页单线路的逐节点覆盖：
- * - 缺少键：继承后端绑定，使用后端返回的第一个任务；
- * - 正整数：手动指定任务；
- * - null：明确不绑定任务。
- */
+/** 首页节点单线路覆盖：缺键继承后端首任务，正整数手动指定，null 明确不绑定。 */
 export type HomepagePingNodeTaskIds = Record<string, number | null>;
 
 function parseTaskId(value: unknown) {
@@ -39,7 +34,6 @@ export function normalizeHomepagePingNodeTaskIds(
   return result;
 }
 
-/** 解析节点最终使用的单个探测任务；任务数组顺序由后端确定。 */
 export function resolveHomepagePingTaskId(
   clientUuid: string,
   tasks: PingTask[],

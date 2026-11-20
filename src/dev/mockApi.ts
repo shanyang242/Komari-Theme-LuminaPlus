@@ -327,9 +327,8 @@ function json(data: unknown, init?: ResponseInit) {
 
 export function installDevMockApi() {
   const nativeFetch = window.fetch.bind(window);
-  // ?mock=1&admin=1 模拟已登录管理员,连带放开 /api/admin/*,ThemeManage 才可在 dev 调试。
+  // ?mock=1&admin=1 开启本地管理员接口模拟
   const adminMode = new URLSearchParams(window.location.search).get("admin") === "1";
-  // 保存后的主题设置驻留内存,让「保存 → /api/public refetch」链路在 dev 里闭环。
   const defaultTheme = "komari-theme-luminaPlus";
   const savedThemeSettings: Record<string, Record<string, unknown>> = {};
 
@@ -477,7 +476,6 @@ export function installDevMockApi() {
           });
         }
         default:
-          // 未实现的方法返回标准错误,与真实后端一致——空对象伪装成功会让 dev 测不出接口缺失。
           return methodNotFound();
       }
     }

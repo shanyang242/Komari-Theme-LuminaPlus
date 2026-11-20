@@ -1,4 +1,3 @@
-/* 大卡与小卡共用的运维面板基底。层级依赖表面色与描边，不使用阴影、顶光或悬浮位移。 */
 .server-card,
 .compact-node-card {
   position: relative;
@@ -152,7 +151,6 @@
   gap: 6px;
 }
 
-/* V4/V6 双栈标识药丸：仅字样（不显示真实 IP）。data-tag="green" 复用绿色标签的 token，与标签统一 */
 .ip-stack-badge {
   display: inline-flex;
   flex: 0 0 auto;
@@ -223,7 +221,6 @@
   height: 8px;
 }
 
-/* 大卡分区使用一套连续节奏，避免每个数据块都变成小卡片。 */
 .server-card-stack > .card-metric-section + .card-metric-section {
   margin-top: 12px;
   padding-top: 12px;
@@ -370,8 +367,6 @@
   min-width: 0;
 }
 
-/* 流量配额:label + 剩余在左、used/limit 在右,单行;下方为 18 个 .traffic-quota-segment
-   分段,每段按位置由 trafficQuotaSegmentColor() 内联着色,点亮范围取决于 used fraction。 */
 .traffic-quota {
   display: flex;
   flex-direction: column;
@@ -414,8 +409,6 @@
   color: inherit;
 }
 
-/* 剩余值、重置提示与 used/limit 共用字重和颜色，让整行不喧宾夺
-   主,heat 配色只由进度条承载。 */
 .traffic-quota-remain,
 .traffic-quota-reset,
 .traffic-quota-usage {
@@ -435,9 +428,6 @@
   overflow: hidden;
 }
 
-/* 每段一个纯色块,按其绝对位置着色(green→amber→red);used 比例到达则上色,否则
-   用中性轨道色 —— 由 NodeTrafficQuota 经 trafficQuotaSegmentColor() 内联设置。用纯色
-   块(而非平滑 gradient)得到清晰的阶梯式油表读数;2px flex gap 即段间间隙。 */
 .traffic-quota-segment {
   flex: 1;
   min-width: 0;
@@ -489,7 +479,6 @@
   gap: 22px;
 }
 
-/* 标签行 — 无上边框,pill 紧贴 footer meta 行之后 */
 .dstatus-tags-row {
   display: flex;
   align-items: center;
@@ -499,6 +488,7 @@
   padding-top: 0.125rem;
 }
 
+/* 放不下的标签折入被裁剪的第二行；仅单标签超宽时省略号截断 */
 .dstatus-tags-lane {
   display: flex;
   flex: 0 1 auto;
@@ -512,7 +502,6 @@
 }
 
 .dstatus-tag-chip {
-  /* 放不下的标签自动折入被裁剪的第二行，不半词硬切；仅单个超宽标签超出整行时省略号截断。 */
   display: inline-flex;
   align-items: center;
   flex: 0 1 auto;

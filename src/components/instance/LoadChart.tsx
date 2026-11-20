@@ -98,8 +98,7 @@ const DOWNSAMPLE_KEYS = [
   "process",
 ] as const;
 
-// 走与 Ping 图同一套时间分桶保峰降采样:抽点式降采样会随机丢掉桶内尖峰,
-// 而负载/网速的瞬时突刺正是最需要保留的信息。
+// 时间分桶保峰降采样，保留负载/网速瞬时突刺
 function downsamplePoints(points: ChartPoint[], limit: number) {
   if (points.length <= limit || limit < 2) return points;
 
@@ -123,7 +122,7 @@ function pointFromNode(node: NodeMetrics): ChartPoint {
   return {
     time: node.updatedAt > 0 ? node.updatedAt / 1000 : Date.now() / 1000,
     cpu: node.cpuPct,
-    // total 为 0 表示该指标不存在(如无 Swap),填 null 让 uPlot 不画线,而不是画一条假的 0%。
+    // total 为 0 表示指标不存在（如无 Swap），填 null 不画线
     ram: node.ramTotal > 0 ? (node.ramUsed / node.ramTotal) * 100 : null,
     swap: node.swapTotal > 0 ? (node.swapUsed / node.swapTotal) * 100 : null,
     disk: node.diskTotal > 0 ? (node.diskUsed / node.diskTotal) * 100 : null,
@@ -159,9 +158,7 @@ function formatCountAxisValue(value: number, min: number, max: number) {
   return `${Math.round(value)}`;
 }
 
-// 不含尺寸的配置。width/height 由调用方在另一个 memo 里加上，resize 时只改这两个 key，
-// uplot-react 就会调 setSize() 而不是重建整个 chart。(用普通函数而非 hook——它不调任何
-// hook；之前的 `use` 前缀会触发 rules-of-hooks lint。)
+// width/height 在外层 memo 合并，resize 时仅调 setSize() 不重建图表
 function buildBaseOptions({
   title,
   keys,
@@ -434,10 +431,8 @@ export function LoadChart({
     return historyPoints;
   }, [historyPoints, isRealtime, realtimePoints]);
 
-  // 5 张子图表共享同一份时间轴数组，避免每次更新重复提取 5 次。
   const times = useMemo(() => points.map((point) => point.time), [points]);
 
-  // 最新值取自按时间排好序的 historyRecords。
   const latestHistoryRecord = historyRecords[historyRecords.length - 1]?.record;
   const sourceRecordCount = historyRecords.length;
   const wasDownsampled = !isRealtime && sourceRecordCount > getHistoryRenderLimit(hours);

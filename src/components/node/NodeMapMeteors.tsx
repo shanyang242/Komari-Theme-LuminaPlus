@@ -95,13 +95,11 @@ function MeteorSprite({ meteor }: { meteor: Meteor }) {
   const motionRef = useRef<SVGAnimationElement | null>(null);
 
   useLayoutEffect(() => {
-    // 动态挂载的 animateMotion 若使用 begin="0s" 会以根 <svg> 时间原点计算，
-    // 导致后续流星一挂载就直接停在终点；必须在挂载后单独调用 beginElement()。
-    try {
+    // 延至下一帧启动 animateMotion，规避 Chromium 新挂载嵌套节点停在起点
+    const frameId = window.requestAnimationFrame(() => {
       motionRef.current?.beginElement?.();
-    } catch {
-      // 非 SMIL 环境忽略命令式启动异常。
-    }
+    });
+    return () => window.cancelAnimationFrame(frameId);
   }, [meteor.id]);
 
   return (

@@ -55,13 +55,11 @@ const NodeMapBackground = lazy(() =>
   import("./NodeMapBackground").then((module) => ({ default: module.NodeMapBackground })),
 );
 
-// 卡片视图网格密度。
 const GRID_LAYOUT: Record<NodeViewMode, { className: string; minColumnWidth: number }> = {
   large: { className: "grid gap-4 xl:gap-5", minColumnWidth: 360 },
   compact: { className: "grid gap-3 xl:gap-4", minColumnWidth: 340 },
 };
 
-// 标准 UUID 不含逗号，可安全拼成稳定签名。
 const UUID_KEY_SEPARATOR = ",";
 
 type IdleCapableWindow = Window & {
@@ -84,7 +82,6 @@ function formatCompactBytes(value: number): string {
   return `${amount}${unit[0]}`;
 }
 
-// 站点铭牌由 CSS 放进 AppShell 顶部留白，不占概览卡内容流。
 function HomeBrand({ siteName }: { siteName: string }) {
   return (
     <header className="home-brand" aria-label="站点名称">
@@ -112,7 +109,7 @@ function HomeOverviewCards({
   showDetailButton: boolean;
   renewalNodes: RenewalReminderSource[];
 }) {
-  // 实时网速与总流量仅在此处订阅，避免每 2 秒微动带动下方分组、地区和整张网格重算。
+  // 高频网速/流量订阅收敛于此，避免触发外层网格重算
   const summaries = useHomeNodeSummaries();
   const overview = useMemo<HomeOverview>(() => {
     let totalNodes = 0;
@@ -186,8 +183,6 @@ function HomeOverviewCards({
           </p>
         </div>
         {overview.totalNodes >= 5 && overview.totalNodes <= 10 ? (
-          // 节点数 5–10 时改用块状:每台一格,在线格在左、离线格在右、未知格居中,
-          // 与条状的「左绿右红」完全同步。颜色复用同一组 token,避免该红却绿。
           <div className="overview-blocks" role="presentation">
             {Array.from({ length: overview.totalNodes }, (_, i) => {
               const cls =
@@ -304,8 +299,6 @@ const GroupTabs = memo(function GroupTabs({
   );
 });
 
-// 地区筛选栏:按国旗聚合节点,点击某地区只看该地区;再点一次(或点已选中项)回到全部。
-// 与分组栏是两条独立筛选,可叠加(先分组、后地区)。
 const RegionTabs = memo(function RegionTabs({
   regions,
   selectedRegion,
@@ -417,17 +410,14 @@ export function NodeGrid() {
       return () => idleWindow.cancelIdleCallback?.(handle);
     }
 
-    // Safari 等无 requestIdleCallback 的浏览器，在首页稳定后再低优先级预取。
     const handle = window.setTimeout(preloadAssetsPage, 1_000);
     return () => window.clearTimeout(handle);
   }, [showCostDetailButton]);
 
-  // 首页资产概览显示时预热汇率，供概览和资产页复用。
   const rateQuery = useQuery({
     queryKey: ["cost-rates", themeSettings.costRateApiUrl],
     queryFn: ({ signal }) => getExchangeRates(themeSettings.costRateApiUrl, { signal }),
     staleTime: 60 * 60 * 1000,
-    // 资产入口可见时预取汇率；空列表无需拉取。
     enabled: costOverviewNeeded,
     retry: 1,
   });
@@ -453,7 +443,6 @@ export function NodeGrid() {
         : visibleNodes.filter((node) => getHomeGroupLabel(node.group) === selectedGroup),
     [visibleNodes, selectedGroup],
   );
-  // 地区选项在分组筛选之后统计,让国旗计数反映当前分组内的分布。
   const regionOptions = useMemo(
     () => getHomeRegionOptions(groupFilteredNodes),
     [groupFilteredNodes],
@@ -471,7 +460,6 @@ export function NodeGrid() {
     }
   }, [groupOptions, selectedGroup]);
 
-  // 选中的地区在当前分组里不存在了(切换分组/节点变化)就回到全部。
   useEffect(() => {
     if (
       selectedRegion !== HOME_ALL_REGION &&
@@ -481,7 +469,6 @@ export function NodeGrid() {
     }
   }, [regionOptions, selectedRegion]);
 
-  // 地区栏被配置关闭(热更新)时,清掉可能残留的地区筛选,否则会留下一个不可见的过滤条件。
   useEffect(() => {
     if (!themeSettings.showRegionBar && selectedRegion !== HOME_ALL_REGION) {
       setSelectedRegion(HOME_ALL_REGION);
@@ -494,7 +481,7 @@ export function NodeGrid() {
     }
   }, [themeSettings.showGroupTabs, selectedGroup]);
 
-  // 卡片列表只随 UUID 集合/顺序变化；卡片内部各自订阅实时数据。
+  // 仅随 UUID 集合/顺序重算列表，实时数据由各卡片自行订阅
   const uuidsKey = useMemo(
     () => filteredNodes.map((node) => node.uuid).join(UUID_KEY_SEPARATOR),
     [filteredNodes],
@@ -532,7 +519,6 @@ export function NodeGrid() {
   );
   const showGroupTabs =
     themeSettings.isReady && themeSettings.showGroupTabs && groupOptions.length > 0;
-  // 地区栏:只有一个地区时筛选无意义,>1 才显示。
   const showRegionBar =
     themeSettings.isReady && themeSettings.showRegionBar && regionOptions.length > 1;
   if (!themeSettings.isReady || !storeHydrated) {
@@ -560,7 +546,6 @@ export function NodeGrid() {
     />
   );
 
-  // 空节点与正常列表复用同一页头；地图异常时恢复普通总览布局。
   const homeHeader = (
     <>
       <HomeBrand siteName={siteName} />

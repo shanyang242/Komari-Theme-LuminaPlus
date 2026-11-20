@@ -21,10 +21,6 @@ function isLongTermExpire(value: string | number | null | undefined) {
 
 type BillingCycleKind = "month" | "quarter" | "halfYear" | "year" | "lifetime";
 
-/**
- * 把自由文本的账单周期关键词(须预先 lowercase/trim)归类成标准周期,识别不出时返回 null。
- * 这里的标签格式化和 utils/cost.ts 里的天数解析共用它,让这套正则只存在一处。
- */
 function classifyBillingCycleWord(normalized: string): BillingCycleKind | null {
   if (/^(monthly|month|mo|月|每月|月付)$/.test(normalized)) return "month";
   if (/^(quarterly|quarter|季|季度|每季|季付)$/.test(normalized)) return "quarter";
@@ -36,24 +32,18 @@ function classifyBillingCycleWord(normalized: string): BillingCycleKind | null {
 
 interface NormalizedBillingCycle {
   kind: BillingCycleKind | "days";
-  /** 摊销天数;lifetime 为 -1 哨兵。 */
+  /** 摊销天数（lifetime 为 -1）。 */
   days: number;
-  /** kind === "year" 时的整年数(365/360 天均视为 1 年)。 */
   years?: number;
 }
 
-/**
- * 数字/文本账单周期的唯一归一化入口,标签渲染(formatBillingCycle)与成本摊销
- * (cost.ts billingCycleDays)共用,周期档位政策只存在这一处。
- * 注意:360 天(商用年)按「年」展示,但 days 保留原值 360,摊销不悄悄改成 365;
- * 0/负数/不可解析视为未设置,回退年付。
- */
+/** 归一化账单周期（360 天按年展示但保留原天数；无效值回退年付）。 */
 export function normalizeBillingCycle(
   value: string | number | null | undefined,
 ): NormalizedBillingCycle {
   const raw = String(value ?? "").trim();
   const numeric = Number(raw);
-  // 仅当源是真实的非空数字时才当成天数。`Number("")` 是 0(有限值),以前会让未设置的周期渲染成 "0天"。
+  // 排除空串（Number("") === 0）
   if (raw !== "" && Number.isFinite(numeric)) {
     if (numeric === -1) return { kind: "lifetime", days: -1 };
     if (numeric === 30) return { kind: "month", days: 30 };
@@ -64,7 +54,6 @@ export function normalizeBillingCycle(
       return { kind: "year", days: numeric, years: numeric / 365 };
     }
     if (numeric > 0) return { kind: "days", days: numeric };
-    // numeric <= 0(如 0)落到下面的标签兜底分支。
   }
 
   switch (classifyBillingCycleWord(raw.toLowerCase())) {

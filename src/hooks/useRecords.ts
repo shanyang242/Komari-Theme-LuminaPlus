@@ -16,7 +16,6 @@ export function useLoadRecords(uuid: string, hours = 6, enabled = true) {
   });
 }
 
-// 记录与节点统计由 getPingRecords 并行获取，并放入同一个查询结果。
 export function usePingRecords(uuid: string, hours = 6, enabled = true) {
   return useQuery({
     queryKey: ["records", "ping", uuid, hours],

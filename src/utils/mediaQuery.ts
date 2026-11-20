@@ -1,7 +1,6 @@
 export const MOBILE_VIEWPORT_QUERY = "(max-width: 720px)";
 export const REDUCED_MOTION_QUERY = "(prefers-reduced-motion: reduce)";
 
-/** 订阅 MediaQueryList 的 `change` 事件并返回取消订阅函数。 */
 export function subscribeMediaQuery(mq: MediaQueryList, handler: () => void): () => void {
   mq.addEventListener("change", handler);
   return () => mq.removeEventListener("change", handler);
@@ -16,8 +15,9 @@ function getFineHoverMediaQuery(): MediaQueryList | null {
   return fineHoverMediaQuery;
 }
 
-/** 只让真正具备悬停能力的精细指针进入柱条 hover 交互；触摸输入始终排除。 */
+/** 优先按当前指针类型判断，未知时回退媒体查询。 */
 export function supportsFineHover(pointerType?: string): boolean {
   if (pointerType === "touch") return false;
+  if (pointerType === "mouse" || pointerType === "pen") return true;
   return getFineHoverMediaQuery()?.matches ?? false;
 }

@@ -43,7 +43,7 @@ function storePreferences(value: RenewalReminderPreferences) {
   try {
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(value));
   } catch {
-    // 隐私模式或存储配额异常时仍允许本次页面内关闭，持久化失败不打断提醒交互。
+    // 存储失败不阻塞交互
   }
 }
 

@@ -5,8 +5,6 @@ import { usePublicConfig } from "@/hooks/usePublicConfig";
 import { saveThemeSettings } from "@/services/api";
 import type { PublicConfig } from "@/types/komari";
 
-// 指标色和暗色深度保存到 theme_settings，并通过 CSS 变量全局应用。
-
 export type MetricColorKey =
   | "cpu"
   | "memory"
@@ -60,7 +58,6 @@ interface PaletteDraft {
   darkDepth: number;
 }
 
-/** 从后端 theme_settings 解析出已保存的指标配色（校验 hex 与已知 key）。 */
 function readMetricColorsFromSettings(
   settings: Record<string, unknown> | undefined,
 ): MetricColors {
@@ -81,7 +78,6 @@ export function normalizeDarkDepth(value: unknown): number {
   return Math.min(100, Math.max(0, Math.round(parsed)));
 }
 
-/** 缺省值 0 就是原有 Dark Dimmed 灰黑；只接受 0–100 的受限黑色深度。 */
 export function readDarkDepthFromSettings(
   settings: Record<string, unknown> | undefined,
 ): number {
@@ -95,18 +91,16 @@ function readPaletteDraft(settings: Record<string, unknown> | undefined): Palett
   };
 }
 
-// ---- 已应用配色：写 CSS 变量 + 维护 version 让 canvas 卡片即时重绘 ----
 let version = 0;
 let appliedSig = "__init__";
 let appliedDarkDepth: number | null = null;
 let rafId: number | null = null;
 const listeners = new Set<() => void>();
 
-// 编辑期间以本地预览为准，避免 public config 刷新闪回旧值。
+// 编辑态屏蔽服务端回流，防预览闪回
 let metricColorEditing = false;
 
 function bumpVersionThrottled() {
-  // 合并同一帧的取色事件，避免重复重绘所有卡片。
   if (rafId != null) return;
   rafId = requestAnimationFrame(() => {
     rafId = null;
@@ -115,7 +109,6 @@ function bumpVersionThrottled() {
   });
 }
 
-/** 把一组配色应用到 <html>（CSS 变量即时覆盖；canvas 经 version 重绘）。相同配色不重复应用。 */
 function applyMetricColors(colors: MetricColors) {
   const sig = JSON.stringify(colors ?? {});
   if (sig === appliedSig) return;
@@ -130,7 +123,6 @@ function applyMetricColors(colors: MetricColors) {
   bumpVersionThrottled();
 }
 
-/** 只设置强度变量；亮色 token 不引用它，因此调整不会污染浅色模式。 */
 function applyDarkDepth(value: number) {
   const depth = normalizeDarkDepth(value);
   if (depth === appliedDarkDepth) return;
@@ -144,7 +136,7 @@ function applyDarkDepth(value: number) {
     if (depth === DEFAULT_DARK_DEPTH) localStorage.removeItem(DARK_DEPTH_CACHE_KEY);
     else localStorage.setItem(DARK_DEPTH_CACHE_KEY, String(depth));
   } catch {
-    // 首帧缓存失败不影响当前预览与后端设置。
+    // 忽略存储异常
   }
 }
 
@@ -153,7 +145,6 @@ function applyPalette(palette: PaletteDraft) {
   applyDarkDepth(palette.darkDepth);
 }
 
-/** 供 canvas 卡片（NodeCard）订阅：配色变化时拼进 redrawKey 触发重绘。 */
 export function useMetricColorsVersion(): number {
   return useSyncExternalStore(
     (l) => {
@@ -165,7 +156,6 @@ export function useMetricColorsVersion(): number {
   );
 }
 
-/** 读取当前明暗主题下每个指标的原生默认 Token 色，不受已写入 style 的自定义覆盖污染，且零同步重排开销。 */
 export function getDefaultMetricColors(
   appearance: "light" | "dark",
 ): Record<MetricColorKey, string> {
@@ -177,7 +167,6 @@ export function getDefaultMetricColors(
   return out;
 }
 
-/** 全局：把后端保存的配色应用到所有访客（在 AppShell 挂载一次）。 */
 export function useMetricColorsSync() {
   const { data: config } = usePublicConfig();
   const palette = useMemo(
@@ -185,14 +174,13 @@ export function useMetricColorsSync() {
     [config],
   );
   useEffect(() => {
-    // 配置返回前保留 index.html 恢复的首帧缓存。
+    // 配置未到达前保留 index.html 首帧缓存
     if (!palette) return;
     if (metricColorEditing) return;
     applyPalette(palette);
   }, [palette]);
 }
 
-/** 管理员编辑：改色/暗色深度即时预览 + 防抖保存到后端 theme_settings。 */
 export function useMetricColorsEditor() {
   const { data: config } = usePublicConfig();
   const queryClient = useQueryClient();
@@ -206,15 +194,13 @@ export function useMetricColorsEditor() {
   const draftRef = useRef<PaletteDraft>(serverPalette);
   const saveTimer = useRef<number | null>(null);
   const serverPaletteRef = useRef<PaletteDraft>(serverPalette);
-  // 防抖窗口内的草稿会在卸载时补存。
   const pendingPaletteRef = useRef<PaletteDraft | null>(null);
   const mountedRef = useRef(true);
-  // 保存串行化，在飞期间只保留最新一笔排队值。
+  // 串行落库，请求中仅保留最新排队草稿
   const inFlightRef = useRef(false);
   const hasQueuedRef = useRef(false);
   const queuedPaletteRef = useRef<PaletteDraft>({ colors: {}, darkDepth: DEFAULT_DARK_DEPTH });
 
-  // 非编辑状态才接受服务端回流;refetch 每次给新引用,同内容不重置以免多余渲染。
   useEffect(() => {
     if (metricColorEditing) return;
     if (JSON.stringify(serverPaletteRef.current) === JSON.stringify(serverPalette)) return;
@@ -228,7 +214,6 @@ export function useMetricColorsEditor() {
     if (restoreSaved) applyPalette(serverPaletteRef.current);
   }, []);
 
-  // 防抖计时器与卸载补存共用；卸载后不再 setState。
   const persist = useCallback(
     async (palette: PaletteDraft) => {
       if (!config) {
@@ -246,7 +231,7 @@ export function useMetricColorsEditor() {
       let savedAny = false;
       try {
         for (;;) {
-          // 合并最新 public 缓存，保留同期保存的其他主题设置。
+          // 合并最新缓存，保留其他主题设置
           const latest = queryClient.getQueryData<PublicConfig>(["public"]) ?? config;
           const nextSettings: Record<string, unknown> = { ...(latest.theme_settings ?? {}) };
           if (Object.keys(current.colors).length > 0) nextSettings[SETTINGS_KEY] = current.colors;
@@ -286,13 +271,12 @@ export function useMetricColorsEditor() {
     [config, finishEditing, queryClient],
   );
 
-  // 卸载 effect 通过 ref 使用最新 persist，不受 config 刷新影响。
   const persistRef = useRef(persist);
   useEffect(() => {
     persistRef.current = persist;
   }, [persist]);
 
-  // 卸载时清理计时器，并补存尚未落库的草稿。
+  // 卸载时清理防抖并补存未落库草稿
   useEffect(() => {
     mountedRef.current = true;
     return () => {
@@ -305,7 +289,7 @@ export function useMetricColorsEditor() {
         void persistRef.current(pendingPaletteRef.current);
         pendingPaletteRef.current = null;
       } else if (inFlightRef.current) {
-        // 在飞请求负责收尾。
+        // 在飞请求收尾
       } else {
         finishEditing(true);
       }
@@ -331,8 +315,8 @@ export function useMetricColorsEditor() {
       metricColorEditing = true;
       draftRef.current = next;
       setDraft(next);
-      applyPalette(next); // 即时预览
-      scheduleSave(next); // 防抖落库
+      applyPalette(next);
+      scheduleSave(next);
     },
     [scheduleSave],
   );

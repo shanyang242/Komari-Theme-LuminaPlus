@@ -1,11 +1,6 @@
-/* 紧凑节点卡片。基底(表面/描边/发丝线/悬停/离线,含 content-visibility: auto)与大卡共享,
-   定义在 node-card.css 顶部的组选择器里;这里只保留紧凑卡特有的布局与差异项。 */
+/* 共享卡片基底见 node-card.css */
 .compact-node-card {
-  /* content-visibility: auto(来自共享基底)对屏幕外卡片跳过布局/样式/绘制。首页网格里只有约
-     16 张卡片在视口内,但每张屏幕外卡片仍会在每约 1s 的指标刷新(样式/内联变量变动)和滚动时被
-     布局和绘制——这是生产环境性能分析里的主要开销。`auto <length>` 保留一个占位尺寸让滚动条稳定;
-     浏览器在首次渲染后记住每张卡片的真实高度,因此紧凑卡片(高度随计费/流量小块变化)滚动回来时
-     不会跳动。该值只是首帧估算,并非沿用大卡片的 438px。 */
+  /* 配合 content-visibility: auto 的首帧高度估算 */
   contain-intrinsic-size: auto 284px;
   display: flex;
   min-height: 0;
@@ -130,9 +125,7 @@
   overflow: hidden;
 }
 
-/* 整标签轨道:标签保持自然尺寸,且始终完整显示——放不下的会换到被裁剪的第二行(max-height 把它
-   钉死在一行),因此不会有标签在词中被切断,也没有 "+N" 徽标。纯 CSS,不做宽度测量。完整列表放在
-   该轨道的 tooltip 里。 */
+/* 溢出标签折入被裁剪的第二行；仅单标签超宽时省略号截断 */
 .compact-node-tag-lane {
   display: flex;
   flex: 1 1 0;
@@ -159,9 +152,6 @@
   line-height: 1;
   white-space: nowrap;
   vertical-align: middle;
-  /* 整标签是从被裁剪的轨道里换行出去,而不是被挤压,因此尺寸保持一致(换行永不溢出一行,所以多标签
-     行上 flex-shrink 永不触发)。保留收缩仅是为了让单个比轨道更宽的标签干净地省略号截断(受 max-width
-     限制),而不是在词中被硬裁剪。 */
   flex: 0 1 auto;
   max-width: 8.5rem;
   overflow: hidden;
@@ -217,8 +207,7 @@
   letter-spacing: -0.02em;
 }
 
-/* 单条分段进度条。填充在 --compact-gauge-fill 处硬停止，图片遮罩切出 18 个
-   微圆角段；每段周期为 (100% + 2px) / 18。 */
+/* 遮罩切出 18 段，周期 (100% + 2px) / 18 */
 .compact-node-gauge-track {
   --compact-segment-mask: url("data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 100 100%27 preserveAspectRatio=%27none%27%3E%3Crect width=%2784%27 height=%27100%27 rx=%2716%27 ry=%2724%27 fill=%27black%27/%3E%3C/svg%3E");
   min-width: 0;
@@ -242,10 +231,7 @@
 }
 
 .compact-node-info-strip {
-  /* 单行信息条。随着小块数量增加(实时速率 / 累计流量 / 费用到期 / 连接数 全开时最多 4 个),
-     每列变窄,于是我们不换行,而是按比例收缩每个小块的内部尺寸——像 "7.46 Kbps" / "¥19.90"
-     这样的值能保持单行而非省略号截断。--ci-shrink 在 1–2 个小块时为 0(不变),每多一列加 1
-     (3 → 1,4 → 2),供后面的 calc() 尺寸使用。 */
+  /* 超过 2 列时按列数递增收缩系数，避免单行数值截断 */
   --ci-shrink: max(0, var(--compact-info-columns, 3) - 2);
   display: grid;
   grid-template-columns: repeat(var(--compact-info-columns, 3), minmax(0, 1fr));
@@ -257,8 +243,6 @@
   padding-top: 0;
 }
 
-/* 必显的流量配额条。复用 .compact-node-gauge-track(由该容器上设置的 --compact-gauge-*
-   变量驱动),从而与各项指标仪表外观一致。 */
 .compact-node-traffic {
   display: flex;
   min-width: 0;
@@ -296,9 +280,7 @@
 .compact-node-traffic > .compact-node-traffic-body > .compact-node-gauge-track {
   grid-column: 1;
   grid-row: 2;
-  /* 仅流量仪表:把扁平的 --compact-gauge-color 填充换成共享的、按位置着色的热力光谱(中性遮盖
-     层挡住已用比例之外的部分),从而像大卡片那样按分段呈现 green→amber→red。各项指标仪表则通过
-     上面的基础规则保持单一纯色。 */
+  /* 流量条改用位置热力光谱 + 轨道遮罩 */
   background:
     linear-gradient(
       to right,
@@ -386,7 +368,6 @@
   color: var(--compact-info-row-color, var(--compact-info-color));
 }
 
-/* 图标随小块一起收缩,以免前导字形挤占了数值的空间。 */
 .compact-node-info-row-label svg {
   flex: 0 0 auto;
   width: calc(12px - var(--ci-shrink) * 0.6px);
@@ -413,8 +394,6 @@
   font-weight: 620;
 }
 
-/* 信息条内的单位收缩(覆盖上面的共享规则)。限定在信息条内,使 --ci-shrink 只作用于此处,
-   绝不影响 .compact-node-health-value。 */
 .compact-node-info-strip .compact-node-info-row-value small {
   margin-left: calc(2px - var(--ci-shrink) * 0.3px);
   font-size: calc(10px - var(--ci-shrink) * 0.5px);
@@ -426,8 +405,7 @@
   align-items: center;
   gap: 1.5px;
   min-width: 0;
-  /* 活跃圆点最大放大到 scale(1.30) → 4px*1.30≈5.2px,容器要留够高度否则上下被裁;
-     不再 overflow:hidden,圆点完整显示。 */
+  /* 留足高度避免 scale(1.3) 圆点被裁剪 */
   height: 7px;
 }
 
@@ -444,10 +422,6 @@
     opacity 160ms ease,
     transform 180ms cubic-bezier(0.32, 0.72, 0, 1);
 }
-
-/* 活跃的流量圆点通过 CompactTrafficPulse 设置的内联 color/opacity/scale 静态着色。之前那个
-   无限循环的 `filter` keyframe 动画会在每张卡片(含屏幕外)上对最多 16 个圆点运行——这是持续的
-   合成/绘制开销,拖累滚动。静态圆点能传达同样的信号。 */
 
 .compact-node-bottom {
   display: grid;
@@ -557,25 +531,16 @@
     transform 150ms cubic-bezier(0.32, 0.72, 0, 1);
 }
 
-@media (any-hover: hover) and (any-pointer: fine) {
-  .compact-node-health-bar:hover,
-  .compact-node-health-bar[data-selected="true"] {
-    filter: saturate(1.14) brightness(1.04);
-    opacity: 1 !important;
-    outline: none;
-    transform: scaleY(1.55);
-  }
-
-  .compact-node-health-bars:hover .compact-node-health-bar:not(:hover):not([data-selected="true"]) {
-    opacity: 0.54 !important;
-  }
+/* JS 统一控制激活态，避免触摸粘滞 :hover */
+.compact-node-health-bar[data-selected="true"] {
+  filter: saturate(1.14) brightness(1.04);
+  opacity: 1 !important;
+  outline: none;
+  transform: scaleY(1.55);
 }
 
-@media (any-hover: none) {
-  .compact-node-health-tooltip,
-  .node-health-hover-tooltip {
-    display: none;
-  }
+.compact-node-health-bars[data-active="true"] .compact-node-health-bar:not([data-selected="true"]) {
+  opacity: 0.54 !important;
 }
 
 @keyframes compact-health-tooltip-in {

@@ -28,7 +28,7 @@ export function filterConfigClients({
   filter: ConfigFilter;
   group: string;
   search: string;
-  /** 正在编辑的实例 UUID：只要仍匹配分组和搜索词，就不因状态变化而中途踢出筛选列表。 */
+  /** 编辑中固定保留在筛选列表的 UUID，避免状态变化后中途消失。 */
   pinnedUuid?: string;
   isClientConfigured: (client: AdminClient) => boolean;
 }): AdminClient[] {
@@ -62,7 +62,6 @@ export function resolveSelectedConfigClient(
   return filteredClients[0];
 }
 
-/** 当所选分组因最后一条记录被移除而不再存在时，自动回退为“全部分组”，保持下拉框与实际过滤一致。 */
 export function resolveEffectiveConfigGroup(
   groups: readonly string[],
   group: string,
@@ -152,7 +151,7 @@ export function NodeConfigModal({
     [filteredClients, selectedUuid],
   );
 
-  // 用户主动修改筛选条件/分组/搜索词时，重新按严格条件校验选中项，不保留旧编辑固定项。
+  // 筛选条件变更时按严格条件重算选中项，不保留旧固定项
   const syncSelectionForCriteria = (
     nextFilter: ConfigFilter,
     nextGroup: string,

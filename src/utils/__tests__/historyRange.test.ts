@@ -72,8 +72,8 @@ describe("history range metadata", () => {
     const end = Date.UTC(2026, 6, 13, 12, 0);
     const records = [
       { time: end - 35 * 60_000 },
-      { time: end - 25 * 60_000 }, // +10m
-      { time: end }, // +25m
+      { time: end - 25 * 60_000 },
+      { time: end },
     ];
     const intervalSeconds = inferHistoryIntervalSeconds(records);
     expect(intervalSeconds).toBe(25 * 60);

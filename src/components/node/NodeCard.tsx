@@ -56,7 +56,6 @@ export const NodeCard = memo(function NodeCard({
   showCosts?: boolean;
 }) {
   const { resolvedAppearance } = usePreferences();
-  // 自定义配色改动时 version 自增，拼进 redrawKey 让 canvas 进度条即时重画（含离线静态卡）。
   const colorsVersion = useMetricColorsVersion();
   const redrawKey = `${resolvedAppearance}:${colorsVersion}`;
   const model = useNodeCardModel(uuid);
@@ -314,20 +313,12 @@ function NodeTrafficSection({
 
 const TRAFFIC_QUOTA_SEGMENTS = 18;
 
-// 每段的位置色是纯常量(trafficQuotaSegmentColor 只依赖位置、与主题无关),预计算一次,避免每
-// ~1s metrics tick 为每个点亮段重跑 OKLCH 插值 + 字符串构造。
 const TRAFFIC_QUOTA_SEGMENT_COLORS = Array.from(
   { length: TRAFFIC_QUOTA_SEGMENTS },
   (_, i) => trafficQuotaSegmentColor((i + 0.5) / TRAFFIC_QUOTA_SEGMENTS),
 );
 
-// 点亮段数:段 i 亮 ⇔ (i+0.5)/N <= fraction。抽成整数后传给 memo 化的 NodeTrafficQuota ——
-// fraction 每 tick 微动,但 litCount 只在跨越 1/N 边界时才变,于是稳态下整棵配额条子树能跳过重渲染。
-//
-// 用量非零但连半段(0.5/18≈2.8%)都点不亮时,返回哨兵值 -1,而不是直接借用 1(点亮整段)——
-// 借整段会把 0.01% 的用量夸张成 2.8%。NodeTrafficQuota 看到 -1 会把第 0 段画成"段内一道细边"
-// (TRAFFIC_SLIVER_RATIO,与小卡共用同一比例语义),既提示"用过一点"又不失真。这仍是一个离散
-// 哨兵值而非连续量,不会破坏上面说的"稳态跳过重渲染"。
+// 离散点亮段数（便于 memo 跳过重渲染）；-1 表示极小非零用量的段内细边
 function trafficQuotaLitCount(fraction: number) {
   let count = 0;
   for (let i = 0; i < TRAFFIC_QUOTA_SEGMENTS; i++) {
@@ -338,11 +329,6 @@ function trafficQuotaLitCount(fraction: number) {
   return count;
 }
 
-// 流量阈值行:label + 剩余量(剩余量用中性色,不抢眼)、同行的 used / limit(弱化),
-// 下面是 18 个独立 segment。每个 segment 按它的绝对位置上色(绿→黄→红,见 trafficQuotaSegmentColor
-// / 上面预算好的色数组),只要 used fraction 到达就点亮,否则用中性轨道色 —— 于是点亮区段呈现整条
-// 渐变,前沿就能看出离用满还有多远。memo + litCount:父卡片每 tick 重渲染,但只要点亮段数与文案没变
-// 就整棵跳过。
 const NodeTrafficQuota = memo(function NodeTrafficQuota({
   litCount,
   remainingLabel,
@@ -367,8 +353,6 @@ const NodeTrafficQuota = memo(function NodeTrafficQuota({
       </div>
       <div className="traffic-quota-track" aria-hidden>
         {TRAFFIC_QUOTA_SEGMENT_COLORS.map((color, i) => {
-          // litCount === -1:哨兵值,第 0 段画成段内一道细边(细边宽度 = TRAFFIC_SLIVER_RATIO),
-          // 而不是点亮/熄灭一整段。见 trafficQuotaLitCount 顶部注释。
           const background =
             litCount === -1 && i === 0
               ? `linear-gradient(to right, ${color} 0, ${color} ${TRAFFIC_SLIVER_RATIO * 100}%, var(--progress-bg) ${TRAFFIC_SLIVER_RATIO * 100}%, var(--progress-bg) 100%)`
@@ -382,9 +366,6 @@ const NodeTrafficQuota = memo(function NodeTrafficQuota({
   );
 });
 
-// memo:父卡片每 ~1s 指标 tick 重渲染时,这里每个 prop 都是引用稳定的 —— ping 数据
-// ~60s 才刷新一次 —— 所以 latency/loss 柱子这棵子树能跳过每个 tick 的工作。
-// hover 状态收在本段内(两图互斥),悬停时不再重渲整张卡。
 const NodeHealthSection = memo(function NodeHealthSection({
   ping,
   pingBuckets,
@@ -529,9 +510,7 @@ const NodeHealthSection = memo(function NodeHealthSection({
   );
 });
 
-// 可见 footer 行和屏外测量行共用,免得改样式时两边走样。本身不带 title:可见行的
-// title 已经挂了完整 tag 列表,chip 不带 title 时 hover 会穿透到那一行,于是 hover
-// 任意 chip 都能看到全部 tag(包括 fit 阶段被丢掉的),而不只是这个 chip 的 label。
+// 不设 title，让 hover 穿透到父轨道显示完整标签列表
 function FooterTagChip({ tag }: { tag: DisplayTag }) {
   return (
     <span
@@ -569,8 +548,6 @@ function NodeCardFooter({
   footerTags: DisplayTag[];
   renewalPrice: string | null;
 }) {
-  // 纯 CSS 轨道自动把整枚放不下的 tag 换行裁剪，省去逐卡 ResizeObserver 和屏外测量 DOM；
-  // 完整 tag 列表挂在轨道 tooltip 上，hover 任意 chip 均可查看全部标签。
   const tagTitle = joinTagTitle(footerTags);
 
   return (
@@ -630,7 +607,6 @@ function TrafficStat({
   color: string;
   icon: ReactNode;
 }) {
-  // 按当前速率单位档取热力色:文字/圆点/实时点都随速度量级变色,图标仍用方向色(color)区分上下行。
   const speedColor = speedRateColor(rate.unit);
   return (
     <div className="traffic-stat">
@@ -681,13 +657,10 @@ function TrafficDotStrip({
   color: string;
   redrawKey: string;
 }) {
-  // 除非 traffic samples(缓存的 store 快照)或 color 变了,否则保持稳定,
-  // 这样 canvas 只在趋势真的变动时才重绘。
   const draw = useCallback(
     (ctx: CanvasRenderingContext2D, width: number, height: number) => {
       if (samples.length === 0) return;
       const slotWidth = width / samples.length;
-      // 一次性解析变量；每个亮度档再通过 CSS 引擎解析 color-mix()。
       const baseColor = safeCanvasColor(color);
       const inactiveColor = safeCanvasColor("var(--progress-bg)");
 

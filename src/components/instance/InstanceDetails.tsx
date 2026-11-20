@@ -8,7 +8,6 @@ import {
 import { resolveTrafficUsage } from "@/utils/traffic";
 import { InstancePanel } from "./InstancePanel";
 
-// Intl.DateTimeFormat 构造开销大，复用一个实例，别每次 metrics 更新都重建
 const TIME_FORMATTER = new Intl.DateTimeFormat("zh-CN", {
   hour: "2-digit",
   minute: "2-digit",

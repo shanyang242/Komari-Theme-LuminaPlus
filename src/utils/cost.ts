@@ -62,14 +62,11 @@ interface CostSummary {
   totalCny: number;
   monthlyCny: number;
   remainingCny: number;
-  // 溢价加总:不叠加到 remainingCny,也不参与 totalCny/monthlyCny。
+  // 独立统计，不计入 remainingCny / totalCny / monthlyCny
   premiumTotalCny: number;
   premiumMonthlyTotalCny: number;
-  // 尚未摊销的溢价加总；固定期限节点会随到期临近衰减，到期后归零。
   premiumRemainingTotalCny: number;
-  // 真实月均 = monthlyCny + 溢价月摊,仅参考展示,不改变 monthlyCny 口径。
   effectiveMonthlyCny: number;
-  // 实际剩余价值 = remainingCny + 尚未摊销的溢价。
   actualRemainingCny: number;
   details: CostSummaryDetail[];
 }
@@ -93,15 +90,11 @@ interface CostSummaryDetail {
   premiumCny: number;
   regularPriceCny: number | null;
   payback: CostPaybackResult;
-  // 摊销月数(见 premiumAmortMonths);未填收购日期时为 null,该节点不参与摊销。
   amortMonths: number | null;
-  // 溢价月摊 = 溢价 ÷ 摊销月数。
   premiumMonthlyCny: number;
-  // 当前尚未摊销的溢价；用于实际剩余价值，固定期限到期后为 0。
   premiumRemainingCny: number;
   billingCycleDays: number;
   counted: boolean;
-  /** 从所有费用计算中排除，包括剩余价值、周期支出和溢价。 */
   billingIgnored: boolean;
   note: string;
 }
@@ -113,10 +106,8 @@ interface ExchangeRateData {
 
 type CostNode = NodeInfo & Record<string, unknown>;
 
-// 与「隐藏节点」共用同一套名称/UUID 解析(见 utils/nodeIdentity)。
 export const normalizeCostIgnoredNodes = normalizeNodeIdentityList;
 
-// 所有手动价格都以人民币记录。
 export interface CostPremiumEntry {
   amount: number;
   paidCny?: number;
@@ -157,8 +148,7 @@ function normalizeAcquiredAt(value: unknown) {
   return parseLocalDateKey(raw) != null && raw <= localDateKey() ? raw : undefined;
 }
 
-// 以节点 uuid 为 key。非法日期/收购价只丢字段不丢条目；
-// 溢价 0 且无收购价的条目整条丢弃（带收购价的 0 溢价是合法记录）。
+// 非法字段丢弃；仅溢价为 0 且无收购价时丢弃整条
 export function normalizeCostPremiums(value: unknown): Record<string, CostPremiumEntry> {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
 
@@ -197,10 +187,7 @@ export function normalizeCostPremiums(value: unknown): Record<string, CostPremiu
   return result;
 }
 
-/**
- * 首次录入由调用方传入收购日剩余价值计算溢价；之后仅修改收购价时沿用已固化基准。
- * 若用户主动修改收购日期，调用方应传入新日期的基准且不传 current，以重新固化。
- */
+/** 有 current 时沿用已固化基准；改收购日期时省略 current 以新基准重算。 */
 export function calculateCostPremiumAmount(
   paidCny: number,
   currentRemainingCny: number,
@@ -212,13 +199,11 @@ export function calculateCostPremiumAmount(
   return Math.round((paidCny - basis) * 100) / 100;
 }
 
-// 与 cycleMonths 的 days/30 口径一致;不足 1 月钳到 1,防月摊爆炸。
 const DAY_MS = 24 * 60 * 60 * 1000;
 const AMORT_MONTH_MS = 30 * DAY_MS;
 const AMORT_LONG_TERM_MS = 100 * 365 * 24 * 60 * 60 * 1000;
 
-// 溢价摊销月数:优先按 收购日 → 到期日 的整段跨度(两端固定,录入当天就是稳定合理值);
-// 无到期/长期(>100 年)/到期早于收购时退回按已持有时间摊。
+// 优先按收购日至到期日摊销，长期或无到期时回退已持有时长
 function premiumAmortMonths(
   acquiredAt: string | undefined,
   expiredAt: string | number | null | undefined,
@@ -244,7 +229,6 @@ function premiumRemainingValue(
 ) {
   if (premium === 0) return 0;
   const expiresMs = resolveExpireTimestamp(expiredAt);
-  // 无到期或长期资产没有可靠的终点，保留全部溢价，不伪造摊销进度。
   if (expiresMs == null || expiresMs - now >= AMORT_LONG_TERM_MS) return premium;
   if (expiresMs <= now) return 0;
 
@@ -255,7 +239,6 @@ function premiumRemainingValue(
     acquiredMs >= expiresMs ||
     expiresMs - acquiredMs >= AMORT_LONG_TERM_MS
   ) {
-    // 没有有效收购日期时无法推导已摊比例；到期前保留、到期时归零。
     return premium;
   }
 
@@ -277,21 +260,18 @@ export function isCostRateApiUrlValid(value: string): boolean {
 
 export function normalizeCostRateApiUrl(value: unknown): string {
   const raw = typeof value === "string" ? value.trim() : "";
-  // 空值或非 http(s) 时回退到默认端点,免得坏掉的持久化设置进到 fetch()(那样每个周期都会抛错)。
   return raw && isCostRateApiUrlValid(raw) ? raw : DEFAULT_COST_RATE_API_URL;
 }
 
 function currencyCode(value: unknown) {
   const raw = String(value ?? "").trim();
-  // 未设置的货币默认按运营者的目标货币(CNY)算,而不是 USD——默认成 USD 会让没填货币、按 CNY 定价的
-  // 节点在总额和剩余价值里被悄悄乘上 USD 汇率(约 7 倍)。
+  // 未设货币默认按 CNY，避免误乘 USD 汇率
   if (!raw) return COST_TARGET_CURRENCY;
 
   const key = raw.toUpperCase().replace(/\s+/g, "").replace("＄", "$");
   return CURRENCY_ALIASES[key] || (/^[A-Z]{3}$/.test(key) ? key : "");
 }
 
-// 周期档位政策统一在 billing.normalizeBillingCycle;这里只取摊销天数(lifetime 为 -1)。
 function billingCycleDays(value: unknown): number {
   return normalizeBillingCycle(value as string | number | null | undefined).days;
 }
@@ -299,7 +279,7 @@ function billingCycleDays(value: unknown): number {
 function cycleMonths(days: number) {
   if (days === 365 || days === 360) return 12;
   if (days === 30) return 1;
-  // 整年倍数(2 年 =730、3 年 =1095…)用 /365 精确年化,而不是用 /30 兜底(那样多年周期会偏低约 1.4%)。
+  // 整年倍数按 /365 精确年化，避免 /30 偏差
   if (days > 0 && days % 365 === 0) return (days / 365) * 12;
   if (days > 0) return days / 30;
   return 0;
@@ -365,28 +345,23 @@ function remainingCycleValue(
   atMs: number = Date.now(),
 ) {
   const expiresMs = resolveExpireTimestamp(expiredAt);
-  // 没有真实到期(未设置 / 永久 / Go 零时哨兵):当成下面 >100 年的情况——永久 / 一次性购买仍算作
-  // 一个周期的预付价值,而不是从剩余总额里悄悄消失。
+  // 无到期或超百年（永久/买断）按单周期价值计
   if (expiresMs == null) return price;
 
   const diffMs = expiresMs - atMs;
   if (diffMs <= 0) return 0;
 
-  // 到期超过 100 年的节点属于长期 / 一次性购买(后端自动续费也是这么处理的)——报一个周期的价值,
-  // 而不是天文数字的倍数。
   const diffYears = diffMs / (1000 * 60 * 60 * 24 * 365);
   if (diffYears > 100) return price;
 
   if (cycleDays > 0) {
-    // `price` 是单个账单周期的费用(后端每续一个周期就把到期时间往后推一期),所以仍剩的预付价值就是
-    // 到期前剩余周期数 × price。这里故意不设上限:月付套餐预付了 6 个月的节点,确实剩 6 倍周期价。
+    // 按剩余周期数折算预付价值，不设上限
     return price * (diffMs / (cycleDays * 24 * 60 * 60 * 1000));
   }
 
   return price;
 }
 
-// 统一签名格式:符号一律放在 ¥ 前面(+¥ x / -¥ x),0 也带 +,避免「+¥」和「¥ -」两种写法混用。
 export function formatSignedCny(value: number) {
   const sign = value < 0 ? "-" : "+";
   return `${sign}${formatCnyMoney(Math.abs(value))}`;
@@ -412,7 +387,7 @@ function writeRateCache(cacheKey: string, data: ExchangeRateData) {
   try {
     localStorage.setItem(cacheKey, JSON.stringify(data));
   } catch {
-    // React Query 在当前页面会话里仍把最新值留在内存中。
+    // 忽略存储异常
   }
 }
 
@@ -519,8 +494,7 @@ export function calculateCostSummary(
     const name = node.name || node.display_name || node.remark || node.uuid;
     const cycleDays = billingCycleDays(node.billing_cycle);
     const billingIgnored = nodeMatchesIdentitySet(node, ignored);
-    // 溢价以人民币直接记录、不依赖价格与汇率,免费/汇率缺失节点照样计入 premiumTotalCny,
-    // 不能因价格校验不过就静默丢掉;已忽略费用的节点仍计算单机参考值,但跳过全部汇总累加。
+    // 溢价以 CNY 独立计入汇总（忽略节点除外），不依赖价格与汇率
     const entry = premiums[node.uuid];
     const premium = entry?.amount ?? 0;
     const regularPrice = entry?.regularPriceCny;
@@ -595,8 +569,7 @@ export function calculateCostSummary(
     const monthly = months > 0 ? converted / months : 0;
     const remaining = remainingCycleValue(converted, cycleDays, node.expired_at, now);
 
-    // `totalCny` 是年化支出(月度 ×12),这样不同账单周期的节点能在同一口径上相加;永久/一次性节点
-    // (monthly === 0)对这个周期性总额不贡献。已忽略费用的节点不参与任何总额累加,仅保留单机参考值。
+    // totalCny 为年化周期支出（月度 ×12），永久节点不计入
     if (!billingIgnored) {
       totalCny += monthly * 12;
       monthlyCny += monthly;
@@ -640,10 +613,7 @@ export function calculateCostSummary(
   };
 }
 
-/**
- * 使用当前价格、账单周期、到期日和汇率，把剩余价值的计算时点回拨到收购日。
- * 返回值只用于首次计算或主动修改收购日期时固化溢价，不会随之后的汇率/续费变化自动更新。
- */
+/** 按当前配置回算收购日的剩余价值，仅用于固化溢价基准。 */
 export function calculateCostPremiumBasisAt(
   nodes: NodeInfo[],
   ignoredNodes: string[],

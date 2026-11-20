@@ -6,7 +6,6 @@ import {
 } from "@/utils/fakePing";
 
 const UUID = "3b8f0c1a-9d42-4f6e-8a17-5c2e9b04d611";
-// 任意固定时刻的分钟槽,测试不依赖真实时钟。
 const MINUTE_INDEX = Math.floor(1_750_000_000_000 / 60_000);
 
 describe("buildFakePingItem", () => {

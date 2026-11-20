@@ -75,7 +75,6 @@ describe("buildMapSignature & buildMapRegionSummary", () => {
     expect(getCountryMapStatus(sg)).toBe("unknown");
     expect(getPointMapStatus(sg!)).toBe("unknown");
 
-    // 仅含在线节点的地区参与航线流星动画。
     expect(summary.onlinePoints.map((point) => point.code)).toEqual(["JP", "US"]);
     expect(summary.points.map((point) => point.code)).toEqual(["DE", "JP", "SG", "US"]);
   });
@@ -134,7 +133,7 @@ describe("buildMapSignature & buildMapRegionSummary", () => {
     for (const point of points) {
       for (const other of points) {
         if (point === other) continue;
-        // 覆盖命中圆以及悬停时放大的核心圆和描边。
+        // > 悬停放大后的核心半径与描边
         expect(Math.hypot(point.x - other.x, point.y - other.y)).toBeGreaterThan(7.1);
       }
     }

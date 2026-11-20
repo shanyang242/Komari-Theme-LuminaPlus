@@ -72,9 +72,6 @@ function CompactGauge({
   color: string;
   fraction: number;
 }) {
-  // 单元素分段条:填充用一个 hard-stop 渐变到 fraction 处,再叠一个重复 mask 打出
-  // 18 个段间空隙。替代了 18 个逐段 <span>(每卡 ×4 个 gauge)—— 那些 span 在每个
-  // 屏外卡片上每 tick 的 reconcile + 样式重算曾是渲染开销大头。
   const style = {
     "--compact-gauge-color": color,
     "--compact-gauge-fill": `${clamp01(fraction) * 100}%`,
@@ -141,8 +138,6 @@ function CompactTrafficPulse({
         const downValue = downSample?.value ?? 0;
         const active = upValue > 0 || downValue > 0;
         const level = Math.max(upSample?.level ?? 0, downSample?.level ?? 0);
-        // 每点按其主方向(上/下取大)速率的单位档上色,与大卡的速度档色一致;大小/透明度仍按 level。
-        // 仅活跃点计算颜色,空闲点直接用中性色,省掉无谓的 formatByteRate。
         const style = {
           "--compact-traffic-dot-color": active
             ? speedRateColorFromBytes(Math.max(upValue, downValue))
@@ -201,6 +196,8 @@ function HealthBars({
 }) {
   const bars = buckets.slice(-HEALTH_BAR_COUNT);
   const containerRef = useRef<HTMLDivElement>(null);
+  // 沿用 pointerdown 类型，排除触摸触发的 focus/click
+  const lastPointerTypeRef = useRef<string | undefined>(undefined);
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
   const activeIndex = hoveredIndex ?? selectedIndex;
@@ -221,25 +218,38 @@ function HealthBars({
       ref={containerRef}
       className="compact-node-health-bars"
       data-kind={kind}
+      data-active={activeIndex == null ? undefined : "true"}
       style={{ "--compact-health-tooltip-x": activeLeft } as CSSProperties}
       tabIndex={0}
       role="group"
       aria-label={`${kind === "latency" ? "延迟" : "丢包"}历史${activeTooltip ? `，${activeTooltip}` : ""}，使用左右方向键查看`}
+      onPointerDown={(event) => {
+        lastPointerTypeRef.current = event.pointerType;
+        if (event.pointerType === "touch") {
+          setHoveredIndex(null);
+          setSelectedIndex(null);
+        }
+      }}
+      onPointerLeave={() => setHoveredIndex(null)}
+      onPointerCancel={() => setHoveredIndex(null)}
       onFocus={() => {
-        if (!supportsFineHover()) return;
+        if (lastPointerTypeRef.current === "touch") return;
         if (selectedIndex == null) selectIndex(bars.length - 1);
       }}
       onBlur={() => {
+        lastPointerTypeRef.current = undefined;
         setHoveredIndex(null);
         setSelectedIndex(null);
       }}
       onKeyDown={(event) => {
-        const current = selectedIndex ?? bars.length - 1;
+        const current = activeIndex ?? bars.length - 1;
         if (event.key === "ArrowLeft") selectIndex(current - 1);
         else if (event.key === "ArrowRight") selectIndex(current + 1);
         else if (event.key === "Home") selectIndex(0);
         else if (event.key === "End") selectIndex(bars.length - 1);
         else return;
+        lastPointerTypeRef.current = undefined;
+        setHoveredIndex(null);
         event.preventDefault();
       }}
     >
@@ -261,14 +271,13 @@ function HealthBars({
             key={`${bucket.index}-${index}`}
             className="compact-node-health-bar"
             style={style}
-            data-selected={selectedIndex === index ? "true" : "false"}
+            data-selected={activeIndex === index ? "true" : "false"}
             aria-hidden="true"
             onPointerEnter={(event) => {
               if (supportsFineHover(event.pointerType)) setHoveredIndex(index);
             }}
-            onPointerLeave={() => setHoveredIndex(null)}
             onClick={() => {
-              if (!supportsFineHover()) return;
+              if (lastPointerTypeRef.current === "touch") return;
               containerRef.current?.focus({ preventScroll: true });
               setSelectedIndex(index);
             }}
@@ -364,8 +373,7 @@ function CompactNodeChips({
   ipv4?: string | null;
   ipv6?: string | null;
 }) {
-  // 完整 tag 列表挂在 lane 的 tooltip 上;chip 不带自己的 title,hover 会穿透到 lane 上 ——
-  // 被裁剪 lane 折行挤出去的 tag 就靠这个保持可见,不用显示"+N"角标。
+  // chip 不设 title，hover 穿透到 lane 显示全部标签
   const tagTitle = joinTagTitle(tags);
 
   return (
@@ -537,8 +545,6 @@ function CompactNodeInfoStrip({
   );
 }
 
-// 流量阈值条:label + used / limit 同一行(紧凑卡片很挤,这里省掉剩余量),
-// 用单元素热力填充(无 canvas、无逐段 span)复用 gauge 轨道,保持每 tick 低开销。
 function CompactTrafficBar({
   traffic,
   uptimeLabel,
@@ -548,8 +554,7 @@ function CompactTrafficBar({
   uptimeLabel: string;
   reset: TrafficResetDisplay | null;
 }) {
-  // 用量非零但极小时,下限填充"一段的 TRAFFIC_SLIVER_RATIO"(段内一道细边),而不是整段——
-  // 否则低用量节点(如 0.01%)会被夸张成快 5.6%。fraction 为 0 时保持全灭。
+  // 极小非零用量保留段内细边下限
   const fillFraction =
     traffic.fraction > 0
       ? Math.max(clamp01(traffic.fraction), TRAFFIC_SLIVER_RATIO / 18)
@@ -581,9 +586,6 @@ function CompactTrafficBar({
   );
 }
 
-// memo:每个 prop 都源自 ping,在父卡片每 ~1s 指标 tick 重渲染时引用稳定(ping 数据
-// ~60s 才刷新一次),所以在 ping 数据真正变化前,跳过重渲染 latency/loss HealthBars
-// 这棵子树 —— 它是每 tick DOM 开销的大头。
 const CompactNodeHealth = memo(function CompactNodeHealth({
   ping,
   pingBuckets,
@@ -601,7 +603,6 @@ const CompactNodeHealth = memo(function CompactNodeHealth({
   pingLoading: boolean;
   pingError: boolean;
 }) {
-  // 已绑定但无样本时显示"无样本",未绑定时显示"未配置" —— 见 pingEmptyLabels。
   const { text: emptyText } = pingEmptyLabels(
     hasRealHomepagePingBinding,
     pingLoading,
@@ -682,7 +683,6 @@ export const CompactNodeCard = memo(function CompactNodeCard({
   const showTrafficTotal = themeSettings.isReady && themeSettings.compactShowTrafficTotal;
   const showBilling = themeSettings.isReady && themeSettings.compactShowBilling;
   const showUptime = themeSettings.isReady && themeSettings.compactShowUptime;
-  // 开关关闭或节点离线时,完全跳过格式化工作。
   const uptimeLabel = showUptime && !isOffline ? formatCompactUptime(node.uptime) : "";
 
   return (

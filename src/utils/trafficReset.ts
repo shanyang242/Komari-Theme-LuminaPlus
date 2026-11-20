@@ -25,7 +25,7 @@ function computeNextMonthlyReset(
     };
   };
 
-  // 当天整天显示“今日重置”，次日再滚动至下一月；统一走 UTC 日历日避免夏令时 23/25 小时偏差。
+  // 走 UTC 日历日防夏令时偏差；当天显示今日重置，次日滚至下月
   let next = resolveMonth(month);
   if (next.day < todayDay) next = resolveMonth(month + 1);
   const days =
@@ -38,7 +38,7 @@ function computeNextMonthlyReset(
   };
 }
 
-/** 1-31 固定按 Asia/Shanghai 计算；0 按节点到期日推导每月重置日。 */
+/** 1–31 按 Asia/Shanghai 计算；0 按到期日推导每月重置日。 */
 export function getTrafficResetDisplay(
   expiredAt: string | number | null | undefined,
   now: number,

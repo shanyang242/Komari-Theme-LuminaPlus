@@ -14,7 +14,6 @@ interface TrafficUsage {
   fraction: number;
 }
 
-// 首页卡片与实例详情共用同一归约口径。
 export function resolveTrafficUsage(
   limit: number,
   effectiveUsed: number,

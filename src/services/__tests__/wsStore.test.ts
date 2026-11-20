@@ -6,8 +6,6 @@ import {
   retainStore,
 } from "@/services/wsStore";
 
-// 像 resolveTrafficTotals 每个 tick 那样,把一串原始累计读数喂给 resolver:把上一个显示值
-//(store 存在 node metrics 上)往后传。
 function drive(readings: number[]): number[] {
   let previous = 0;
   return readings.map((raw) => {
@@ -70,7 +68,6 @@ describe("wsStore hydration lifecycle", () => {
     await Promise.resolve();
     expect(getStoreStatusSnapshot().hydrated).toBe(true);
 
-    // 模拟切往后台管理页释放订阅，触发 stopTimer -> stopStore()
     release();
     await vi.advanceTimersByTimeAsync(1);
     expect(getStoreStatusSnapshot().hydrated).toBe(true);

@@ -25,7 +25,7 @@ export function HealthBars({
 }: HealthBarsProps) {
   const bars = useMemo(
     () => {
-      // CSS 色变化时需要重新解析预计算的 canvas 色值。
+      // 随 redrawKey 重新解析 CSS 色值
       void redrawKey;
       return buckets.map((bucket) => {
         const slot = healthBarSlotModel(bucket, kind);

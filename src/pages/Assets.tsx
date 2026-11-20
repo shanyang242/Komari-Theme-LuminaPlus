@@ -62,7 +62,6 @@ function assetsRenewalLabel(daysRemaining: number) {
   return daysRemaining < 0 ? "已过期" : "即将到期";
 }
 
-// "¥ 1,234.56" → 货币符号 / 整数位 / 小数位三段,按报表数字惯例分级排印。
 function HeroMoney({ value }: { value: number | null }) {
   if (value == null) {
     return <span className="assets-hero-value is-pending">计算中</span>;
@@ -88,7 +87,7 @@ export function Assets() {
   const forceRateRefresh = useRef(false);
   const [sort, setSort] = useState<AssetSort>({ key: "weight", direction: "asc" });
   const nodes = useVisibleNodes();
-  // 资产详情页是风险核对入口：这里始终按真实到期数据展示，不读取首页的关闭/稍后偏好。
+  // 资产页始终展示真实到期数据，忽略首页稍后/关闭偏好
   const renewalReminders = useMemo(() => getRenewalReminders(nodes, now), [nodes, now]);
   const renewalByUuid = useMemo(
     () => new Map(renewalReminders.map((item) => [item.uuid, item])),

@@ -29,7 +29,7 @@ import type { PingTaskStats } from "@/types/komari";
 
 const EMPTY_PING_STATS: PingTaskStats[] = [];
 const MAX_RENDER_POINTS = 160;
-// 1 即关闭平滑(smoothByCount 对 <=1 原样返回);保留常量便于调参,非削峰模式当前不平滑。
+// <=1 表示不平滑
 const SMOOTH_WINDOW_POINTS = 1;
 const SMOOTH_WINDOW_POINTS_PEAK = 13;
 
@@ -49,7 +49,6 @@ export function PingChart({
     isLoading,
     refetch: refetchRecords,
   } = usePingRecords(uuid, hours, active);
-  // stats 与 records 并行请求并放入同一个查询结果；stats 保留后端抽样前的完整区间统计。
   const pingStats = data?.stats ?? EMPTY_PING_STATS;
   const { resolvedAppearance } = usePreferences();
   const { w, h, ref: chartSizeRef } = useResponsiveChartSize("wide");
@@ -65,7 +64,7 @@ export function PingChart({
     time: "",
   });
   const isDark = resolvedAppearance === "dark";
-  // API 顺序与后台任务权重一致，响应本身不一定包含可重排的权重。
+  // 沿用后端按权重排好的顺序
   const tasks = useMemo(() => [...(data?.tasks ?? [])], [data]);
   const taskLabels = useMemo(() => {
     const counts = new Map<string, number>();
@@ -112,7 +111,6 @@ export function PingChart({
     });
   }, [tasks]);
 
-  // 只依赖 data:切换削峰等开关时不重跑解析/排序。
   const sortedRecords = useMemo(
     () =>
       (data?.records ?? [])
@@ -160,7 +158,6 @@ export function PingChart({
     };
   }, [data, sortedRecords, taskKeySet, tasks]);
 
-  // 对齐结果独立缓存；仅执行延迟历史的断点处理和降采样。
   const latencyChart = useMemo(() => {
     if (!chartPoints) return null;
     let points = chartPoints.latencyPoints;
@@ -169,13 +166,11 @@ export function PingChart({
     }
     points = insertMetricGapSentinels(points, chartPoints.gapOptions);
     const times = points.map((point) => point.time);
-    // undefined 表示错相采样，null 表示真实断点。
     const perTask = taskKeys.map((taskKey) =>
       points.map((point) => point[taskKey]),
     );
 
-    // 一桶内若仍有成功采样，就显示该桶的延迟趋势；只有整桶丢包才画断点。
-    // 偶发丢包的准确比例由下方任务标签展示，不能将一次丢包画成整桶掉线。
+    // "all" 仅在整桶无成功值时断线，避免偶发丢包画成整桶掉线
     const reduced = downsampleAligned(times, perTask, MAX_RENDER_POINTS, !cutPeak, "all");
     const smoothed = smoothByCount(
       reduced.perTask,

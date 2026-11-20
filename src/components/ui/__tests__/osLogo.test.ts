@@ -9,7 +9,6 @@ describe("resolveOsInfo", () => {
   });
 
   it("does not let short keywords match inside longer words", () => {
-    // "win" 不能匹配到 "darwin","nix" 不能匹配到 "unix"
     expect(resolveOsInfo("Darwin").name).not.toBe("Windows");
     expect(resolveOsInfo("some unix variant").name).not.toBe("NixOS");
   });

@@ -17,10 +17,7 @@ function getCachedResolvedThemeSettings(raw: RawThemeSettings): ResolvedThemeSet
 }
 
 type ThemeSettingsState = ResolvedThemeSettings & {
-  /**
-   * 服务端 config 到达后为 true。config 请求失败时它也会变 true，
-   * 让应用回退到默认值，而不是一直空白。
-   */
+  /** config 到达或失败回退默认后为 true。 */
   isReady: boolean;
   isLoading: boolean;
   isError: boolean;

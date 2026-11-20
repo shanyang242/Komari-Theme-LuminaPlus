@@ -9,9 +9,9 @@ interface MetricBarProps {
   valueText: string;
   unit?: string;
   detailText?: string;
-  fraction: number; // 0..1
+  fraction: number;
   redrawKey?: string;
-  paint: string; // 填充色 (CSS color)
+  paint: string;
 }
 
 export function MetricBar({
@@ -27,8 +27,6 @@ export function MetricBar({
   const clamped = Math.max(0, Math.min(1, fraction));
   const activeSegments = clamped * METRIC_SEGMENT_COUNT;
 
-  // 除非填充比例或配色真正变化,否则跨渲染保持稳定,这样 CanvasStrip 的重绘 effect
-  // 不会在父组件每个 metrics tick 都触发。
   const draw = useCallback(
     (ctx: CanvasRenderingContext2D, width: number, height: number) => {
       const inactiveColor = safeCanvasColor("var(--progress-bg)");

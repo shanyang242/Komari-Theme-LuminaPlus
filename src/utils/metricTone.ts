@@ -1,7 +1,6 @@
 import { clamp, toHsl, toOklch } from "@/utils/hsl";
 import { formatByteRate } from "@/utils/format";
 
-// 丢包使用连续 HSL 热力渐变；延迟使用下方独立的离散监控状态阶梯。
 const HEAT_RAMP_SEGMENTS = [
   (t: number) => toHsl(145 - 18 * t, 62 + 8 * t, 48 + 3 * t),
   (t: number) => toHsl(127 - 47 * t, 70 + 6 * t, 51 + 1 * t),
@@ -10,7 +9,6 @@ const HEAT_RAMP_SEGMENTS = [
   (t: number) => toHsl(30 - 24 * t, 86 - 2 * t, 52 - 8 * t),
 ];
 
-// `bounds` 为前 4 段的上界(升序),`tailSpan` 是末段(最后上界往上)的归一化跨度。
 function heatRamp(
   value: number,
   bounds: [number, number, number, number],
@@ -25,11 +23,10 @@ function heatRamp(
 }
 
 export function latencyHeatColor(ms: number | null | undefined): string {
-  // 0ms 表示亚毫秒成功探测；仅无样本和负值回退中性色。
+  // 0ms 为亚毫秒成功探测
   if (ms == null || !Number.isFinite(ms) || ms < 0) {
     return "var(--text-tertiary)";
   }
-  // 首页是状态巡检而非精密曲线：离散色阶保证 53ms 与 91ms 一眼可分，精确值由数字和 tooltip 承担。
   if (ms <= 60) return "var(--latency-excellent)";
   if (ms <= 100) return "var(--latency-good)";
   if (ms <= 160) return "var(--latency-moderate)";
@@ -37,7 +34,6 @@ export function latencyHeatColor(ms: number | null | undefined): string {
   return "var(--latency-critical)";
 }
 
-// 流量使用率：0–50% 保持绿色，之后随配额耗尽转为琥珀和红色。
 export function trafficUsageColor(fraction: number | null | undefined): string {
   if (fraction == null || !Number.isFinite(fraction) || fraction <= 0) {
     return "var(--status-success)";
@@ -59,16 +55,16 @@ export function trafficUsageColor(fraction: number | null | undefined): string {
   return toHsl(40 - 34 * t, 82 + 4 * t, 52 - 6 * t);
 }
 
-// 按条上绝对位置在 OKLCH 中插值；紧凑卡的 CSS 光谱镜像同一组色标。
+// 与 tokens.css 的 --traffic-heat-spectrum 色标同步
 const TRAFFIC_QUOTA_STOPS = [
-  { pos: 0, l: 0.72, c: 0.16, h: 150 }, // 绿
-  { pos: 0.1, l: 0.72, c: 0.16, h: 150 }, // 保持绿(短)
-  { pos: 0.28, l: 0.8, c: 0.18, h: 128 }, // 黄绿
-  { pos: 0.44, l: 0.86, c: 0.18, h: 110 }, // 黄(亮度峰值)
-  { pos: 0.58, l: 0.8, c: 0.18, h: 85 }, // 琥珀黄
-  { pos: 0.72, l: 0.72, c: 0.19, h: 62 }, // 橙
-  { pos: 0.86, l: 0.65, c: 0.21, h: 40 }, // 红橙
-  { pos: 1, l: 0.6, c: 0.22, h: 27 }, // 红
+  { pos: 0, l: 0.72, c: 0.16, h: 150 },
+  { pos: 0.1, l: 0.72, c: 0.16, h: 150 },
+  { pos: 0.28, l: 0.8, c: 0.18, h: 128 },
+  { pos: 0.44, l: 0.86, c: 0.18, h: 110 },
+  { pos: 0.58, l: 0.8, c: 0.18, h: 85 },
+  { pos: 0.72, l: 0.72, c: 0.19, h: 62 },
+  { pos: 0.86, l: 0.65, c: 0.21, h: 40 },
+  { pos: 1, l: 0.6, c: 0.22, h: 27 },
 ];
 
 export function trafficQuotaSegmentColor(pos: number): string {
@@ -84,7 +80,6 @@ export function trafficQuotaSegmentColor(pos: number): string {
   return toOklch(0.6, 0.22, 27);
 }
 
-// 速率按 B/KB/MB/GB 四档着色，TB/PB 沿用最高档。
 const SPEED_RATE_COLOR: Record<string, string> = {
   "B/s": "var(--speed-idle)",
   "KB/s": "var(--speed-low)",

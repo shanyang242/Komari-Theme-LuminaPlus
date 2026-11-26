@@ -18,6 +18,7 @@ import {
 } from "@/utils/cost";
 import { formatBillingCycle } from "@/utils/billing";
 import { getExpireDaysRemaining, LONG_TERM_EXPIRE_DAYS } from "@/utils/format";
+import { MOBILE_VIEWPORT_QUERY } from "@/utils/mediaQuery";
 import {
   getRenewalReminders,
 } from "@/utils/renewalReminder";
@@ -58,9 +59,7 @@ const MOBILE_SORT_OPTIONS: Array<{ field: AssetsSortField; label: string }> = [
   { field: "expiry", label: "到期" },
 ];
 
-const ASSETS_MOBILE_QUERY = "(max-width: 720px)";
-
-function sortValue(detail: AssetDetail, field: AssetsSortField): number {
+function sortValue(detail: AssetDetail, field: AssetsSortField, now: number): number {
   switch (field) {
     case "price":
       return detail.priceCny;
@@ -71,7 +70,7 @@ function sortValue(detail: AssetDetail, field: AssetsSortField): number {
     case "premiumMonthly":
       return detail.premiumMonthlyCny;
     case "expiry": {
-      const days = getExpireDaysRemaining(detail.expiredAt);
+      const days = getExpireDaysRemaining(detail.expiredAt, now);
       return days == null ? Number.POSITIVE_INFINITY : days;
     }
     default:
@@ -79,8 +78,8 @@ function sortValue(detail: AssetDetail, field: AssetsSortField): number {
   }
 }
 
-function formatCostExpiry(expiredAt: string) {
-  const days = getExpireDaysRemaining(expiredAt);
+function formatCostExpiry(expiredAt: string, now: number) {
+  const days = getExpireDaysRemaining(expiredAt, now);
   if (days == null) return "到期未知";
   if (days > LONG_TERM_EXPIRE_DAYS) return "长期";
   if (days < 0) return "已过期";
@@ -120,7 +119,7 @@ function HeroMoney({ value }: { value: number | null }) {
 export function Assets() {
   const [sortField, setSortField] = useState<AssetsSortField>("weight");
   const [sortDirection, setSortDirection] = useState<AssetsSortDirection>("asc");
-  const isMobileLayout = useMediaQuery(ASSETS_MOBILE_QUERY);
+  const isMobileLayout = useMediaQuery(MOBILE_VIEWPORT_QUERY);
   const now = useHourlyClock();
   const themeSettings = useThemeSettings();
   const { data: me, isPending: authPending } = useAuth();
@@ -128,6 +127,8 @@ export function Assets() {
     themeSettings.isReady &&
     !authPending &&
     canViewCosts(themeSettings, me?.logged_in === true);
+  const assetsEntryEnabled =
+    themeSettings.showCostSummary || themeSettings.showCostSummaryFloatingButton;
   const forceRateRefresh = useRef(false);
   const nodes = useVisibleNodes();
   // 资产详情页是风险核对入口：这里始终按真实到期数据展示，不读取首页的关闭/稍后偏好。
@@ -144,7 +145,7 @@ export function Assets() {
       return getExchangeRates(themeSettings.costRateApiUrl, { signal, ignoreCache });
     },
     staleTime: 60 * 60 * 1000,
-    enabled: costsVisible && nodes.length > 0,
+    enabled: costsVisible && assetsEntryEnabled && nodes.length > 0,
     retry: 1,
   });
   const summary = useMemo(
@@ -165,7 +166,7 @@ export function Assets() {
     // 排序键先算好,避免比较器里 O(n log n) 次重复解析到期日。
     const rows = (summary?.details ?? []).map((detail) => ({
       detail,
-      key: sortValue(detail, sortField),
+      key: sortValue(detail, sortField, now),
     }));
     rows.sort((a, b) => {
       if (a.detail.counted !== b.detail.counted) return a.detail.counted ? -1 : 1;
@@ -174,7 +175,7 @@ export function Assets() {
       );
     });
     return rows.map(({ detail }) => detail);
-  }, [sortDirection, sortField, summary]);
+  }, [now, sortDirection, sortField, summary]);
   const exchangeRateRows = useMemo(() => {
     if (!rateQuery.data?.rates.CNY) return [];
     const rates = rateQuery.data.rates;
@@ -205,7 +206,7 @@ export function Assets() {
   }
 
   // 两个入口都关闭 = 站长不想暴露资产信息,直连 URL 一并回首页。
-  if (!themeSettings.showCostSummary && !themeSettings.showCostSummaryFloatingButton) {
+  if (!assetsEntryEnabled) {
     return <Navigate to="/" replace />;
   }
 
@@ -432,11 +433,11 @@ export function Assets() {
                               data-tone={renewalTone}
                               title={renewalLabel}
                             >
-                              <span>{formatCostExpiry(detail.expiredAt)}</span>
+                              <span>{formatCostExpiry(detail.expiredAt, now)}</span>
                               <small>{renewalLabel}</small>
                             </span>
                           ) : (
-                            formatCostExpiry(detail.expiredAt)
+                            formatCostExpiry(detail.expiredAt, now)
                           )}
                         </td>
                         </tr>
@@ -503,7 +504,7 @@ export function Assets() {
                           className="cost-summary-expire-label"
                           data-tone={renewalTone}
                         >
-                          {formatCostExpiry(detail.expiredAt)}
+                          {formatCostExpiry(detail.expiredAt, now)}
                           {renewalLabel && <small>{renewalLabel}</small>}
                         </span>
                       </div>

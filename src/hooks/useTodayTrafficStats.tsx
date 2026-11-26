@@ -28,10 +28,10 @@ import {
   warnDegradedOnce,
 } from "@/services/api";
 import {
-  buildTodayTrafficMetricSamples,
-  buildTodayTrafficRecordSamples,
+  buildTodayTrafficMetricSamplesByUuid,
   summarizeTodayTrafficMetrics,
   summarizeTodayTrafficRecords,
+  summarizeTodayTrafficRecordsWithSamples,
   type TodayTrafficSample,
   type TodayTrafficStat,
 } from "@/utils/trafficStats";
@@ -164,11 +164,12 @@ export function TodayTrafficStatsProvider({
   uuids: string[];
   children: ReactNode;
 }) {
-  const now = useMinuteClock();
   const store = useMemo(createTodayTrafficNodeStore, []);
   const [activeUuids, setActiveUuids] = useState<ReadonlySet<string>>(
     () => new Set(),
   );
+  // 首页无活跃流量弹层时不订阅分钟时钟，避免空闲页面每分钟无效重渲染。
+  const now = useMinuteClock(activeUuids.size > 0);
   const setNodeActive = useCallback((uuid: string, active: boolean) => {
     setActiveUuids((current) => {
       const next = new Set(current);
@@ -306,12 +307,18 @@ async function loadRecordFallback(
           // 聚合接口刚刚失败过，兼容路径直接读 records，避免每台节点重复探测。
           skipMetricQuery: true,
         });
+        if (mode === "full") {
+          const { stat, samples } = summarizeTodayTrafficRecordsWithSamples(
+            uuid,
+            data.records,
+            startMs,
+            endMs,
+          );
+          return { row: stat, samples };
+        }
         return {
           row: summarizeTodayTrafficRecords(uuid, data.records, startMs, endMs),
-          samples:
-            mode === "full"
-              ? buildTodayTrafficRecordSamples(data.records, startMs, endMs)
-              : undefined,
+          samples: undefined,
         };
       }),
     );
@@ -362,12 +369,7 @@ function getTodayTrafficQueryOptions(
           rows: summarizeTodayTrafficMetrics(data.series, stableUuids),
           samplesByUuid:
             mode === "full"
-              ? Object.fromEntries(
-                  stableUuids.map((uuid) => [
-                    uuid,
-                    buildTodayTrafficMetricSamples(data.series, uuid),
-                  ]),
-                )
+              ? buildTodayTrafficMetricSamplesByUuid(data.series, stableUuids)
               : {},
           rangeStartMs: data.rangeStartMs,
           rangeEndMs: data.rangeEndMs,

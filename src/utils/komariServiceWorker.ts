@@ -127,7 +127,12 @@ export async function repairKomariServiceWorker() {
   );
 
   if (typeof caches === "undefined") return;
-  const cacheNames = await caches.keys();
+  let cacheNames: string[];
+  try {
+    cacheNames = await caches.keys();
+  } catch {
+    return;
+  }
   await Promise.allSettled(
     cacheNames
       .filter((name) => name.startsWith(WORKBOX_PRECACHE_PREFIX))

@@ -1,4 +1,4 @@
-import { LONG_TERM_EXPIRE_DAYS, resolveExpireTimestamp } from "@/utils/format";
+import { formatLocalDateKey, LONG_TERM_EXPIRE_DAYS, resolveExpireTimestamp } from "@/utils/format";
 
 export interface TrafficResetDisplay {
   label: string;
@@ -13,11 +13,16 @@ function isResetDay(value: unknown): value is number {
 
 export function normalizeTrafficResetDays(value: unknown): Record<string, number> {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
-  // 固定键序，避免同一份配置因编辑顺序不同被误判为未保存。
+  // 固定键序并去除键名首尾空白，避免同一份配置因编辑顺序或空白差异被误判为未保存。
+  const normalized = new Map<string, number>();
+  for (const [uuid, day] of Object.entries(value)) {
+    const trimmed = uuid.trim();
+    if (trimmed !== "" && isResetDay(day)) {
+      normalized.set(trimmed, day);
+    }
+  }
   return Object.fromEntries(
-    Object.entries(value)
-      .filter(([uuid, day]) => uuid.trim() !== "" && isResetDay(day))
-      .sort(([left], [right]) => left.localeCompare(right)),
+    Array.from(normalized.entries()).sort(([left], [right]) => left.localeCompare(right)),
   );
 }
 
@@ -49,7 +54,7 @@ export function getTrafficResetDisplay(
   // 用日历日计算，避免夏令时切换造成 23/25 小时的一天被取整错算。
   const ordinal = (date: Date) => Date.UTC(date.getFullYear(), date.getMonth(), date.getDate());
   const days = (ordinal(next) - ordinal(today)) / 86_400_000;
-  const dateLabel = `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, "0")}-${String(next.getDate()).padStart(2, "0")}`;
+  const dateLabel = formatLocalDateKey(next);
   return {
     day,
     date: dateLabel,

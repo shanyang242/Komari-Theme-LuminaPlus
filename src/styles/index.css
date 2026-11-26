@@ -40,51 +40,59 @@
   letter-spacing: -0.003em;
 }
 
-html,
-body {
-  margin: 0;
-  padding: 0;
-  min-height: 100vh;
-  color: var(--text-primary);
+@layer base {
+  html,
+  body {
+    margin: 0;
+    padding: 0;
+    min-height: 100vh;
+    color: var(--text-primary);
+  }
+
+  /* --bg-0 只挂在 <html>(画布)上,不挂 <body>。自定义背景图画在负 z-index 的
+     body::before 上,而 CSS 绘制顺序里 body 自身背景在负 z 子元素之后绘制 —— 所以若
+     把 --bg-0 放到 <body> 会盖住背景图。保持 <body> 透明让图显示;未配置背景图时,
+     <html> 仍提供纯色 --bg-0 兜底。
+     氛围层(顶光 --canvas-glow)也画在 <html> 背景上,天然只在纯色模式出现——透明模式的
+     body::before 图片盖在其上,所以两者互不干扰。变量未定义时回退为 none,该层不绘制。 */
+  html {
+    background-color: var(--bg-0);
+    background-image: var(--canvas-glow, none);
+    background-repeat: no-repeat;
+    background-size: 100% 100vh;
+    background-position: center top;
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+
+  button {
+    font: inherit;
+    color: inherit;
+    background: transparent;
+    border: 0;
+    cursor: pointer;
+    padding: 0;
+  }
+
+  a {
+    color: inherit;
+    text-decoration: none;
+  }
+
+  input,
+  button,
+  select,
+  textarea {
+    font-variant-numeric: tabular-nums;
+  }
 }
 
-/* --bg-0 只挂在 <html>(画布)上,不挂 <body>。自定义背景图画在负 z-index 的
-   body::before 上,而 CSS 绘制顺序里 body 自身背景在负 z 子元素之后绘制 —— 所以若
-   把 --bg-0 放到 <body> 会盖住背景图。保持 <body> 透明让图显示;未配置背景图时,
-   <html> 仍提供纯色 --bg-0 兜底。
-   氛围层(顶光 --canvas-glow)也画在 <html> 背景上,天然只在纯色模式出现——透明模式的
-   body::before 图片盖在其上,所以两者互不干扰。变量未定义时回退为 none,该层不绘制。 */
-html {
-  background-color: var(--bg-0);
-  background-image: var(--canvas-glow, none);
-  background-repeat: no-repeat;
-  background-size: 100% 100vh;
-  background-position: center top;
-}
-
-* {
-  box-sizing: border-box;
-}
-
-button {
-  font: inherit;
-  color: inherit;
-  background: transparent;
-  border: 0;
-  cursor: pointer;
-  padding: 0;
-}
-
-a {
-  color: inherit;
-  text-decoration: none;
-}
-
-input,
-button,
-select,
-textarea {
-  font-variant-numeric: tabular-nums;
+@keyframes lumina-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 html.theme-flip *,

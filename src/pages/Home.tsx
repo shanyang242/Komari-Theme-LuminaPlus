@@ -12,34 +12,58 @@ const ThemeManage = lazy(() =>
 );
 
 let homeHeaderHiddenForDocument = false;
+let homeHeaderHiddenConfigKey: string | null = null;
 
 function HomeDashboard() {
   const [controlsExpanded, setControlsExpanded] = useState(false);
-  const [headerHiddenForDocument, setHeaderHiddenForDocument] = useState(
-    () => homeHeaderHiddenForDocument,
-  );
   const themeSettings = useThemeSettings();
+  const autoHideConfigKey = themeSettings.enableHomeHeaderAutoHide
+    ? String(themeSettings.homeHeaderVisibleSeconds)
+    : null;
+  const [headerHiddenForDocument, setHeaderHiddenForDocument] = useState(
+    () =>
+      homeHeaderHiddenForDocument &&
+      homeHeaderHiddenConfigKey !== null &&
+      homeHeaderHiddenConfigKey === autoHideConfigKey,
+  );
   const { hydrated: storeHydrated } = useNodeStoreStatus();
   const homeReady = themeSettings.isReady && storeHydrated;
   const homeHeaderHidden =
-    themeSettings.enableHomeHeaderAutoHide && headerHiddenForDocument;
+    themeSettings.enableHomeHeaderAutoHide &&
+    headerHiddenForDocument &&
+    homeHeaderHiddenConfigKey === autoHideConfigKey;
 
   useEffect(() => {
-    if (
-      !homeReady ||
-      !themeSettings.enableHomeHeaderAutoHide ||
-      headerHiddenForDocument
-    ) return;
+    if (!themeSettings.isReady) return;
+    if (!themeSettings.enableHomeHeaderAutoHide) {
+      homeHeaderHiddenForDocument = false;
+      homeHeaderHiddenConfigKey = null;
+      setHeaderHiddenForDocument(false);
+      return;
+    }
+    if (homeHeaderHiddenConfigKey !== autoHideConfigKey) {
+      homeHeaderHiddenForDocument = false;
+      homeHeaderHiddenConfigKey = autoHideConfigKey;
+      setHeaderHiddenForDocument(false);
+    }
+    if (homeHeaderHiddenForDocument && homeHeaderHiddenConfigKey === autoHideConfigKey) {
+      if (!headerHiddenForDocument) setHeaderHiddenForDocument(true);
+      return;
+    }
+    if (!homeReady) return;
     const timeoutId = window.setTimeout(() => {
       homeHeaderHiddenForDocument = true;
+      homeHeaderHiddenConfigKey = autoHideConfigKey;
       setHeaderHiddenForDocument(true);
     }, themeSettings.homeHeaderVisibleSeconds * 1000);
     return () => window.clearTimeout(timeoutId);
   }, [
+    autoHideConfigKey,
     headerHiddenForDocument,
     homeReady,
     themeSettings.enableHomeHeaderAutoHide,
     themeSettings.homeHeaderVisibleSeconds,
+    themeSettings.isReady,
   ]);
 
   return (

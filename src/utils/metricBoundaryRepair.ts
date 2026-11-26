@@ -186,7 +186,11 @@ export function fillMetricBoundaryGaps<T extends MetricBoundarySeries>(
 
     const orderedPoints = points
       .map((point) => ({ point, timeMs: pointTimeMs(point) }))
-      .sort((left, right) => left.timeMs - right.timeMs)
+      .sort((left, right) => {
+        const leftTime = Number.isFinite(left.timeMs) ? left.timeMs : Number.POSITIVE_INFINITY;
+        const rightTime = Number.isFinite(right.timeMs) ? right.timeMs : Number.POSITIVE_INFINITY;
+        return leftTime - rightTime;
+      })
       .map(({ point }) => point);
     return {
       ...(aggregate ?? raw),

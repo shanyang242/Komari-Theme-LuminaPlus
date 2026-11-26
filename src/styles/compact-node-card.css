@@ -618,10 +618,6 @@
     gap: 4px;
   }
 
-  .compact-node-info-strip {
-    gap: 5px;
-  }
-
   .compact-node-info-tile {
     min-height: 48px;
     padding: 6px;

@@ -169,9 +169,7 @@ const IpNetworkProfileEnvelopeSchema = z.object({
 });
 
 export type IpInfoStatus = z.output<typeof IpInfoStatusEnvelopeSchema>["data"];
-export type IpInfoData = z.output<typeof IpInfoDataSchema>;
 export type IpInfoLookup = z.output<typeof IpInfoLookupEnvelopeSchema> & { queryAddress: string };
-export type IpNetworkProfile = z.output<typeof IpNetworkProfileEnvelopeSchema>;
 
 export function selectIpClassification(base?: z.input<typeof IpClassificationSchema>, profile?: z.input<typeof IpClassificationSchema>) {
   return base && base.type !== "unknown" && base.label ? base : profile;

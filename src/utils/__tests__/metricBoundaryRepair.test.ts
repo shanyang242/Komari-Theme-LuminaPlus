@@ -142,4 +142,22 @@ describe("metric boundary repair", () => {
     });
     expect(repaired.series[0].points[0]?.value).toBeCloseTo(200 / 6);
   });
+
+  it("sorts valid points chronologically even when an invalid timestamp point is present", () => {
+    const aggregate = series([
+      { time: "2026-07-15T03:45:00Z", value: 25, count: 1 },
+      { time: "not-a-timestamp", value: 99, count: 1 },
+      { time: "2026-07-15T03:43:00Z", value: 10, count: 1 },
+      { time: "2026-07-15T03:44:00Z", value: null, count: 0 },
+    ]);
+    const raw = series([{ time: "2026-07-15T03:44:10Z", value: 18, count: 0 }]);
+
+    const repaired = fillMetricBoundaryGaps([aggregate], [raw]);
+    expect(repaired.series[0].points.map((point) => point.time)).toEqual([
+      "2026-07-15T03:43:00Z",
+      "2026-07-15T03:44:00Z",
+      "2026-07-15T03:45:00Z",
+      "not-a-timestamp",
+    ]);
+  });
 });

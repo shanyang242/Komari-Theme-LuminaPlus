@@ -55,8 +55,15 @@ export function HomeSortControl({
   }, [open]);
 
   const select = (next: HomeSortField) => {
-    if (next === field) toggleDirection();
-    else setField(next);
+    if (next === visibleField) {
+      if (next === field) {
+        toggleDirection();
+      } else {
+        setField(next, visibleDirection === "asc" ? "desc" : "asc");
+      }
+    } else {
+      setField(next);
+    }
   };
 
   return (
@@ -90,7 +97,7 @@ export function HomeSortControl({
                 onClick={() => select(option)}
               >
                 <span className="home-sort-item-label">{HOME_SORT_FIELD_LABELS[option]}</span>
-                {active && <SortIcon direction={direction} size={15} />}
+                {active && <SortIcon direction={visibleDirection} size={15} />}
               </button>
             );
           })}

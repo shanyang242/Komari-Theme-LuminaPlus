@@ -13,8 +13,9 @@ import {
 } from "@/components/instance/chartShared";
 import { usePublicConfig } from "@/hooks/usePublicConfig";
 import { useAuth } from "@/hooks/useAuth";
-import { useNodeMeta, useNodeStoreStatus } from "@/hooks/useNode";
+import { useNodeStoreStatus } from "@/hooks/useNode";
 import { useThemeSettings } from "@/hooks/useThemeSettings";
+import { useVisibleNodes } from "@/hooks/useVisibleNodes";
 import { useIpInfo } from "@/hooks/useIpInfo";
 
 const DEFAULT_PING_HOURS = 4;
@@ -51,8 +52,13 @@ export function Instance() {
   const { data: config } = usePublicConfig();
   const { data: me, isPending: authPending } = useAuth();
   const themeSettings = useThemeSettings();
-  const meta = useNodeMeta(uuid ?? "");
+  const visibleNodes = useVisibleNodes();
+  const meta = useMemo(
+    () => (uuid ? visibleNodes.find((node) => node.uuid === uuid) : undefined),
+    [uuid, visibleNodes],
+  );
   const storeStatus = useNodeStoreStatus(Boolean(uuid));
+  const visibilityReady = themeSettings.isReady && !authPending;
   const [chartType, setChartType] = useState<"load" | "ping" | "ip">("load");
   const [loadHours, setLoadHours] = useState(0);
   const [pingHours, setPingHours] = useState(DEFAULT_PING_HOURS);
@@ -72,7 +78,7 @@ export function Instance() {
     [config?.ping_record_preserve_time, metricRetentionHours],
   );
   const showPingChart = themeSettings.isReady && themeSettings.showPingChart;
-  const ipInfoEnabled = !authPending && me?.logged_in === true;
+  const ipInfoEnabled = visibilityReady && Boolean(meta) && me?.logged_in === true;
   const ipInfo = useIpInfo(
     uuid ?? "",
     meta?.ipv4,
@@ -122,9 +128,11 @@ export function Instance() {
 
   if (!uuid) return null;
 
-  if (!meta) {
-    const message = storeStatus.hydrated
-      ? "找不到这个实例，它可能已被删除或链接无效。"
+  // 主题配置未就绪前不得提前渲染详情或拉取历史数据，避免 hiddenNodes 列表加载前泄露隐藏节点。
+  if (!themeSettings.isReady || !meta) {
+    const readyToResolveMissing = visibilityReady && storeStatus.hydrated;
+    const message = readyToResolveMissing
+      ? "找不到这个实例，它可能已被删除、隐藏或链接无效。"
       : storeStatus.nodeInfoError
         ? "节点列表加载失败，系统正在自动重试。"
         : null;
@@ -138,7 +146,7 @@ export function Instance() {
           {message ? (
             <>
               <div className="text-[15px] font-semibold text-[var(--text-primary)]">
-                {storeStatus.hydrated ? "实例不存在" : "暂时无法加载实例"}
+                {readyToResolveMissing ? "实例不存在" : "暂时无法加载实例"}
               </div>
               <p className="text-[13px] text-[var(--text-secondary)]">{message}</p>
             </>
@@ -238,7 +246,9 @@ export function Instance() {
           hidden={chartType !== "ip"}
           aria-hidden={chartType !== "ip"}
         >
-          {chartType === "ip" && ipInfo.available ? <IpInfoPanel lookups={ipInfo.lookups} /> : null}
+          {chartType === "ip" && ipInfo.available ? (
+            <IpInfoPanel key={uuid} lookups={ipInfo.lookups} />
+          ) : null}
         </div>
       </div>
     </div>

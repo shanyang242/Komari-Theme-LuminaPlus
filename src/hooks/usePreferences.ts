@@ -198,8 +198,8 @@ function getSnapshot() {
   return snapshot;
 }
 
-export function usePreferences() {
-  const state = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+/** 全局单点同步后端默认外观（在 AppShell 挂载一次），避免消费方重复订阅 useThemeSettings。 */
+export function usePreferencesSync() {
   const themeSettings = useThemeSettings();
 
   useEffect(() => {
@@ -209,6 +209,10 @@ export function usePreferences() {
     persistDefaultAppearance(defaultAppearance);
     commit({ appearance: defaultAppearance });
   }, [themeSettings.defaultAppearance, themeSettings.isReady]);
+}
+
+export function usePreferences() {
+  const state = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 
   const setAppearance = useCallback((a: Appearance) => {
     hasExplicitAppearancePreference = true;

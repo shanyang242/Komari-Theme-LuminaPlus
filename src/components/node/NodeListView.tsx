@@ -7,7 +7,7 @@ import { OsLogo } from "@/components/ui/OsLogo";
 import { useNodeCardModel } from "@/hooks/useNodeCardModel";
 import { usePreferences } from "@/hooks/usePreferences";
 import { useMetricColorsVersion } from "@/hooks/useMetricColors";
-import { formatBytes } from "@/utils/format";
+import { clamp01, formatBytes } from "@/utils/format";
 import { speedRateColor } from "@/utils/metricTone";
 import { CanvasStrip, fillRoundedRect, safeCanvasColor } from "./CanvasStrip";
 import { LatencyBars } from "./LatencyBars";
@@ -19,10 +19,6 @@ import type { PingOverviewTaskLoadState } from "@/types/komari";
 const GAUGE_SEGMENTS = 14;
 // 列表网络列的延迟柱数:比卡片(24)少,配窄列宽,柱子仍清晰可读。
 const LIST_PING_BUCKETS = 12;
-
-function clamp01(value: number) {
-  return Number.isFinite(value) ? Math.max(0, Math.min(1, value)) : 0;
-}
 
 function pctText(value: number) {
   if (!Number.isFinite(value) || value <= 0) return "0";
@@ -170,28 +166,20 @@ function StackLine({
 // 网络列:当前延迟在上,聚合延迟柱状图在下(热力着色,与大卡同一视觉语言)。
 function ListLatency({
   latency,
-  loadState,
-  hasRealHomepagePingBinding,
-  pingIsAssigned,
+  state,
+  status,
   latencyColor,
   buckets,
   redrawKey,
 }: {
   latency: number | null;
-  loadState: PingOverviewTaskLoadState | undefined;
-  hasRealHomepagePingBinding: boolean;
-  pingIsAssigned: boolean;
+  state: ListPingState;
+  status: ReturnType<typeof formatListPingStatus>;
   latencyColor: string;
   buckets: Parameters<typeof LatencyBars>[0]["buckets"];
   redrawKey: string;
 }) {
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
-  const state = resolveListPingState(
-    loadState,
-    hasRealHomepagePingBinding,
-    pingIsAssigned,
-  );
-  const status = formatListPingStatus(latency, state);
   const hoveredBucket = hoveredIndex == null ? null : (buckets[hoveredIndex] ?? null);
   const tooltip = hoveredBucket
     ? formatHealthBucketTooltip(hoveredBucket, "latency")
@@ -375,9 +363,8 @@ const NodeRow = memo(function NodeRow({ uuid, showCosts }: { uuid: string; showC
       <div className="node-list-cell col-net">
         <ListLatency
           latency={ping.lastValue}
-          loadState={ping.loadState}
-          hasRealHomepagePingBinding={hasRealHomepagePingBinding}
-          pingIsAssigned={ping.isAssigned}
+          state={listPingState}
+          status={listPingStatus}
           latencyColor={latencyColor}
           buckets={pingBuckets}
           redrawKey={redrawKey}

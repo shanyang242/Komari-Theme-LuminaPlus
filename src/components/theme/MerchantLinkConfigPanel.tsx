@@ -12,10 +12,18 @@ import { clsx } from "clsx";
 import { Flag } from "@/components/ui/Flag";
 import { MerchantIcon } from "@/components/ui/MerchantIcon";
 import { ThemeConfigSaveFooter } from "@/components/theme/ThemeConfigSaveFooter";
+import {
+  resolveNextSelectedUuid,
+  resolvePanelSelectedClient,
+} from "@/components/theme/configPanelSelection";
 import type { AdminClient } from "@/types/komari";
 import type { NodeMerchantLinks } from "@/utils/merchantLinks";
 
 type ConfigFilter = "all" | "configured" | "unconfigured";
+
+const NODE_ROW_HEIGHT = 64;
+const NODE_LIST_WINDOW_SIZE = 16;
+const NODE_LIST_OVERSCAN = 3;
 
 interface MerchantLinkConfigPanelProps {
   open: boolean;
@@ -49,7 +57,11 @@ export function MerchantLinkConfigPanel({
   const [group, setGroup] = useState("");
   const [selectedUuid, setSelectedUuid] = useState(clients[0]?.uuid ?? "");
   const [mobileEditorOpen, setMobileEditorOpen] = useState(false);
+  const [firstVisibleNodeIndex, setFirstVisibleNodeIndex] = useState(0);
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
+  const nodeListRef = useRef<HTMLDivElement | null>(null);
+  const filterKey = `${filter}\0${group}\0${search}`;
+  const prevFilterKeyRef = useRef(filterKey);
   const groups = useMemo(
     () => Array.from(new Set(clients.map((client) => String(client.group || "").trim()).filter(Boolean))),
     [clients],
@@ -72,13 +84,27 @@ export function MerchantLinkConfigPanel({
     });
   }, [clients, filter, group, links, search]);
   const selectedClient = useMemo(
-    () => filteredClients.find((client) => client.uuid === selectedUuid) ?? filteredClients[0],
-    [filteredClients, selectedUuid],
+    () => resolvePanelSelectedClient(clients, filteredClients, selectedUuid),
+    [clients, filteredClients, selectedUuid],
   );
   const selectedLink = selectedClient
     ? links[selectedClient.uuid] ?? { url: "", iconUrl: "" }
     : { url: "", iconUrl: "" };
   const selectedConfigured = Boolean(selectedLink.url.trim());
+  const nodeWindowStart = Math.max(
+    0,
+    Math.min(
+      firstVisibleNodeIndex - NODE_LIST_OVERSCAN,
+      Math.max(0, filteredClients.length - NODE_LIST_WINDOW_SIZE),
+    ),
+  );
+  const visibleNodeWindow = filteredClients.slice(
+    nodeWindowStart,
+    Math.min(
+      filteredClients.length,
+      nodeWindowStart + NODE_LIST_WINDOW_SIZE + NODE_LIST_OVERSCAN * 2,
+    ),
+  );
 
   useEffect(() => {
     if (!open) return;
@@ -97,9 +123,21 @@ export function MerchantLinkConfigPanel({
 
   useEffect(() => {
     if (!open) return;
-    const nextUuid = selectedClient?.uuid ?? "";
+    const filterChanged = prevFilterKeyRef.current !== filterKey;
+    prevFilterKeyRef.current = filterKey;
+    const nextUuid = resolveNextSelectedUuid(
+      clients,
+      filteredClients,
+      selectedUuid,
+      filterChanged,
+    );
     if (nextUuid !== selectedUuid) setSelectedUuid(nextUuid);
-  }, [open, selectedClient?.uuid, selectedUuid]);
+  }, [clients, filterKey, filteredClients, open, selectedUuid]);
+
+  useEffect(() => {
+    setFirstVisibleNodeIndex(0);
+    if (nodeListRef.current) nodeListRef.current.scrollTop = 0;
+  }, [filter, group, search]);
 
   if (!open || typeof document === "undefined") return null;
 
@@ -194,12 +232,24 @@ export function MerchantLinkConfigPanel({
               </select>
             </div>
 
-            <div className="multi-ping-config-node-list">
+            <div
+              ref={nodeListRef}
+              className="multi-ping-config-node-list"
+              onScroll={(event) => {
+                const nextIndex = Math.floor(
+                  event.currentTarget.scrollTop / NODE_ROW_HEIGHT,
+                );
+                setFirstVisibleNodeIndex((current) =>
+                  current === nextIndex ? current : nextIndex,
+                );
+              }}
+            >
               <div
                 className="multi-ping-config-node-list-window"
-                style={{ height: filteredClients.length * 64 }}
+                style={{ height: filteredClients.length * NODE_ROW_HEIGHT }}
               >
-              {filteredClients.map((client, index) => {
+              {visibleNodeWindow.map((client, windowIndex) => {
+                const index = nodeWindowStart + windowIndex;
                 const link = links[client.uuid];
                 const configured = Boolean(link?.url.trim());
                 return (
@@ -211,7 +261,7 @@ export function MerchantLinkConfigPanel({
                       setMobileEditorOpen(true);
                     }}
                     className={clsx("multi-ping-config-node", selectedClient?.uuid === client.uuid && "is-active")}
-                    style={{ transform: `translateY(${index * 64}px)` }}
+                    style={{ transform: `translateY(${index * NODE_ROW_HEIGHT}px)` }}
                     aria-posinset={index + 1}
                     aria-setsize={filteredClients.length}
                   >

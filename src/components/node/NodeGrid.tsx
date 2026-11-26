@@ -36,7 +36,10 @@ import { useHomeSort } from "@/hooks/useHomeSort";
 import { useHomeNodeOrder } from "@/hooks/useHomeNodeOrder";
 import { useHomeFilterOrder } from "@/hooks/useHomeFilterOrder";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
-import { HOME_SORT_NATURAL_DIRECTION } from "@/utils/homeSort";
+import {
+  HOME_SORT_NATURAL_DIRECTION,
+  sortFieldNeedsLiveSummaries,
+} from "@/utils/homeSort";
 import { MOBILE_VIEWPORT_QUERY } from "@/utils/mediaQuery";
 import { useHourlyClock } from "@/hooks/useClock";
 import { preloadAssetsPage } from "@/services/assetsPageLoader";
@@ -114,7 +117,8 @@ function HomeBrand({ siteName }: { siteName: string }) {
 }
 
 function HomeOverviewCards({
-  overview,
+  includeHidden,
+  hiddenUuids,
   costSummary,
   costLoading,
   showOverviewRatings,
@@ -131,7 +135,8 @@ function HomeOverviewCards({
   mapBackground,
   onWarmTraffic,
 }: {
-  overview: HomeOverview;
+  includeHidden: boolean;
+  hiddenUuids: ReadonlySet<string>;
   costSummary: { remainingCny: number } | null;
   costLoading: boolean;
   dense: boolean;
@@ -148,6 +153,14 @@ function HomeOverviewCards({
   renewalNodes: RenewalReminderSource[];
   onWarmTraffic: () => void;
 }) {
+  // 仅总览卡自身订阅高频实时摘要，避免非网速排序时每次 2s 带宽 tick 触发整页 NodeGrid 重渲染。
+  const summaries = useHomeNodeSummaries();
+  const overview = useMemo<HomeOverview>(() => {
+    const visibleSummaries = summaries.filter(
+      (node) => (includeHidden || !node.hidden) && !hiddenUuids.has(node.uuid),
+    );
+    return summarizeHomeOverview(visibleSummaries);
+  }, [hiddenUuids, includeHidden, summaries]);
   const [trafficValue, trafficUnit] = formatBytes(
     overview.trafficUp + overview.trafficDown,
   ).split(" ");
@@ -307,7 +320,6 @@ function HomeOverviewCards({
 export function NodeGrid() {
   const now = useHourlyClock();
   const queryClient = useQueryClient();
-  const nodes = useHomeNodeSummaries();
   const nodeOnlineSummaries = useNodeOnlineSummaries();
   const allMeta = useAllNodeMeta();
   const { hydrated: storeHydrated, nodeInfoError } = useNodeStoreStatus();
@@ -339,36 +351,55 @@ export function NodeGrid() {
   const sortDirection = !costsVisible && configuredSortField === "price"
     ? HOME_SORT_NATURAL_DIRECTION.default
     : configuredSortDirection;
+  // 仅实时网速和累计流量排序需要订阅 2s 实时摘要，其余模式仅订阅低频在线态与元数据。
+  const needsLiveSummaries = sortFieldNeedsLiveSummaries(sortField);
+  const liveSummaries = useHomeNodeSummaries(needsLiveSummaries);
   const [selectedGroup, setSelectedGroup] = useState(HOME_ALL_GROUP);
   const [selectedRegion, setSelectedRegion] = useState(HOME_ALL_REGION);
   useHomepagePingOverview(mode);
 
   // 摘要不含名称，先从完整 meta 解析主题隐藏列表，再统一过滤各类数据。
   const hiddenUuids = useHiddenNodeUuids();
-  const visibleNodes = useMemo(
-    () =>
-      nodes.filter(
-        (node) => (me?.logged_in === true || !node.hidden) && !hiddenUuids.has(node.uuid),
-      ),
-    [me?.logged_in, nodes, hiddenUuids],
-  );
+  const includeHidden = me?.logged_in === true;
   // 资产统计与卡片使用同一可见性规则，避免泄露隐藏节点信息。
   const visibleMeta = useMemo(
     () =>
       allMeta.filter(
-        (node) => (me?.logged_in === true || !node.hidden) && !hiddenUuids.has(node.uuid),
+        (node) => (includeHidden || !node.hidden) && !hiddenUuids.has(node.uuid),
       ),
-    [allMeta, me?.logged_in, hiddenUuids],
+    [allMeta, includeHidden, hiddenUuids],
   );
-  const renewalNodes = useMemo<RenewalReminderSource[]>(() => {
-    const onlineByUuid = new Map(
-      nodeOnlineSummaries.map((node) => [node.uuid, node.online]),
-    );
-    return visibleMeta.map((node) => ({
-      ...node,
-      online: onlineByUuid.get(node.uuid) ?? null,
+  const onlineByUuid = useMemo(
+    () => new Map(nodeOnlineSummaries.map((node) => [node.uuid, node.online] as const)),
+    [nodeOnlineSummaries],
+  );
+  const visibleNodes = useMemo(() => {
+    if (needsLiveSummaries) {
+      return liveSummaries.filter(
+        (node) => (includeHidden || !node.hidden) && !hiddenUuids.has(node.uuid),
+      );
+    }
+    return visibleMeta.map((meta) => ({
+      uuid: meta.uuid,
+      group: String(meta.group || "").trim(),
+      region: String(meta.region || "").trim(),
+      hidden: meta.hidden,
+      weight: meta.weight,
+      online: onlineByUuid.get(meta.uuid) ?? null,
+      trafficUp: 0,
+      trafficDown: 0,
+      netUp: 0,
+      netDown: 0,
     }));
-  }, [nodeOnlineSummaries, visibleMeta]);
+  }, [hiddenUuids, includeHidden, liveSummaries, needsLiveSummaries, onlineByUuid, visibleMeta]);
+  const renewalNodes = useMemo(
+    () =>
+      visibleMeta.map((node) => ({
+        ...node,
+        online: onlineByUuid.get(node.uuid) ?? null,
+      })),
+    [onlineByUuid, visibleMeta],
+  );
   const trafficUuids = useMemo(
     () => visibleMeta.map((node) => node.uuid),
     [visibleMeta],
@@ -382,10 +413,6 @@ export function NodeGrid() {
     for (const node of visibleMeta) map.set(node.uuid, node.name?.trim() || node.uuid);
     return map;
   }, [visibleMeta]);
-  const overview = useMemo<HomeOverview>(
-    () => summarizeHomeOverview(visibleNodes),
-    [visibleNodes],
-  );
   const showHomeOverview = themeSettings.isReady && themeSettings.showHomeOverview;
   const showTrafficPopover = themeSettings.isReady && themeSettings.showTodayTrafficPopover;
   const hasNodes = visibleMeta.length > 0;
@@ -448,13 +475,21 @@ export function NodeGrid() {
     return map;
   }, [costSummary]);
   const costLoading = costNeeded && rateQuery.isLoading;
+  // 分组与地区筛选仅依赖元数据，不随 2s 实时带宽波动重算。
   const groupOptions = useMemo(
     () =>
       sortHomeGroupOptions(
-        getHomeGroupOptions(visibleNodes),
+        getHomeGroupOptions(visibleMeta),
         themeSettings.isReady ? themeSettings.homeGroupOrder : [],
       ),
-    [visibleNodes, themeSettings.homeGroupOrder, themeSettings.isReady],
+    [visibleMeta, themeSettings.homeGroupOrder, themeSettings.isReady],
+  );
+  const groupFilteredMeta = useMemo(
+    () =>
+      selectedGroup === HOME_ALL_GROUP
+        ? visibleMeta
+        : visibleMeta.filter((node) => getHomeGroupLabel(node.group) === selectedGroup),
+    [visibleMeta, selectedGroup],
   );
   const groupFilteredNodes = useMemo(
     () =>
@@ -466,14 +501,14 @@ export function NodeGrid() {
   // 地区选项在分组筛选之后统计,让国旗计数反映当前分组内的分布。
   const regionOptions = useMemo(
     () => getHomeRegionOptions(
-      groupFilteredNodes,
+      groupFilteredMeta,
       themeSettings.isReady ? themeSettings.homeRegionOrder : [],
     ),
-    [groupFilteredNodes, themeSettings.homeRegionOrder, themeSettings.isReady],
+    [groupFilteredMeta, themeSettings.homeRegionOrder, themeSettings.isReady],
   );
   const availableRegions = useMemo(
-    () => getHomeRegionOptions(visibleNodes).map(({ code }) => code),
-    [visibleNodes],
+    () => getHomeRegionOptions(visibleMeta).map(({ code }) => code),
+    [visibleMeta],
   );
   const reorderGroups = useCallback((visibleOrder: string[]) => {
     reorderFilters({ field: "homeGroupOrder", visibleOrder, availableOrder: groupOptions });
@@ -628,7 +663,7 @@ export function NodeGrid() {
       <HomeBrand siteName={siteName} />
       {mapBackgroundEnabled && (
         <Suspense fallback={null}>
-          <NodeMapBackground nodes={visibleNodes} />
+          <NodeMapBackground nodes={renewalNodes} />
         </Suspense>
       )}
       <div
@@ -637,7 +672,8 @@ export function NodeGrid() {
       >
         {showHomeOverview && (
           <HomeOverviewCards
-            overview={overview}
+            includeHidden={includeHidden}
+            hiddenUuids={hiddenUuids}
             dense={mode === "mini" || mode === "list"}
             mapBackground={mapBackgroundEnabled}
             showDetailButton={showCostDetailButton}

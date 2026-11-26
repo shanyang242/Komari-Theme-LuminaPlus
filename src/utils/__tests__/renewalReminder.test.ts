@@ -7,6 +7,7 @@ import {
   renewalCycleKey,
 } from "@/utils/renewalReminder";
 import { getExpireDaysRemaining } from "@/utils/format";
+import { pruneRenewalReminderPreferences } from "@/components/node/RenewalReminder";
 
 const DAY_MS = 86_400_000;
 const NOW = Date.UTC(2026, 6, 12, 0, 0, 0);
@@ -123,5 +124,69 @@ describe("renewal reminders", () => {
     expect(
       getVisibleRenewalReminders(reminders, preferences, NOW + 2 * DAY_MS).map((item) => item.uuid),
     ).toEqual(["snooze", "visible"]);
+  });
+
+  it("prunes expired snoozes and obsolete dismissed cycles while preserving active offline expired cycles", () => {
+    const activeUpcoming = node({ uuid: "node-renewed", expired_at: inDays(30) });
+    const offlineExpired = node({ uuid: "node-expired", expired_at: inDays(-3), online: false });
+    const activeKey = renewalCycleKey(activeUpcoming)!;
+    const oldRenewedKey = renewalCycleKey(node({ uuid: "node-renewed", expired_at: inDays(1) }))!;
+    const offlineExpiredKey = renewalCycleKey(offlineExpired)!;
+    const deletedOldKey = `node-deleted:${NOW - 5 * DAY_MS}`;
+
+    const pruned = pruneRenewalReminderPreferences(
+      {
+        dismissedCycles: [oldRenewedKey, activeKey, offlineExpiredKey, deletedOldKey, "malformed"],
+        snoozedUntil: {
+          [activeKey]: NOW + DAY_MS,
+          [oldRenewedKey]: NOW + DAY_MS,
+          [offlineExpiredKey]: NOW - 1_000,
+        },
+      },
+      [activeUpcoming, offlineExpired],
+      NOW,
+    );
+
+    expect(pruned).toEqual({
+      dismissedCycles: [activeKey, offlineExpiredKey],
+      snoozedUntil: { [activeKey]: NOW + DAY_MS },
+    });
+  });
+
+  it("keeps dismissed cycles older than 30 days until nodes load so page refresh does not resurface them", () => {
+    const expired31d = node({ uuid: "node-31d", expired_at: inDays(-31), online: true });
+    const expired31dKey = renewalCycleKey(expired31d)!;
+    const deleted31dKey = `node-deleted:${NOW - 31 * DAY_MS}`;
+
+    // 刷新页面瞬间节点列表尚未加载（nodes 为空）：不得按 30 天误删仍有效的忽略记录
+    const beforeNodesLoaded = pruneRenewalReminderPreferences(
+      {
+        dismissedCycles: [expired31dKey, deleted31dKey, "malformed"],
+        snoozedUntil: {
+          [expired31dKey]: NOW - 1_000,
+        },
+      },
+      [],
+      NOW,
+    );
+    expect(beforeNodesLoaded).toEqual({
+      dismissedCycles: [expired31dKey, deleted31dKey],
+      snoozedUntil: {},
+    });
+
+    // 节点列表加载后：仍在且到期日未变的 31 天过期在线节点保持忽略，已删除节点记录被清理
+    const afterNodesLoaded = pruneRenewalReminderPreferences(
+      beforeNodesLoaded,
+      [expired31d],
+      NOW,
+    );
+    expect(afterNodesLoaded).toEqual({
+      dismissedCycles: [expired31dKey],
+      snoozedUntil: {},
+    });
+
+    const reminders = getRenewalReminders([expired31d], NOW, { requireOnlineForExpired: true });
+    expect(reminders).toHaveLength(1);
+    expect(getVisibleRenewalReminders(reminders, afterNodesLoaded, NOW)).toEqual([]);
   });
 });

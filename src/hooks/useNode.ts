@@ -2,21 +2,23 @@ import { useCallback, useEffect, useSyncExternalStore } from "react";
 import {
   retainStore,
   getAllNodeMetaSnapshot,
+  getFailureStreakSnapshot,
   getHomeNodeSummariesSnapshot,
   getNodeMetaSnapshot,
   getNodeMetricsSnapshot,
   getNodeTrafficTrendSnapshot,
   getNodeOnlineSummariesSnapshot,
+  getStoreHydrationSnapshot,
   getVisibleNodeUuidsSnapshot,
+  subscribeFailureStreak,
   subscribeHomeNodeSummaries,
   subscribeNodeOnlineSummaries,
   subscribeAllNodes,
-  subscribeStoreStatus,
+  subscribeStoreHydration,
   subscribeVisibleNodeUuids,
   subscribeToNodeMeta,
   subscribeToNodeMetrics,
   subscribeToNodeTrafficTrend,
-  getStoreStatusSnapshot,
   type HomeNodeSummary,
   type NodeOnlineSummary,
 } from "@/services/wsStore";
@@ -104,13 +106,20 @@ export function useAllNodeMeta(): NodeInfo[] {
   );
 }
 
-export function useHomeNodeSummaries(): HomeNodeSummary[] {
-  useEnsured();
-  return useSyncExternalStore(
-    subscribeHomeNodeSummaries,
-    getHomeNodeSummariesSnapshot,
-    getHomeNodeSummariesSnapshot,
+const EMPTY_HOME_NODE_SUMMARIES: HomeNodeSummary[] = [];
+
+export function useHomeNodeSummaries(enabled = true): HomeNodeSummary[] {
+  useEnsured(enabled);
+  const subscribe = useCallback(
+    (listener: () => void) =>
+      enabled ? subscribeHomeNodeSummaries(listener) : noopUnsubscribe,
+    [enabled],
   );
+  const getSnapshot = useCallback(
+    () => (enabled ? getHomeNodeSummariesSnapshot() : EMPTY_HOME_NODE_SUMMARIES),
+    [enabled],
+  );
+  return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 }
 
 export function useNodeOnlineSummaries(): NodeOnlineSummary[] {
@@ -123,7 +132,6 @@ export function useNodeOnlineSummaries(): NodeOnlineSummary[] {
 }
 
 const EMPTY_STORE_STATUS = {
-  failureStreak: 0,
   hydrated: false,
   nodeInfoError: false,
 } as const;
@@ -131,11 +139,12 @@ const EMPTY_STORE_STATUS = {
 export function useNodeStoreStatus(enabled = true) {
   useEnsured(enabled);
   const subscribe = useCallback(
-    (listener: () => void) => (enabled ? subscribeStoreStatus(listener) : noopUnsubscribe),
+    (listener: () => void) =>
+      enabled ? subscribeStoreHydration(listener) : noopUnsubscribe,
     [enabled],
   );
   const getSnapshot = useCallback(
-    () => (enabled ? getStoreStatusSnapshot() : EMPTY_STORE_STATUS),
+    () => (enabled ? getStoreHydrationSnapshot() : EMPTY_STORE_STATUS),
     [enabled],
   );
   return useSyncExternalStore(
@@ -143,4 +152,18 @@ export function useNodeStoreStatus(enabled = true) {
     getSnapshot,
     getSnapshot,
   );
+}
+
+export function useNodeFailureStreak(enabled = true): number {
+  useEnsured(enabled);
+  const subscribe = useCallback(
+    (listener: () => void) =>
+      enabled ? subscribeFailureStreak(listener) : noopUnsubscribe,
+    [enabled],
+  );
+  const getSnapshot = useCallback(
+    () => (enabled ? getFailureStreakSnapshot() : 0),
+    [enabled],
+  );
+  return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 }

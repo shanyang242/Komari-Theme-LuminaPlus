@@ -558,4 +558,32 @@ describe("homepage ping polling selection", () => {
     expect(requestSignal?.aborted).toBe(true);
     expect(result.singleItems.get("node-a")?.lastValue).toBeNull();
   });
+
+  it("keeps max at least 1 when server stats report max: 0", () => {
+    const items = buildPingOverviewItems(
+      7,
+      [],
+      [
+        {
+          client: "node-a",
+          taskId: 7,
+          name: "CT",
+          type: "icmp",
+          interval: 60,
+          total: 5,
+          valid: 0,
+          loss: 100,
+          min: 0,
+          max: 0,
+          avg: 0,
+          latest: null,
+          p50: null,
+          p99: null,
+          p99P50Ratio: 0,
+          stddev: null,
+        },
+      ],
+    );
+    expect(items.get("node-a")?.max).toBe(1);
+  });
 });

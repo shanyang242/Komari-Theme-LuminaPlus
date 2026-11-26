@@ -64,6 +64,35 @@ describe("fillMissingMetricPoints", () => {
 
     expect(filled[filled.length - 1]).toMatchObject({ time: 20, v: 4 });
   });
+
+  it("caps synthetic gap filling across extreme time spans while preserving real samples and break sentinels", () => {
+    const points: TimedMetricPoint[] = [
+      { time: 1_000, v: 10 },
+      { time: 1_010, v: 20 },
+      // 10 年异常跨度
+      { time: 315_361_000, v: 30 },
+      { time: 315_361_010, v: 40 },
+    ];
+    const filled = fillMissingMetricPoints(points, {
+      intervalSeconds: 10,
+      maxPoints: 100,
+    });
+
+    expect(filled.length).toBeLessThanOrEqual(100);
+    // 所有真实采样必须保留
+    expect(filled.filter((p) => p.v != null).map((p) => [p.time, p.v])).toEqual([
+      [1_000, 10],
+      [1_010, 20],
+      [315_361_000, 30],
+      [315_361_010, 40],
+    ]);
+    // 巨大空缺之间应至少有一个 null 断点
+    expect(filled.some((p) => p.v === null && p.time > 1_010 && p.time < 315_361_000)).toBe(true);
+    // 时间戳严格升序
+    for (let i = 1; i < filled.length; i += 1) {
+      expect(filled[i].time).toBeGreaterThan(filled[i - 1].time);
+    }
+  });
 });
 
 describe("cutPeakValues", () => {
@@ -98,6 +127,36 @@ describe("cutPeakValues", () => {
     expect(out[1].t1).toBeNull();
     expect(out[2].t1).toBeNull();
     expect(out[3].t1).toBeNull();
+  });
+
+  it("detects spikes symmetrically without left-to-right mutation bias and backfills leading spikes", () => {
+    // 开头尖峰 500：旧实现单向 EWMA 在首点无历史值导致首点变成 null（伪丢包断点）。
+    const leadingSpike = [
+      { time: 1, t1: 500 },
+      { time: 2, t1: 20 },
+      { time: 3, t1: 21 },
+      { time: 4, t1: 20 },
+      { time: 5, t1: 19 },
+    ];
+    const out = cutPeakValues(leadingSpike, ["t1"]);
+    expect(typeof out[0].t1).toBe("number");
+    expect(out[0].t1).toBeLessThan(100);
+
+    // 镜像对称的尖峰位置应得到一致的判定（不因左侧先置空而改变右侧邻域均值）
+    const forward = [
+      { time: 1, t1: 20 },
+      { time: 2, t1: 20 },
+      { time: 3, t1: 200 },
+      { time: 4, t1: 40 },
+      { time: 5, t1: 20 },
+      { time: 6, t1: 20 },
+    ];
+    const reversed = [...forward].reverse().map((p, idx) => ({ ...p, time: idx + 1 }));
+    const outF = cutPeakValues(forward, ["t1"], 0.1, 5, 0.3);
+    const outR = cutPeakValues(reversed, ["t1"], 0.1, 5, 0.3);
+    // 尖峰 200 两侧均被压低，不会残留原值
+    expect(outF[2].t1).toBeLessThan(50);
+    expect(outR[3].t1).toBeLessThan(50);
   });
 });
 

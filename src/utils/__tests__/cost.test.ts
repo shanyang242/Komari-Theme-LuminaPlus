@@ -9,6 +9,7 @@ import {
   normalizeCostIgnoredNodes,
   normalizeCostPremiums,
   normalizeCostRateApiUrl,
+  parseRatePayload,
   DEFAULT_COST_RATE_API_URL,
 } from "@/utils/cost";
 import type { NodeInfo } from "@/types/komari";
@@ -539,5 +540,94 @@ describe("cost helpers", () => {
     await expect(getExchangeRates(url, { signal: controller.signal })).rejects.toThrow(
       "cancelled",
     );
+  });
+
+  it("does not turn blank paidCny strings into 0 and preserves UTC+14 same-day acquiredAt", () => {
+    const utcPlus14 = new Date(Date.now() + 14 * 60 * 60 * 1000);
+    const eastToday = [
+      utcPlus14.getUTCFullYear(),
+      String(utcPlus14.getUTCMonth() + 1).padStart(2, "0"),
+      String(utcPlus14.getUTCDate()).padStart(2, "0"),
+    ].join("-");
+
+    expect(
+      normalizeCostPremiums({
+        blankPaidZero: { amount: 0, paidCny: "" },
+        blankPaidPos: { amount: 15, paidCny: "   ", acquiredAt: eastToday },
+      }),
+    ).toEqual({
+      blankPaidPos: { amount: 15, acquiredAt: eastToday },
+    });
+  });
+
+  it("honors non-USD base/base_code without fabricating USD: 1 (including after cache reload)", async () => {
+    // CNY 基准省略 CNY: 1 时不再抛 target rate missing
+    const cnyBase = parseRatePayload({
+      base: "CNY",
+      rates: { USD: 0.14, EUR: 0.13 },
+    });
+    expect(cnyBase.rates).toEqual({ CNY: 1, USD: 0.14, EUR: 0.13 });
+
+    const cnyArray = parseRatePayload([
+      { base: "CNY", quote: "USD", rate: 0.14 },
+    ]);
+    expect(cnyArray.rates).toEqual({ CNY: 1, USD: 0.14 });
+
+    // EUR 基准省略 EUR: 1 且缺 USD 时，EUR 正常折算，USD 标为汇率缺失，缓存回读同样不会注入 USD: 1
+    const entries = new Map<string, string>();
+    vi.stubGlobal("localStorage", {
+      getItem: (name: string) => entries.get(name) ?? null,
+      setItem: (name: string, value: string) => entries.set(name, value),
+    });
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ base_code: "EUR", rates: { CNY: 7.8 } }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const url = "https://rates.test/eur";
+    const fresh = await getExchangeRates(url);
+    expect(fresh.rates).toEqual({ EUR: 1, CNY: 7.8 });
+    expect(fresh.rates.USD).toBeUndefined();
+
+    // 命中 localStorage 缓存再读取一次
+    const cached = await getExchangeRates(url);
+    expect(cached.rates).toEqual({ EUR: 1, CNY: 7.8 });
+    expect(cached.rates.USD).toBeUndefined();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    // 无 base 字段的旧格式缓存（URL 带 ?base=EUR 且已有非 1 的 USD）回读时不得把 USD 覆盖为 1
+    const legacyEurUrl = "https://rates.test/legacy?base=EUR";
+    entries.set(
+      `komaritheme:cost-rates:${legacyEurUrl}`,
+      JSON.stringify({ rates: { CNY: 7.8, USD: 1.1 }, time: Date.now() }),
+    );
+    const legacyCached = await getExchangeRates(legacyEurUrl);
+    expect(legacyCached.rates).toEqual({ EUR: 1, CNY: 7.8, USD: 1.1 });
+
+    // 无 base 字段但已含非 1 的 USD 时，parseRatePayload 同样不得覆写 USD: 1
+    expect(parseRatePayload({ rates: { CNY: 7.8, USD: 1.1 } }).rates).toEqual({
+      CNY: 7.8,
+      USD: 1.1,
+    });
+
+    const summary = calculateCostSummary(
+      [
+        node({ uuid: "eur-node", price: 10, currency: "EUR", billing_cycle: "monthly" }),
+        node({ uuid: "usd-node", price: 10, currency: "USD", billing_cycle: "monthly" }),
+      ],
+      [],
+      cached.rates,
+    );
+    expect(summary.details.find((d) => d.uuid === "eur-node")).toMatchObject({
+      counted: true,
+      priceCny: 78,
+    });
+    expect(summary.details.find((d) => d.uuid === "usd-node")).toMatchObject({
+      counted: false,
+      note: "汇率缺失",
+    });
   });
 });

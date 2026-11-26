@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { HomeNodeSummary } from "@/services/wsStore";
 import {
   reconcileSpeedOrder,
+  sortFieldNeedsLiveSummaries,
   sortHomeNodes,
   type HomeSortContext,
   type HomeSortDirection,
@@ -138,5 +139,15 @@ describe("reconcileSpeedOrder", () => {
       node({ uuid: "offfresh", online: false }),
     ];
     expect(reconcileSpeedOrder(nodes, ["a"]).map((n) => n.uuid)).toEqual(["a", "fresh", "offfresh"]);
+  });
+});
+
+describe("sortFieldNeedsLiveSummaries", () => {
+  it("requires live summaries for both speed and traffic sorting, but not static metadata sorts", () => {
+    expect(sortFieldNeedsLiveSummaries("speed")).toBe(true);
+    expect(sortFieldNeedsLiveSummaries("traffic")).toBe(true);
+    expect(sortFieldNeedsLiveSummaries("default")).toBe(false);
+    expect(sortFieldNeedsLiveSummaries("name")).toBe(false);
+    expect(sortFieldNeedsLiveSummaries("price")).toBe(false);
   });
 });

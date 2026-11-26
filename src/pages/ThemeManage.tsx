@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Link, Navigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -36,15 +36,17 @@ import { useAdminEntryPath } from "@/hooks/useAdminEntryPath";
 import { useHourlyClock } from "@/hooks/useClock";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { MOBILE_VIEWPORT_QUERY } from "@/utils/mediaQuery";
+import { formatLocalDateKey } from "@/utils/format";
 import { queryClient } from "@/services/queryClient";
 import {
   ApiRequestError,
   getAdminClients,
   getAdminPingTasks,
   getNodes,
+  getPublic,
   saveThemeSettings,
 } from "@/services/api";
-import type { AdminClient, PingTask, ThemeSettings } from "@/types/komari";
+import type { AdminClient, PingTask, PublicConfig, ThemeSettings } from "@/types/komari";
 import {
   DEFAULT_BACKGROUND_VIDEO_URL,
   type BackgroundPosition,
@@ -52,6 +54,7 @@ import {
   normalizeBackgroundAlignment,
   normalizeBackgroundUrl,
   normalizeBackgroundVideoUrl,
+  normalizeSurfaceOpacity,
   parseBackgroundAlignment,
 } from "@/utils/background";
 import {
@@ -138,12 +141,7 @@ const AMBIENT_EFFECT_OPTIONS: Array<{
 ];
 
 function localDateInputMax() {
-  const now = new Date();
-  return [
-    now.getFullYear(),
-    String(now.getMonth() + 1).padStart(2, "0"),
-    String(now.getDate()).padStart(2, "0"),
-  ].join("-");
+  return formatLocalDateKey(Date.now());
 }
 
 const OVERVIEW_RATING_LABEL_FIELDS: Array<{
@@ -356,15 +354,88 @@ function pickManagedThemeSettings(settings: ResolvedThemeSettings) {
   };
 }
 
-function managedSettingsSignature(settings: ThemeSettings & Record<string, unknown>) {
-  return JSON.stringify(pickManagedThemeSettings(normalizeThemeSettings(settings)));
-}
-
 type ManagedThemeSettings = ReturnType<typeof pickManagedThemeSettings>;
 
-// 表单草稿:与托管设置同名同构,仅三处以「编辑态」存储——隐藏/忽略列表在表单里是多行文本
-// (提交时再归一化回数组),三个评级名称合成按 kind 索引的对象(UI 按 OVERVIEW_RATING_LABEL_FIELDS
-// 循环渲染)。其余字段直接透传,不维护第二份键清单。
+export function patchMultiPingTaskSlots(
+  slots: ReadonlyArray<number | null>,
+  slot: number,
+  rawValue: string,
+): Array<number | null> {
+  const next = Array.from(
+    { length: HOMEPAGE_MULTI_PING_TASK_COUNT },
+    (_, index) => slots[index] ?? null,
+  );
+  if (slot < 0 || slot >= next.length) return next;
+  if (rawValue === "") {
+    next[slot] = null;
+    return next;
+  }
+  const nextId = Number(rawValue);
+  if (!Number.isInteger(nextId) || nextId <= 0) return next;
+  const previousId = next[slot];
+  const occupiedSlot = next.indexOf(nextId);
+  next[slot] = nextId;
+  if (occupiedSlot >= 0 && occupiedSlot !== slot) {
+    next[occupiedSlot] = previousId ?? null;
+  }
+  return next;
+}
+
+export function mergeManagedThemeSettingsDiff(
+  remoteSettings: Record<string, unknown> | undefined,
+  baselineManaged: Record<string, unknown>,
+  draftManaged: Record<string, unknown>,
+): Record<string, unknown> {
+  const next: Record<string, unknown> = { ...(remoteSettings ?? {}) };
+  for (const key of Object.keys(draftManaged)) {
+    if (JSON.stringify(draftManaged[key]) !== JSON.stringify(baselineManaged[key])) {
+      next[key] = draftManaged[key];
+    }
+  }
+  if ("homepagePingBindings" in next) {
+    delete next.homepagePingTask;
+  }
+  return next;
+}
+
+/** 判断远端 public 配置刷新时是否应回灌草稿及基线：已初始化且有未保存编辑时保持原基线。 */
+export function shouldReseedThemeDraft(
+  lastSeededSignature: string | null,
+  sourceSignature: string,
+  isDirty: boolean,
+): boolean {
+  if (lastSeededSignature === sourceSignature) return false;
+  if (lastSeededSignature !== null && isDirty) return false;
+  return true;
+}
+
+/**
+ * 保存请求在途期间用户继续编辑时，以刚落库的 savedDraft 为新基线做三方合并：
+ * 保留提交之后的新增编辑（含把开关改回保存前原值），同时吸收本次保存合并进来的远端并发修改。
+ */
+export function rebaseThemeDraftAfterSave<T extends Record<string, unknown>>(
+  savedDraft: T,
+  submittedDraft: T,
+  latestDraft: T,
+): T {
+  const next = { ...savedDraft };
+  for (const key of Object.keys(latestDraft) as Array<keyof T>) {
+    if (JSON.stringify(latestDraft[key]) !== JSON.stringify(submittedDraft[key])) {
+      next[key] = latestDraft[key];
+    }
+  }
+  return next;
+}
+
+function slotsFromTaskIds(ids: number[]): Array<number | null> {
+  return Array.from(
+    { length: HOMEPAGE_MULTI_PING_TASK_COUNT },
+    (_, index) => ids[index] ?? null,
+  );
+}
+
+// 表单草稿:与托管设置同名同构,编辑态专属字段单独表达(多行列表文本、评级名称映射、
+// 允许清空重输的数值字符串、以及固定长度的三网槽位数组)。
 type ThemeDraft = Omit<
   ManagedThemeSettings,
   | "hiddenNodes"
@@ -372,10 +443,16 @@ type ThemeDraft = Omit<
   | "trafficRatingLabels"
   | "bandwidthRatingLabels"
   | "assetRatingLabels"
+  | "surfaceOpacity"
+  | "homeHeaderVisibleSeconds"
+  | "homepageMultiPingTaskIds"
 > & {
   ratingLabels: Record<OverviewRatingKind, string>;
   hiddenNodesText: string;
   costIgnoredText: string;
+  surfaceOpacityText: string;
+  homeHeaderVisibleSecondsText: string;
+  homepageMultiPingTaskSlots: Array<number | null>;
 };
 
 // 服务端设置 → 表单草稿。reseed effect 和重置按钮都经 seedDrafts 走这里。
@@ -386,6 +463,9 @@ function draftFromSettings(settings: ResolvedThemeSettings): ThemeDraft {
     trafficRatingLabels,
     bandwidthRatingLabels,
     assetRatingLabels,
+    surfaceOpacity,
+    homeHeaderVisibleSeconds,
+    homepageMultiPingTaskIds,
     ...rest
   } = pickManagedThemeSettings(settings);
   return {
@@ -397,6 +477,9 @@ function draftFromSettings(settings: ResolvedThemeSettings): ThemeDraft {
     },
     hiddenNodesText: hiddenNodes.join("\n"),
     costIgnoredText: costIgnoredNodes.join("\n"),
+    surfaceOpacityText: String(surfaceOpacity),
+    homeHeaderVisibleSecondsText: String(homeHeaderVisibleSeconds),
+    homepageMultiPingTaskSlots: slotsFromTaskIds(homepageMultiPingTaskIds),
   };
 }
 
@@ -869,6 +952,64 @@ const MerchantLinkConfigControl = memo(function MerchantLinkConfigControl({
   );
 });
 
+const TrafficResetConfigControl = memo(function TrafficResetConfigControl({
+  clients,
+  days,
+  configuredNodeCount,
+  now,
+  disabled,
+  saving,
+  saveDisabled,
+  saveError,
+  onChange,
+  onSave,
+}: {
+  clients: AdminClient[];
+  days: Record<string, number>;
+  configuredNodeCount: number;
+  now: number;
+  disabled: boolean;
+  saving: boolean;
+  saveDisabled: boolean;
+  saveError: string | null;
+  onChange: (next: Record<string, number>) => void;
+  onSave: () => Promise<boolean>;
+}) {
+  const [open, setOpen] = useState(false);
+  const close = useCallback(() => setOpen(false), []);
+
+  return (
+    <>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <span className="text-[13px] text-[var(--text-secondary)]">
+          已自定义 {configuredNodeCount} 台，其余跟随账单日
+        </span>
+        <button
+          type="button"
+          disabled={disabled}
+          onClick={() => setOpen(true)}
+          className="theme-manage-button"
+        >
+          <SlidersHorizontal size={14} />配置重置日
+        </button>
+      </div>
+      {open && (
+        <TrafficResetConfigPanel
+          clients={clients}
+          days={days}
+          now={now}
+          saving={saving}
+          saveDisabled={saveDisabled}
+          saveError={saveError}
+          onChange={onChange}
+          onClose={close}
+          onSave={onSave}
+        />
+      )}
+    </>
+  );
+});
+
 export function ThemeManage() {
   const isMobileViewport = useMediaQuery(MOBILE_VIEWPORT_QUERY, true);
   const now = useHourlyClock();
@@ -880,16 +1021,40 @@ export function ThemeManage() {
     error: configError,
     refetch: refetchConfig,
   } = usePublicConfig();
-  // 全部托管设置收敛为单个草稿对象。之前是 30 个平行 useState,每新增一项设置要同步维护
-  // 声明/seedDrafts/payload/依赖数组四处清单;现在键清单只在 pickManagedThemeSettings 一处。
+  const sourceThemeSettings = useMemo(
+    () => normalizeThemeSettings(config?.theme_settings),
+    [config?.theme_settings],
+  );
+  const sourceManagedSettings = useMemo(
+    () => pickManagedThemeSettings(sourceThemeSettings),
+    [sourceThemeSettings],
+  );
+  // 按内容判断服务端设置是否真的变化，避免同内容 refetch 重置草稿。
+  const sourceSignature = useMemo(
+    () => JSON.stringify(sourceManagedSettings),
+    [sourceManagedSettings],
+  );
+  // 全部托管设置收敛为单个草稿对象，并独立记录草稿最后一次初始化/回灌时的基线，
+  // 避免 public 查询后台刷新后，把其他端的新增改动误算为本页的“反改”而覆盖掉。
+  const [seededThemeSettings, setSeededThemeSettings] = useState<ResolvedThemeSettings>(() =>
+    config ? sourceThemeSettings : DEFAULT_THEME_SETTINGS,
+  );
   const [draft, setDraft] = useState<ThemeDraft>(() =>
-    draftFromSettings(DEFAULT_THEME_SETTINGS),
+    draftFromSettings(config ? sourceThemeSettings : DEFAULT_THEME_SETTINGS),
+  );
+  const lastSeededSignatureRef = useRef<string | null>(config ? sourceSignature : null);
+  const seededManagedSettings = useMemo(
+    () => pickManagedThemeSettings(seededThemeSettings),
+    [seededThemeSettings],
+  );
+  const seededSignature = useMemo(
+    () => JSON.stringify(seededManagedSettings),
+    [seededManagedSettings],
   );
   const [expandedTaskId, setExpandedTaskId] = useState<number | null>(null);
   const [taskSearch, setTaskSearch] = useState("");
   const [nodeSearch, setNodeSearch] = useState("");
   const [premiumSearch, setPremiumSearch] = useState("");
-  const [trafficResetOpen, setTrafficResetOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -905,6 +1070,14 @@ export function ThemeManage() {
       setDraft((prev) => (Object.is(prev[key], value) ? prev : { ...prev, [key]: value }));
     },
     [],
+  );
+  const patchNodeMerchantLinks = useCallback(
+    (next: NodeMerchantLinks) => patch("nodeMerchantLinks", next),
+    [patch],
+  );
+  const patchTrafficResetDays = useCallback(
+    (next: Record<string, number>) => patch("trafficResetDays", next),
+    [patch],
   );
   // 绑定关系的三个入口(勾选/全选/清空)都是基于前值的函数式更新,单独收口。
   const patchBindings = useCallback(
@@ -924,17 +1097,10 @@ export function ThemeManage() {
   const patchMultiPingTask = useCallback((slot: number, rawValue: string) => {
     editVersionRef.current += 1;
     setDraft((prev) => {
-      const nextIds = [...prev.homepageMultiPingTaskIds];
-      if (rawValue === "") {
-        nextIds.splice(slot, 1);
-      } else {
-        nextIds[slot] = Number(rawValue);
-      }
-      const homepageMultiPingTaskIds = normalizeHomepageMultiPingTaskIds(nextIds);
-      return JSON.stringify(homepageMultiPingTaskIds) ===
-        JSON.stringify(prev.homepageMultiPingTaskIds)
+      const nextSlots = patchMultiPingTaskSlots(prev.homepageMultiPingTaskSlots, slot, rawValue);
+      return nextSlots.every((id, index) => id === prev.homepageMultiPingTaskSlots[index])
         ? prev
-        : { ...prev, homepageMultiPingTaskIds };
+        : { ...prev, homepageMultiPingTaskSlots: nextSlots };
     });
   }, []);
   const patchNodeMultiPingTaskIds = useCallback(
@@ -971,19 +1137,10 @@ export function ThemeManage() {
     retry: false,
   });
 
-  const sourceThemeSettings = useMemo(
-    () => normalizeThemeSettings(config?.theme_settings),
-    [config?.theme_settings],
-  );
-  // 按内容判断服务端设置是否真的变化，避免同内容 refetch 重置草稿。
-  const sourceSignature = useMemo(
-    () => JSON.stringify(pickManagedThemeSettings(sourceThemeSettings)),
-    [sourceThemeSettings],
-  );
-  const lastSeededSignatureRef = useRef<string | null>(null);
-
-  // 把服务端设置灌入草稿的唯一出口,reseed effect 和重置按钮都走它,避免两边逻辑漂移。
+  // 把服务端设置灌入草稿与差异基线的唯一出口,reseed effect、保存后和重置按钮都走它。
   const seedDrafts = useCallback((next: ResolvedThemeSettings) => {
+    lastSeededSignatureRef.current = JSON.stringify(pickManagedThemeSettings(next));
+    setSeededThemeSettings(next);
     setDraft(draftFromSettings(next));
   }, []);
 
@@ -1077,8 +1234,8 @@ export function ThemeManage() {
   );
 
   const premiumConfiguredCount = useMemo(
-    () => Object.keys(draft.costPremiums).length,
-    [draft.costPremiums],
+    () => sortedClients.filter((client) => Boolean(draft.costPremiums[client.uuid])).length,
+    [draft.costPremiums, sortedClients],
   );
 
   // 收购价清空即删条目；溢价按收购日的回算剩余价值算出并固化，不随后续续费/汇率漂移。
@@ -1141,15 +1298,22 @@ export function ThemeManage() {
     () => normalizeNodeIdentityList(draft.hiddenNodesText),
     [draft.hiddenNodesText],
   );
+  const draftMultiPingTaskIds = useMemo(
+    () =>
+      normalizeHomepageMultiPingTaskIds(
+        draft.homepageMultiPingTaskSlots.filter((id): id is number => id != null),
+      ),
+    [draft.homepageMultiPingTaskSlots],
+  );
   const draftCostRateApiUrlInvalid =
     draft.costRateApiUrl.trim() !== "" && !isCostRateApiUrlValid(draft.costRateApiUrl.trim());
   const draftMultiPingInvalid =
     draft.enableHomepageMultiPing &&
-    draft.homepageMultiPingTaskIds.length !== HOMEPAGE_MULTI_PING_TASK_COUNT;
+    (draft.homepageMultiPingTaskSlots.some((id) => id == null) ||
+      draftMultiPingTaskIds.length !== HOMEPAGE_MULTI_PING_TASK_COUNT);
 
   // 由当前草稿拼出的设置 payload,保存请求和 dirty 判断都用它。草稿字段与设置同名,这里只做
-  // 「编辑态 → 存储态」的换形与归一化;文本域(hiddenNodesText/costIgnoredText)和 ratingLabels
-  // 解构出来换回存储字段,其余原样透传。
+  // 「编辑态 → 存储态」的换形与归一化;文本域与槽位字段解构出来换回存储字段,其余原样透传。
   const normalizedBackgroundVideo = normalizeBackgroundVideoUrl(draft.backgroundVideo);
   const normalizedBackgroundVideoDark = normalizeBackgroundVideoUrl(draft.backgroundVideoDark);
   const backgroundVideoLightMalformed =
@@ -1167,11 +1331,16 @@ export function ThemeManage() {
       ratingLabels,
       hiddenNodesText,
       costIgnoredText,
+      surfaceOpacityText,
+      homeHeaderVisibleSecondsText,
+      homepageMultiPingTaskSlots,
       ...rest
     } = draft;
+    void homepageMultiPingTaskSlots;
     return {
       ...rest,
       homepagePingBindings: pruneBindings(rest.homepagePingBindings),
+      homepageMultiPingTaskIds: draftMultiPingTaskIds,
       homepageMultiPingNodeTaskIds: normalizeHomepageMultiPingNodeTaskIds(
         rest.homepageMultiPingNodeTaskIds,
       ),
@@ -1186,41 +1355,69 @@ export function ThemeManage() {
       backgroundImage: normalizeBackgroundUrl(rest.backgroundImage),
       backgroundImageMobile: normalizeBackgroundUrl(rest.backgroundImageMobile),
       backgroundVideo: backgroundVideoLightMalformed
-        ? sourceThemeSettings.backgroundVideo
+        ? seededThemeSettings.backgroundVideo
         : normalizedBackgroundVideo || DEFAULT_BACKGROUND_VIDEO_URL,
       backgroundVideoDark: backgroundVideoDarkInvalid
-        ? sourceThemeSettings.backgroundVideoDark
+        ? seededThemeSettings.backgroundVideoDark
         : normalizedBackgroundVideoDark,
       backgroundAlignment: normalizeBackgroundAlignment(rest.backgroundAlignment),
+      surfaceOpacity:
+        surfaceOpacityText.trim() === ""
+          ? seededThemeSettings.surfaceOpacity
+          : normalizeSurfaceOpacity(surfaceOpacityText),
+      homeHeaderVisibleSeconds:
+        homeHeaderVisibleSecondsText.trim() === ""
+          ? seededThemeSettings.homeHeaderVisibleSeconds
+          : normalizeHomeHeaderVisibleSeconds(homeHeaderVisibleSecondsText),
     };
   }, [
     backgroundVideoDarkInvalid,
     backgroundVideoLightMalformed,
     draft,
+    draftMultiPingTaskIds,
     normalizedBackgroundVideo,
     normalizedBackgroundVideoDark,
-    sourceThemeSettings.backgroundVideo,
-    sourceThemeSettings.backgroundVideoDark,
+    seededThemeSettings.backgroundVideo,
+    seededThemeSettings.backgroundVideoDark,
+    seededThemeSettings.homeHeaderVisibleSeconds,
+    seededThemeSettings.surfaceOpacity,
   ]);
 
-  // 只比较本页实际管理的设置。enableAdminButton/showPingChart 这类隐藏设置会通过
-  // baseSettings 在保存时保留,但不该让表单永远显示为 dirty。
-  const draftSignature = useMemo(
-    () => managedSettingsSignature(draftThemeSettings as ThemeSettings & Record<string, unknown>),
+  // 单次归一化得到受管设置与签名，避免再套一层 normalizeThemeSettings 双重归一化。
+  const draftManagedSettings = useMemo(
+    () =>
+      pickManagedThemeSettings(
+        normalizeThemeSettings(draftThemeSettings as ThemeSettings & Record<string, unknown>),
+      ),
     [draftThemeSettings],
   );
-  // draftSignature 用的是归一化后的 cost-rate URL,非法输入会被收敛回默认值,于是非法输入
-  // 不会被判为 dirty,用户既无法保存也无法重置出来。所以单独跟踪原始文本,让编辑始终把表单
-  // 标为 dirty(重置可用),而保存按钮再额外按合法性把关(见下文)。
+  const draftSignature = useMemo(
+    () => JSON.stringify(draftManagedSettings),
+    [draftManagedSettings],
+  );
+  // 脏状态基于草稿最后一次初始化/回灌时的基线判断：后台 public 刷新不会把未编辑页误标为 dirty，
+  // 也不会污染保存时的差异基线。
   const costRateApiUrlDirty =
-    draft.costRateApiUrl.trim() !== sourceThemeSettings.costRateApiUrl;
+    draft.costRateApiUrl.trim() !== seededThemeSettings.costRateApiUrl;
   const isDirty =
-    draftSignature !== sourceSignature ||
+    draftSignature !== seededSignature ||
     costRateApiUrlDirty ||
     videoInputInvalid;
   const draftSaveInvalid =
     draftCostRateApiUrlInvalid || videoInputInvalid || draftMultiPingInvalid;
   const saveDisabled = !isDirty || draftSaveInvalid;
+
+  const adminAccessDenied =
+    (tasksError instanceof ApiRequestError &&
+      (tasksError.status === 401 || tasksError.status === 403)) ||
+    (clientsError instanceof ApiRequestError &&
+      (clientsError.status === 401 || clientsError.status === 403));
+
+  useEffect(() => {
+    if (accessRevoked || adminAccessDenied) {
+      void queryClient.invalidateQueries({ queryKey: ["me"] });
+    }
+  }, [accessRevoked, adminAccessDenied]);
 
   // 用户重新编辑后清掉「已保存」提示,避免过期的成功提示和 dirty 表单并存。
   useEffect(() => {
@@ -1228,12 +1425,12 @@ export function ThemeManage() {
   }, [isDirty]);
 
   // 服务端设置真正变化时灌入草稿。首次灌入之后,只要表单有未保存编辑(含保存中)就跳过,
-  // 避免 refetch / 其他端保存的回流静默覆盖用户草稿。
+  // 避免 refetch / 其他端保存的回流静默覆盖用户草稿或改变差异基线。
   useEffect(() => {
     if (!config) return;
-    if (lastSeededSignatureRef.current === sourceSignature) return;
-    if (lastSeededSignatureRef.current !== null && isDirty) return;
-    lastSeededSignatureRef.current = sourceSignature;
+    if (!shouldReseedThemeDraft(lastSeededSignatureRef.current, sourceSignature, isDirty)) {
+      return;
+    }
     seedDrafts(sourceThemeSettings);
   }, [config, isDirty, sourceSignature, sourceThemeSettings, seedDrafts]);
 
@@ -1258,6 +1455,10 @@ export function ThemeManage() {
       ).length,
     [draft.nodeMerchantLinks, sortedClients],
   );
+  const trafficResetConfiguredNodeCount = useMemo(
+    () => sortedClients.filter((client) => draft.trafficResetDays[client.uuid] != null).length,
+    [draft.trafficResetDays, sortedClients],
+  );
 
   // 每个 client 归属哪个 task 的反查,只在绑定草稿变化时重建。与「全选可用」reducer
   // 共用 invertBindings() 避免推导漂移,并把可选节点过滤保持在 O(tasks × clients),
@@ -1267,37 +1468,82 @@ export function ThemeManage() {
     [draft.homepagePingBindings],
   );
 
-  const handleSave = async (): Promise<boolean> => {
+  const saveContextRef = useRef({
+    config,
+    draft,
+    draftSaveInvalid,
+    seededManagedSettings,
+    draftManagedSettings,
+  });
+  useLayoutEffect(() => {
+    saveContextRef.current = {
+      config,
+      draft,
+      draftSaveInvalid,
+      seededManagedSettings,
+      draftManagedSettings,
+    };
+  }, [config, draft, draftManagedSettings, draftSaveInvalid, seededManagedSettings]);
+
+  const handleSave = useCallback(async (): Promise<boolean> => {
+    const current = saveContextRef.current;
     if (
-      !config?.theme ||
+      !current.config?.theme ||
       savingDraftRef.current ||
-      draftSaveInvalid
+      current.draftSaveInvalid
     ) {
       return false;
     }
     const submittedEditVersion = editVersionRef.current;
-    savingDraftRef.current = draft;
+    savingDraftRef.current = current.draft;
     setSaving(true);
     setError(null);
     setMessage(null);
     try {
-      const nextSettings: ThemeSettings & Record<string, unknown> = {
-        ...(config.theme_settings ?? {}),
-        ...draftThemeSettings,
-      };
-      delete nextSettings.homepagePingTask;
-      await saveThemeSettings(config.theme, nextSettings);
-      await queryClient.invalidateQueries({ queryKey: ["public"] });
+      // 保存前先拉取远端最新配置，并基于草稿最后一次初始化/回灌时的基线计算差异，
+      // 仅覆盖本页实际修改过的托管字段，避免后台刷新后覆盖其他页签刚写入的最新字段。
+      const latestPublic =
+        (await getPublic().catch(() => null)) ??
+        queryClient.getQueryData<PublicConfig>(["public"]) ??
+        current.config;
+      const nextSettings = mergeManagedThemeSettingsDiff(
+        latestPublic.theme_settings,
+        current.seededManagedSettings,
+        current.draftManagedSettings,
+      );
+      await saveThemeSettings(latestPublic.theme || current.config.theme, nextSettings);
+      queryClient.setQueryData<PublicConfig>(["public"], (prev) =>
+        prev
+          ? { ...prev, theme_settings: nextSettings }
+          : { ...latestPublic, theme_settings: nextSettings },
+      );
+      const savedResolved = normalizeThemeSettings(nextSettings);
       if (editVersionRef.current === submittedEditVersion) {
+        // 立刻按归一化后的最新设置回灌草稿与基线（例如清空 costRateApiUrl 保存后恢复为默认 URL 并清除 dirty）。
+        seedDrafts(savedResolved);
         setMessage("主题设置已保存");
+        void queryClient.invalidateQueries({ queryKey: ["public"] });
         return true;
       }
+      // 保存请求在途期间用户又修改了表单：必须把基线推进到刚保存成功的快照，同时保留提交后的新编辑
+      // （例如关闭后保存、完成前又改回开启），避免草稿与旧基线碰巧一致被误判非 dirty 而被 public 回灌覆盖。
+      const savedDraft = draftFromSettings(savedResolved);
+      const submittedDraft = savingDraftRef.current;
+      lastSeededSignatureRef.current = JSON.stringify(pickManagedThemeSettings(savedResolved));
+      setSeededThemeSettings(savedResolved);
+      if (submittedDraft) {
+        setDraft((latestDraft) =>
+          rebaseThemeDraftAfterSave(savedDraft, submittedDraft, latestDraft),
+        );
+      }
+      void queryClient.invalidateQueries({ queryKey: ["public"] });
       return false;
     } catch (saveError) {
       if (
         saveError instanceof ApiRequestError &&
         (saveError.status === 401 || saveError.status === 403)
       ) {
+        void queryClient.invalidateQueries({ queryKey: ["me"] });
         setAccessRevoked(true);
         return false;
       }
@@ -1307,7 +1553,7 @@ export function ThemeManage() {
       savingDraftRef.current = null;
       setSaving(false);
     }
-  };
+  }, [seedDrafts]);
 
   const handleReset = () => {
     seedDrafts(sourceThemeSettings);
@@ -1350,17 +1596,7 @@ export function ThemeManage() {
     );
   }
 
-  if (accessRevoked) {
-    return <Navigate to="/" replace />;
-  }
-
-  const adminAccessDenied =
-    (tasksError instanceof ApiRequestError &&
-      (tasksError.status === 401 || tasksError.status === 403)) ||
-    (clientsError instanceof ApiRequestError &&
-      (clientsError.status === 401 || clientsError.status === 403));
-
-  if (adminAccessDenied) {
+  if (accessRevoked || adminAccessDenied) {
     return <Navigate to="/" replace />;
   }
 
@@ -1755,13 +1991,14 @@ export function ThemeManage() {
                   max={100}
                   step={1}
                   inputMode="numeric"
-                  value={draft.surfaceOpacity}
-                  onChange={(event) => {
-                    // Number("") === 0,没有这行的话清空输入框(想重新输入)会把值跳成 0。
-                    if (event.target.value.trim() === "") return;
-                    const next = Number(event.target.value);
-                    if (!Number.isFinite(next)) return;
-                    patch("surfaceOpacity", Math.min(100, Math.max(0, Math.round(next))));
+                  value={draft.surfaceOpacityText}
+                  onChange={(event) => patch("surfaceOpacityText", event.target.value)}
+                  onBlur={() => {
+                    const normalized =
+                      draft.surfaceOpacityText.trim() === ""
+                        ? seededThemeSettings.surfaceOpacity
+                        : normalizeSurfaceOpacity(draft.surfaceOpacityText);
+                    patch("surfaceOpacityText", String(normalized));
                   }}
                   aria-label="卡片不透明度百分比"
                   className="surface-inset w-20 px-3 py-2 text-right text-[13px] tabular outline-none"
@@ -1813,14 +2050,15 @@ export function ThemeManage() {
                 max={3600}
                 step={1}
                 inputMode="numeric"
-                value={draft.homeHeaderVisibleSeconds}
+                value={draft.homeHeaderVisibleSecondsText}
                 disabled={!draft.enableHomeHeaderAutoHide}
-                onChange={(event) => {
-                  if (event.target.value.trim() === "") return;
-                  patch(
-                    "homeHeaderVisibleSeconds",
-                    normalizeHomeHeaderVisibleSeconds(event.target.value),
-                  );
+                onChange={(event) => patch("homeHeaderVisibleSecondsText", event.target.value)}
+                onBlur={() => {
+                  const normalized =
+                    draft.homeHeaderVisibleSecondsText.trim() === ""
+                      ? seededThemeSettings.homeHeaderVisibleSeconds
+                      : normalizeHomeHeaderVisibleSeconds(draft.homeHeaderVisibleSecondsText);
+                  patch("homeHeaderVisibleSecondsText", String(normalized));
                 }}
                 aria-label="顶部信息显示时长（秒）"
                 className="surface-inset w-20 px-3 py-2 text-right text-[13px] tabular outline-none disabled:opacity-45"
@@ -2045,7 +2283,7 @@ export function ThemeManage() {
             saving={saving}
             saveDisabled={saveDisabled}
             saveError={error}
-            onChange={(next) => patch("nodeMerchantLinks", next)}
+            onChange={patchNodeMerchantLinks}
             onSave={handleSave}
           />
         </div>
@@ -2087,32 +2325,18 @@ export function ThemeManage() {
         title="流量重置日"
         description="按服务器设置每月重置日，未自定义的服务器继续按账单到期日推算。"
       >
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <span className="text-[13px] text-[var(--text-secondary)]">
-            已自定义 {sortedClients.filter((client) => draft.trafficResetDays[client.uuid] != null).length} 台，其余跟随账单日
-          </span>
-          <button
-            type="button"
-            disabled={clientsLoading || Boolean(clientsError)}
-            onClick={() => setTrafficResetOpen(true)}
-            className="theme-manage-button"
-          >
-            <SlidersHorizontal size={14} />配置重置日
-          </button>
-        </div>
-        {trafficResetOpen && (
-          <TrafficResetConfigPanel
-            clients={sortedClients}
-            days={draft.trafficResetDays}
-            now={now}
-            saving={saving}
-            saveDisabled={saveDisabled}
-            saveError={error}
-            onChange={(next) => patch("trafficResetDays", next)}
-            onClose={() => setTrafficResetOpen(false)}
-            onSave={handleSave}
-          />
-        )}
+        <TrafficResetConfigControl
+          clients={sortedClients}
+          days={draft.trafficResetDays}
+          configuredNodeCount={trafficResetConfiguredNodeCount}
+          now={now}
+          disabled={clientsLoading || Boolean(clientsError)}
+          saving={saving}
+          saveDisabled={saveDisabled}
+          saveError={error}
+          onChange={patchTrafficResetDays}
+          onSave={handleSave}
+        />
       </InstancePanel>
 
       <InstancePanel
@@ -2157,7 +2381,7 @@ export function ThemeManage() {
               />
               {draftCostRateApiUrlInvalid && (
                 <span className="text-[12px] text-[var(--status-offline)]">
-                  请输入 http(s) 链接，保存后将回退默认接口
+                  请输入有效的 http(s) 链接，或留空以使用默认接口
                 </span>
               )}
             </label>
@@ -2303,7 +2527,7 @@ export function ThemeManage() {
                     { length: HOMEPAGE_MULTI_PING_TASK_COUNT },
                     (_, slot) => {
                       const selectedTaskId =
-                        draft.homepageMultiPingTaskIds[slot];
+                        draft.homepageMultiPingTaskSlots[slot];
                       return (
                         <label key={slot} className="min-w-0">
                           <span className="mb-1.5 block text-[11px] font-medium text-[var(--text-secondary)]">
@@ -2330,7 +2554,7 @@ export function ThemeManage() {
                                 value={task.id}
                                 disabled={
                                   task.id !== selectedTaskId &&
-                                  draft.homepageMultiPingTaskIds.includes(task.id)
+                                  draft.homepageMultiPingTaskSlots.includes(task.id)
                                 }
                               >
                                 {task.name || `任务 #${task.id}`}
@@ -2359,7 +2583,7 @@ export function ThemeManage() {
                 <MultiPingNodeConfigControl
                   clients={sortedClients}
                   tasks={sortedTasks}
-                  globalTaskIds={draft.homepageMultiPingTaskIds}
+                  globalTaskIds={draftMultiPingTaskIds}
                   nodeTaskIds={draft.homepageMultiPingNodeTaskIds}
                   configuredNodeCount={multiPingConfiguredNodeCount}
                   fakePingForUnbound={draft.fakePingForUnbound}

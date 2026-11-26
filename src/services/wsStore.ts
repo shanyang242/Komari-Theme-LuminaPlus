@@ -1,5 +1,6 @@
 import type { NodeInfo, NodeMetrics, NodeRealtime, TrafficTrendSample } from "@/types/komari";
 import { getNodes, getNodesLatestStatus } from "@/services/api";
+import { parseTimestampMs } from "@/utils/format";
 
 type Listener = () => void;
 type RealtimePayload = Record<string, unknown>;
@@ -14,6 +15,11 @@ interface State {
 
 export interface StoreStatusSnapshot {
   failureStreak: number;
+  hydrated: boolean;
+  nodeInfoError: boolean;
+}
+
+export interface StoreHydrationSnapshot {
   hydrated: boolean;
   nodeInfoError: boolean;
 }
@@ -58,7 +64,7 @@ const NODE_INFO_REFRESH_INTERVAL_MS = 30_000;
 // 较短超时可让 half-open 连接尽快重试。
 const LIVE_STATUS_REQUEST_TIMEOUT_MS = 8_000;
 const SCROLL_IDLE_DELAY_MS = 160;
-const TRAFFIC_TREND_SAMPLE_COUNT = 18;
+export const TRAFFIC_TREND_SAMPLE_COUNT = 18;
 const EMPTY_TRAFFIC_TREND_SAMPLE: TrafficTrendSample = {
   value: 0,
   level: 0.25,
@@ -327,7 +333,7 @@ function materializeTrafficTrendSnapshot(
   return snapshot;
 }
 
-function updateTrafficTrendSeries(
+export function updateTrafficTrendSeries(
   prevSeries: TrafficTrendSeries,
   value: number,
   updatedAt: number,
@@ -346,50 +352,41 @@ function updateTrafficTrendSeries(
     return { series: prevSeries, changed: false };
   }
 
+  // 滑窗已满时先剔除即将滑出的最旧一帧，再按新窗口内全部有效帧统一归一化，
+  // 避免已滑出的旧峰值压低后续柱高，也避免历史柱高停留在旧峰值口径。
+  const dropOldest = prevSeries.size >= TRAFFIC_TREND_SAMPLE_COUNT ? 1 : 0;
+  const keptCount = Math.max(0, prevSeries.size - dropOldest);
+  const nextSize = keptCount + 1;
+  const rawValues = new Array<number>(nextSize);
   let visibleMax = safeValue > 0 ? safeValue : 1;
-  for (let i = 0; i < prevSeries.size; i++) {
-    const sample = prevSeries.buffer[(prevSeries.start + i) % TRAFFIC_TREND_SAMPLE_COUNT];
-    if (sample && sample.value > visibleMax) {
-      visibleMax = sample.value;
-    }
-  }
 
-  const level = safeValue > 0 ? Math.max(0.2, Math.min(1, safeValue / visibleMax)) : 0.25;
-  const nextSample: TrafficTrendSample = {
-    value: safeValue,
-    level,
-    opacity: safeValue > 0 ? 0.4 + level * 0.48 : 0.52,
-  };
+  for (let i = 0; i < keptCount; i++) {
+    const sample =
+      prevSeries.buffer[(prevSeries.start + dropOldest + i) % TRAFFIC_TREND_SAMPLE_COUNT];
+    const sampleValue = sample?.value ?? 0;
+    rawValues[i] = sampleValue;
+    if (sampleValue > visibleMax) visibleMax = sampleValue;
+  }
+  rawValues[keptCount] = safeValue;
 
   const buffer = new Array<TrafficTrendSample>(TRAFFIC_TREND_SAMPLE_COUNT);
-  const nextSize =
-    prevSeries.size < TRAFFIC_TREND_SAMPLE_COUNT
-      ? prevSeries.size + 1
-      : TRAFFIC_TREND_SAMPLE_COUNT;
-  const nextStart =
-    prevSeries.size < TRAFFIC_TREND_SAMPLE_COUNT
-      ? prevSeries.start
-      : (prevSeries.start + 1) % TRAFFIC_TREND_SAMPLE_COUNT;
-  const insertIndex =
-    prevSeries.size < TRAFFIC_TREND_SAMPLE_COUNT
-      ? (prevSeries.start + prevSeries.size) % TRAFFIC_TREND_SAMPLE_COUNT
-      : prevSeries.start;
-
-  if (prevSeries.size > 0) {
-    for (let i = 0; i < prevSeries.size; i++) {
-      buffer[(prevSeries.start + i) % TRAFFIC_TREND_SAMPLE_COUNT] =
-        prevSeries.buffer[(prevSeries.start + i) % TRAFFIC_TREND_SAMPLE_COUNT]!;
-    }
+  for (let i = 0; i < nextSize; i++) {
+    const sampleValue = rawValues[i]!;
+    const level = sampleValue > 0 ? Math.max(0.2, Math.min(1, sampleValue / visibleMax)) : 0.25;
+    buffer[i] = {
+      value: sampleValue,
+      level,
+      opacity: sampleValue > 0 ? 0.4 + level * 0.48 : 0.52,
+    };
   }
-  buffer[insertIndex] = nextSample;
 
   return {
     series: {
       buffer,
-      start: nextStart,
+      start: 0,
       size: nextSize,
       signature,
-      snapshot: materializeTrafficTrendSnapshot(buffer, nextStart, nextSize),
+      snapshot: materializeTrafficTrendSnapshot(buffer, 0, nextSize),
     },
     changed: true,
   };
@@ -401,6 +398,8 @@ const allNodesListeners = new Set<Listener>();
 const homeNodeSummaryListeners = new Set<Listener>();
 const nodeOnlineSummaryListeners = new Set<Listener>();
 const storeStatusListeners = new Set<Listener>();
+const storeHydrationListeners = new Set<Listener>();
+const storeFailureStreakListeners = new Set<Listener>();
 const nodeMetaListeners = new Map<string, Set<Listener>>();
 const nodeMetricsListeners = new Map<string, Set<Listener>>();
 const trafficTrendListeners = new Map<string, Set<Listener>>();
@@ -421,6 +420,10 @@ let storeStatusSnapshot: StoreStatusSnapshot = {
   hydrated: false,
   nodeInfoError: false,
 };
+let storeHydrationSnapshot: StoreHydrationSnapshot = {
+  hydrated: false,
+  nodeInfoError: false,
+};
 let scrollIdleTimer: number | null = null;
 let scrollTrackingStarted = false;
 let scrollActive = false;
@@ -433,6 +436,8 @@ interface CommitTouches {
   nodeList?: boolean;
   allNodes?: boolean;
   storeStatus?: boolean;
+  storeHydration?: boolean;
+  failureStreak?: boolean;
 }
 
 function emitListeners(listeners: Iterable<Listener>) {
@@ -481,7 +486,13 @@ function commit(next: State, touches: CommitTouches = {}) {
     nodeOnlineSummariesVersion += 1;
     emitListeners(nodeOnlineSummaryListeners);
   }
-  if (touches.storeStatus) emitListeners(storeStatusListeners);
+  const hydrationTouched = Boolean(touches.storeHydration);
+  const failureStreakTouched = Boolean(touches.failureStreak);
+  if (hydrationTouched) emitListeners(storeHydrationListeners);
+  if (failureStreakTouched) emitListeners(storeFailureStreakListeners);
+  if (touches.storeStatus || hydrationTouched || failureStreakTouched) {
+    emitListeners(storeStatusListeners);
+  }
   if (touches.meta) {
     emitMappedListeners(nodeMetaListeners, touches.meta);
   }
@@ -546,16 +557,7 @@ function resolveOnline(rawRecord: unknown): boolean {
 }
 
 function toTimestamp(value: string | number | undefined): number {
-  if (typeof value === "number") {
-    return value > 1_000_000_000_000 ? value : value * 1000;
-  }
-  if (!value) return 0;
-  const numeric = Number(value);
-  if (Number.isFinite(numeric) && numeric > 0) {
-    return numeric > 1_000_000_000_000 ? numeric : numeric * 1000;
-  }
-  const parsed = Date.parse(value);
-  return Number.isNaN(parsed) ? 0 : parsed;
+  return parseTimestampMs(value) ?? 0;
 }
 
 // 旧扁平协议的 connections 是 TCP+UDP 合计。
@@ -744,10 +746,12 @@ function sortNodes(nodes: NodeInfo[]) {
 }
 
 function syncNodeInfo() {
-  nodeInfoPromise ??= performNodeInfoSync().finally(() => {
-    nodeInfoPromise = null;
+  if (nodeInfoPromise) return nodeInfoPromise;
+  const promise = performNodeInfoSync().finally(() => {
+    if (nodeInfoPromise === promise) nodeInfoPromise = null;
   });
-  return nodeInfoPromise;
+  nodeInfoPromise = promise;
+  return promise;
 }
 
 async function performNodeInfoSync() {
@@ -804,10 +808,10 @@ async function performNodeInfoSync() {
         return Boolean(prev?.hidden) !== Boolean(next?.hidden);
       });
 
-    const storeStatusChanged = !hydrated || nodeInfoError;
+    const storeHydrationChanged = !hydrated || nodeInfoError;
     hydrated = true;
     nodeInfoError = false;
-    if (orderChanged || touchedMeta.size > 0 || touchedMetrics.size > 0 || storeStatusChanged) {
+    if (orderChanged || touchedMeta.size > 0 || touchedMetrics.size > 0 || storeHydrationChanged) {
       commit(
         {
           ...state,
@@ -822,14 +826,14 @@ async function performNodeInfoSync() {
           // traffic trend 只由 refreshLatestStatus 改动;syncNodeInfo 原样带过来,这里无需通知。
           nodeList: nodeListChanged,
           allNodes: orderChanged || touchedMeta.size > 0,
-          storeStatus: storeStatusChanged,
+          storeHydration: storeHydrationChanged,
         },
       );
     }
   } catch (error) {
     if (!controller.signal.aborted && !nodeInfoError) {
       nodeInfoError = true;
-      commit(state, { storeStatus: true });
+      commit(state, { storeHydration: true });
     }
     throw error;
   } finally {
@@ -856,9 +860,9 @@ async function refreshLatestStatus() {
     const applied = applyLatestStatus(records);
     const metricsChanged = applied.touchedMetrics.length > 0;
     const trafficTrendsChanged = applied.touchedTrafficTrends.length > 0;
-    const storeStatusChanged = state.failureStreak > 0;
+    const failureStreakChanged = state.failureStreak > 0;
 
-    if (metricsChanged || trafficTrendsChanged || storeStatusChanged) {
+    if (metricsChanged || trafficTrendsChanged || failureStreakChanged) {
       commit(
         {
           ...state,
@@ -870,7 +874,7 @@ async function refreshLatestStatus() {
         {
           metrics: applied.touchedMetrics,
           trafficTrends: applied.touchedTrafficTrends,
-          storeStatus: storeStatusChanged,
+          failureStreak: failureStreakChanged,
         },
       );
     }
@@ -881,7 +885,7 @@ async function refreshLatestStatus() {
         ...state,
         failureStreak: state.failureStreak + 1,
       },
-      { storeStatus: true },
+      { failureStreak: true },
     );
   } finally {
     if (liveStatusController === controller) liveStatusController = null;
@@ -891,21 +895,77 @@ async function refreshLatestStatus() {
 
 // 连续失败时按 tick 数指数退避(2s→4s→…→30s),避免后端不可用期间每 2 秒打注定失败的请求。
 const BOOTSTRAP_MAX_BACKOFF_TICKS = 15;
+const NODE_INFO_MAX_BACKOFF_TICKS = 4;
 let bootstrapBackoffTicks = 0;
 let bootstrapSkipTicks = 0;
+let bootstrapPromise: Promise<void> | null = null;
+let nodeInfoBackoffTicks = 0;
+let nodeInfoSkipTicks = 0;
+let nodeInfoDirtyWhileHidden = false;
+let visibilityTrackingStarted = false;
 
-async function bootstrap() {
+function isPageHidden() {
+  return typeof document !== "undefined" && document.hidden;
+}
+
+async function performBootstrap() {
   try {
     await syncNodeInfo();
+    if (!started) return;
     await refreshLatestStatus();
     bootstrapBackoffTicks = 0;
     bootstrapSkipTicks = 0;
+    nodeInfoBackoffTicks = 0;
+    nodeInfoSkipTicks = 0;
   } catch {
+    if (!started) return;
     bootstrapBackoffTicks = Math.min(
       bootstrapBackoffTicks > 0 ? bootstrapBackoffTicks * 2 : 1,
       BOOTSTRAP_MAX_BACKOFF_TICKS,
     );
     bootstrapSkipTicks = bootstrapBackoffTicks;
+  }
+}
+
+function bootstrap() {
+  // 对并发 bootstrap() 去重：未水合期间多个 tick 若同时等待同一次失败的 syncNodeInfo，
+  // 只能累计一次退避，避免单次故障把退避瞬间打满。
+  if (bootstrapPromise) return bootstrapPromise;
+  const promise = performBootstrap().finally(() => {
+    if (bootstrapPromise === promise) bootstrapPromise = null;
+  });
+  bootstrapPromise = promise;
+  return promise;
+}
+
+function syncNodeInfoWithBackoff() {
+  void syncNodeInfo()
+    .then(() => {
+      nodeInfoBackoffTicks = 0;
+      nodeInfoSkipTicks = 0;
+    })
+    .catch(() => {
+      if (!started) return;
+      nodeInfoBackoffTicks = Math.min(
+        nodeInfoBackoffTicks > 0 ? nodeInfoBackoffTicks * 2 : 1,
+        NODE_INFO_MAX_BACKOFF_TICKS,
+      );
+      nodeInfoSkipTicks = nodeInfoBackoffTicks;
+    });
+}
+
+function handleVisibilityChange() {
+  if (!started || isPageHidden()) return;
+  if (!hydrated) {
+    bootstrapSkipTicks = 0;
+    if (!bootstrapPromise) void bootstrap();
+    return;
+  }
+  void refreshLatestStatus();
+  if (nodeInfoDirtyWhileHidden) {
+    nodeInfoDirtyWhileHidden = false;
+    nodeInfoSkipTicks = 0;
+    syncNodeInfoWithBackoff();
   }
 }
 
@@ -920,10 +980,16 @@ function ensureStarted() {
   started = true;
 
   ensureScrollTrackingStarted();
+  if (typeof document !== "undefined" && !visibilityTrackingStarted) {
+    visibilityTrackingStarted = true;
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+  }
   void bootstrap();
   // 实时指标与节点信息使用独立轮询节奏。
   liveStatusTimer = window.setInterval(() => {
+    if (isPageHidden()) return;
     if (!hydrated) {
+      if (bootstrapPromise) return;
       if (bootstrapSkipTicks > 0) {
         bootstrapSkipTicks -= 1;
         return;
@@ -934,7 +1000,16 @@ function ensureStarted() {
     void refreshLatestStatus();
   }, LIVE_STATUS_REFRESH_INTERVAL_MS);
   nodeInfoTimer = window.setInterval(() => {
-    void syncNodeInfo().catch(() => {});
+    if (isPageHidden()) {
+      nodeInfoDirtyWhileHidden = true;
+      return;
+    }
+    if (!hydrated) return;
+    if (nodeInfoSkipTicks > 0) {
+      nodeInfoSkipTicks -= 1;
+      return;
+    }
+    syncNodeInfoWithBackoff();
   }, NODE_INFO_REFRESH_INTERVAL_MS);
 }
 
@@ -984,13 +1059,39 @@ function stopStore() {
     window.removeEventListener("scroll", markScrollActivity);
     scrollTrackingStarted = false;
   }
+  if (visibilityTrackingStarted && typeof document !== "undefined") {
+    document.removeEventListener("visibilitychange", handleVisibilityChange);
+    visibilityTrackingStarted = false;
+  }
   scrollActive = false;
   refreshDeferredWhileScrolling = false;
+  nodeInfoDirtyWhileHidden = false;
+  const previousOrder = state.order;
+  const hadStoreState =
+    previousOrder.length > 0 ||
+    state.failureStreak > 0 ||
+    hydrated ||
+    nodeInfoError;
   hydrated = false;
   nodeInfoError = false;
   started = false;
+  nodeInfoPromise = null;
+  bootstrapPromise = null;
   bootstrapBackoffTicks = 0;
   bootstrapSkipTicks = 0;
+  nodeInfoBackoffTicks = 0;
+  nodeInfoSkipTicks = 0;
+  if (hadStoreState) {
+    commit(emptyState(), {
+      meta: previousOrder,
+      metrics: previousOrder,
+      trafficTrends: previousOrder,
+      nodeList: previousOrder.length > 0,
+      allNodes: previousOrder.length > 0,
+      storeHydration: true,
+      failureStreak: true,
+    });
+  }
 }
 
 function subscribeSet(listeners: Set<Listener>, listener: Listener): () => void {
@@ -1018,6 +1119,14 @@ export function subscribeNodeOnlineSummaries(listener: Listener): () => void {
 
 export function subscribeStoreStatus(listener: Listener): () => void {
   return subscribeSet(storeStatusListeners, listener);
+}
+
+export function subscribeStoreHydration(listener: Listener): () => void {
+  return subscribeSet(storeHydrationListeners, listener);
+}
+
+export function subscribeFailureStreak(listener: Listener): () => void {
+  return subscribeSet(storeFailureStreakListeners, listener);
 }
 
 export function subscribeToNodeMeta(uuid: string, listener: Listener): () => void {
@@ -1066,6 +1175,24 @@ export function getStoreStatusSnapshot(): StoreStatusSnapshot {
     nodeInfoError,
   };
   return storeStatusSnapshot;
+}
+
+export function getStoreHydrationSnapshot(): StoreHydrationSnapshot {
+  if (
+    storeHydrationSnapshot.hydrated === hydrated &&
+    storeHydrationSnapshot.nodeInfoError === nodeInfoError
+  ) {
+    return storeHydrationSnapshot;
+  }
+  storeHydrationSnapshot = {
+    hydrated,
+    nodeInfoError,
+  };
+  return storeHydrationSnapshot;
+}
+
+export function getFailureStreakSnapshot(): number {
+  return state.failureStreak;
 }
 
 export function getNodeMetaSnapshot(uuid: string): NodeInfo | undefined {

@@ -9,14 +9,13 @@ import {
 import { useNavigate } from "react-router-dom";
 import { Check, ChevronDown, ChevronUp } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
-import { useAllNodeMeta, useHomeNodeSummaries } from "@/hooks/useNode";
-import { useThemeSettings } from "@/hooks/useThemeSettings";
-import { collectMatchingNodeUuids } from "@/utils/nodeIdentity";
+import { useAllNodeMeta, useNodeOnlineSummaries } from "@/hooks/useNode";
+import { useHiddenNodeUuids } from "@/hooks/useVisibleNodes";
 
 export function InstanceSwitcher({ currentUuid }: { currentUuid: string }) {
   const allMeta = useAllNodeMeta();
-  const summaries = useHomeNodeSummaries();
-  const { hiddenNodes } = useThemeSettings();
+  const summaries = useNodeOnlineSummaries();
+  const hiddenUuids = useHiddenNodeUuids();
   const { data: me } = useAuth();
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
@@ -28,11 +27,6 @@ export function InstanceSwitcher({ currentUuid }: { currentUuid: string }) {
   const onlineByUuid = useMemo(
     () => new Map(summaries.map((node) => [node.uuid, node.online] as const)),
     [summaries],
-  );
-
-  const hiddenUuids = useMemo(
-    () => collectMatchingNodeUuids(allMeta, hiddenNodes),
-    [allMeta, hiddenNodes],
   );
 
   const nodes = useMemo(

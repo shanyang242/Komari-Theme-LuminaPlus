@@ -15,7 +15,7 @@ import {
   DEFAULT_DARK_DEPTH,
   METRIC_COLOR_GROUPS,
   METRIC_COLOR_META,
-  readEffectiveColors,
+  readDefaultMetricColors,
   useMetricColorsEditor,
   type MetricColorKey,
 } from "@/hooks/useMetricColors";
@@ -52,11 +52,11 @@ export function MetricColorPicker({ hidden = false }: { hidden?: boolean }) {
   } = useMetricColorsEditor();
   const { resolvedAppearance } = usePreferences();
 
-  // 默认色（无覆盖时生效的 token）。只在明暗模式切换/重置时重读 ——
+  // 默认色（剥离内联覆盖后的真实样式表 token）。只在明暗模式切换/重置时重读 ——
   // 不能放进拖动热路径：getComputedStyle 会强制同步重排，每帧多次=掉帧。
-  const [base, setBase] = useState(readEffectiveColors);
-  useEffect(() => setBase(readEffectiveColors()), [resolvedAppearance]);
-  const refreshBase = useCallback(() => setBase(readEffectiveColors()), []);
+  const [base, setBase] = useState(readDefaultMetricColors);
+  useEffect(() => setBase(readDefaultMetricColors()), [resolvedAppearance]);
+  const refreshBase = useCallback(() => setBase(readDefaultMetricColors()), []);
 
   // 拖动时取色框的值直接来自草稿（无 getComputedStyle），其余指标用稳定的默认色。
   const valueOf = useCallback(

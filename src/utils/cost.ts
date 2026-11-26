@@ -99,6 +99,7 @@ interface CostSummaryDetail {
 interface ExchangeRateData {
   rates: Record<string, number>;
   time: number;
+  base?: string;
 }
 
 type CostNode = NodeInfo & Record<string, unknown>;
@@ -113,37 +114,56 @@ export interface CostPremiumEntry {
   acquiredAt?: string;
 }
 
-function localDateKey(date = new Date()) {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
+// 地球上最东时区为 UTC+14；按该上限校验 YYYY-MM-DD，避免东时区录入的“今天”被西时区访客或管理员误删/擦除。
+const MAX_TIMEZONE_OFFSET_MS = 14 * 60 * 60 * 1000;
+
+function maxWorldDateKey(now = Date.now()) {
+  const date = new Date(now + MAX_TIMEZONE_OFFSET_MS);
+  const year = date.getUTCFullYear();
+  const month = String(date.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(date.getUTCDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
 }
 
-function parseLocalDateKey(value: string) {
+function parseUtcDateKey(value: string) {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
   if (!match) return null;
   const year = Number(match[1]);
   const month = Number(match[2]);
   const day = Number(match[3]);
-  const parsed = new Date(year, month - 1, day);
-  return parsed.getFullYear() === year &&
-    parsed.getMonth() === month - 1 &&
-    parsed.getDate() === day
+  const parsed = new Date(Date.UTC(year, month - 1, day));
+  return parsed.getUTCFullYear() === year &&
+    parsed.getUTCMonth() === month - 1 &&
+    parsed.getUTCDate() === day
     ? parsed.getTime()
     : null;
 }
 
 function parseAcquiredTimestamp(value: string) {
-  const localDate = parseLocalDateKey(value);
-  if (localDate != null) return localDate;
+  const utcDate = parseUtcDateKey(value);
+  if (utcDate != null) return utcDate;
   const parsed = Date.parse(value);
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-function normalizeAcquiredAt(value: unknown) {
+function resolveEffectiveAcquiredTimestamp(value: string, now: number) {
+  const acquiredMs = parseAcquiredTimestamp(value);
+  if (acquiredMs == null || acquiredMs > now + MAX_TIMEZONE_OFFSET_MS) return null;
+  return Math.min(acquiredMs, now);
+}
+
+function normalizeAcquiredAt(value: unknown, now = Date.now()) {
   const raw = typeof value === "string" ? value.trim() : "";
-  return parseLocalDateKey(raw) != null && raw <= localDateKey() ? raw : undefined;
+  return parseUtcDateKey(raw) != null && raw <= maxWorldDateKey(now) ? raw : undefined;
+}
+
+function parseOptionalFiniteNumber(value: unknown): number {
+  if (typeof value === "number") return value;
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    return trimmed === "" ? Number.NaN : Number(trimmed);
+  }
+  return Number.NaN;
 }
 
 // 以节点 uuid 为 key。旧版纯数字自动升格为 { amount };非法日期/收购价只丢字段不丢条目;
@@ -161,12 +181,12 @@ export function normalizeCostPremiums(value: unknown): Record<string, CostPremiu
     let acquiredAt: string | undefined;
     if (raw && typeof raw === "object" && !Array.isArray(raw)) {
       const entry = raw as Record<string, unknown>;
-      amount = Number(entry.amount);
-      const rawPaid = Number(entry.paidCny);
-      if (entry.paidCny != null && Number.isFinite(rawPaid) && rawPaid >= 0) paidCny = rawPaid;
+      amount = parseOptionalFiniteNumber(entry.amount);
+      const rawPaid = parseOptionalFiniteNumber(entry.paidCny);
+      if (Number.isFinite(rawPaid) && rawPaid >= 0) paidCny = rawPaid;
       acquiredAt = normalizeAcquiredAt(entry.acquiredAt);
     } else {
-      amount = Number(raw);
+      amount = parseOptionalFiniteNumber(raw);
     }
 
     if (!Number.isFinite(amount)) amount = 0;
@@ -207,8 +227,8 @@ function premiumAmortMonths(
   now: number,
 ): number | null {
   if (!acquiredAt) return null;
-  const acquiredMs = parseAcquiredTimestamp(acquiredAt);
-  if (acquiredMs == null || acquiredMs > now) return null;
+  const acquiredMs = resolveEffectiveAcquiredTimestamp(acquiredAt, now);
+  if (acquiredMs == null) return null;
 
   const expiresMs = resolveExpireTimestamp(expiredAt);
   const span =
@@ -230,10 +250,9 @@ function premiumRemainingValue(
   if (expiresMs == null || expiresMs - now >= AMORT_LONG_TERM_MS) return premium;
   if (expiresMs <= now) return 0;
 
-  const acquiredMs = acquiredAt ? parseAcquiredTimestamp(acquiredAt) : null;
+  const acquiredMs = acquiredAt ? resolveEffectiveAcquiredTimestamp(acquiredAt, now) : null;
   if (
     acquiredMs == null ||
-    acquiredMs > now ||
     acquiredMs >= expiresMs ||
     expiresMs - acquiredMs >= AMORT_LONG_TERM_MS
   ) {
@@ -321,7 +340,11 @@ export function formatSignedCny(value: number) {
   return `${sign}${formatCnyMoney(Math.abs(value))}`;
 }
 
-function readRateCache(cacheKey: string, allowExpired = false): ExchangeRateData | null {
+function readRateCache(
+  cacheKey: string,
+  fallbackBase?: string | null,
+  allowExpired = false,
+): ExchangeRateData | null {
   try {
     const cached = JSON.parse(localStorage.getItem(cacheKey) || "null") as unknown;
     if (!cached || typeof cached !== "object" || Array.isArray(cached)) return null;
@@ -331,7 +354,7 @@ function readRateCache(cacheKey: string, allowExpired = false): ExchangeRateData
     if (!Number.isFinite(time) || age < 0 || (!allowExpired && age >= RATE_CACHE_TTL_MS)) {
       return null;
     }
-    return { ...parseRatePayload(record), time };
+    return { ...parseRatePayload(record, fallbackBase), time };
   } catch {
     return null;
   }
@@ -345,22 +368,49 @@ function writeRateCache(cacheKey: string, data: ExchangeRateData) {
   }
 }
 
-function parseRatePayload(payload: unknown): Pick<ExchangeRateData, "rates"> {
-  const rates: Record<string, number> = { USD: 1 };
+function normalizeBaseCurrency(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim().toUpperCase();
+  return /^[A-Z]{3}$/.test(trimmed) ? trimmed : null;
+}
+
+function inferBaseFromRateUrl(rateApiUrl: string): string | null {
+  try {
+    const parsed = new URL(rateApiUrl);
+    return normalizeBaseCurrency(
+      parsed.searchParams.get("base") ?? parsed.searchParams.get("base_code"),
+    );
+  } catch {
+    return null;
+  }
+}
+
+export function parseRatePayload(
+  payload: unknown,
+  fallbackBase?: string | null,
+): Pick<ExchangeRateData, "rates" | "base"> {
+  const rates: Record<string, number> = {};
+  let hasValidSource = false;
+  let explicitBase: string | null = null;
 
   if (Array.isArray(payload)) {
+    hasValidSource = true;
     for (const item of payload) {
       const record = item && typeof item === "object" ? (item as Record<string, unknown>) : null;
-      const quote = record?.quote;
-      const rate = Number(record?.rate);
+      if (!record) continue;
+      explicitBase ??= normalizeBaseCurrency(record.base ?? record.base_code);
+      const quote = record.quote;
+      const rate = Number(record.rate);
       if (typeof quote === "string" && Number.isFinite(rate) && rate > 0) {
         rates[quote.toUpperCase()] = rate;
       }
     }
   } else if (payload && typeof payload === "object") {
     const record = payload as Record<string, unknown>;
-    const rawRates = record.rates;
-    if (rawRates && typeof rawRates === "object") {
+    explicitBase = normalizeBaseCurrency(record.base ?? record.base_code);
+    const rawRates = record.rates ?? record.conversion_rates;
+    if (rawRates && typeof rawRates === "object" && !Array.isArray(rawRates)) {
+      hasValidSource = true;
       for (const [key, value] of Object.entries(rawRates)) {
         const rate = Number(value);
         if (Number.isFinite(rate) && rate > 0) {
@@ -370,11 +420,32 @@ function parseRatePayload(payload: unknown): Pick<ExchangeRateData, "rates"> {
     }
   }
 
+  if (!hasValidSource) {
+    throw new Error("target rate missing");
+  }
+
+  const resolvedBase = explicitBase ?? normalizeBaseCurrency(fallbackBase) ?? null;
+  if (resolvedBase) {
+    if (rates[resolvedBase] == null) {
+      rates[resolvedBase] = 1;
+    }
+  } else if (
+    Object.keys(rates).length > 0 &&
+    !Object.values(rates).includes(1) &&
+    rates.USD == null
+  ) {
+    // 兼容既未声明 base 也未含基准 1（且自身不含 USD 汇率）的旧版/极简 USD 基准返回（如 `{ rates: { CNY: 7 } }`）。
+    rates.USD = 1;
+  }
+
   if (!rates[COST_TARGET_CURRENCY]) {
     throw new Error("target rate missing");
   }
 
-  return { rates };
+  return {
+    rates,
+    ...(resolvedBase ? { base: resolvedBase } : {}),
+  };
 }
 
 interface ExchangeRateRequestOptions {
@@ -387,7 +458,8 @@ export async function getExchangeRates(
   options: ExchangeRateRequestOptions = {},
 ): Promise<ExchangeRateData> {
   const cacheKey = `${RATE_CACHE_KEY_PREFIX}${rateApiUrl}`;
-  const cached = options.ignoreCache ? null : readRateCache(cacheKey);
+  const fallbackBase = inferBaseFromRateUrl(rateApiUrl);
+  const cached = options.ignoreCache ? null : readRateCache(cacheKey, fallbackBase);
   if (cached) return cached;
 
   try {
@@ -400,7 +472,10 @@ export async function getExchangeRates(
       throw new Error(`rate http ${response.status}`);
     }
 
-    const parsed = parseRatePayload(await response.json());
+    const parsed = parseRatePayload(
+      await response.json(),
+      fallbackBase,
+    );
     const data: ExchangeRateData = {
       ...parsed,
       time: Date.now(),
@@ -409,7 +484,7 @@ export async function getExchangeRates(
     return data;
   } catch (error) {
     if (options.signal?.aborted) throw error;
-    const old = readRateCache(cacheKey, true);
+    const old = readRateCache(cacheKey, fallbackBase, true);
     if (old) {
       return old;
     }
@@ -566,8 +641,8 @@ export function calculateCostPremiumBasisAt(
   acquiredAt?: string,
   now = Date.now(),
 ) {
-  const atMs = acquiredAt ? parseAcquiredTimestamp(acquiredAt) : now;
-  if (atMs == null || atMs > now) return null;
+  const atMs = acquiredAt ? resolveEffectiveAcquiredTimestamp(acquiredAt, now) : now;
+  if (atMs == null) return null;
 
   const node = nodes.find((item) => item.uuid === uuid);
   if (!node) return null;

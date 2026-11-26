@@ -90,6 +90,13 @@ describe("normalizeTrafficResetDays", () => {
     expect(input.string).toBe("15");
   });
 
+  it("trims surrounding whitespace on UUID keys before sorting and deduplicating", () => {
+    expect(normalizeTrafficResetDays({ " node-b ": 10, "node-a": 5 })).toEqual({
+      "node-a": 5,
+      "node-b": 10,
+    });
+  });
+
   it("treats absent or malformed settings as no overrides", () => {
     for (const value of [undefined, null, "15", 15, [1, 15], true]) {
       expect(normalizeTrafficResetDays(value)).toEqual({});

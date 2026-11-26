@@ -38,6 +38,11 @@ export function isHomeSortDirection(value: unknown): value is HomeSortDirection 
   return value === "asc" || value === "desc";
 }
 
+/** 需要高频实时摘要（瞬时速率 / 累计流量）的排序维度。 */
+export function sortFieldNeedsLiveSummaries(field: HomeSortField): boolean {
+  return field === "speed" || field === "traffic";
+}
+
 // 速率排序使用 0.5/0.3 MB/s 进出滞回门，避免节点反复换位。
 export const HOME_SPEED_ENTER_BPS = 0.5 * 1024 * 1024;
 export const HOME_SPEED_EXIT_BPS = 0.3 * 1024 * 1024;

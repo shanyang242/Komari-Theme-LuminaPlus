@@ -33,6 +33,10 @@ export function useHomeNodeOrder({
 }: Params): HomeNodeSummary[] {
   const ringRef = useRef<Map<string, number[]>>(new Map());
   const nodesRef = useRef(nodes);
+  const membershipKey = useMemo(
+    () => (field === "speed" ? nodes.map((node) => node.uuid).sort().join("\0") : ""),
+    [field, nodes],
+  );
   useEffect(() => {
     if (field !== "speed") {
       if (ringRef.current.size) ringRef.current.clear();
@@ -40,9 +44,7 @@ export function useHomeNodeOrder({
     }
     nodesRef.current = nodes;
     const ring = ringRef.current;
-    const seen = new Set<string>();
     for (const node of nodes) {
-      seen.add(node.uuid);
       if (node.online !== true) {
         ring.delete(node.uuid);
         continue;
@@ -55,9 +57,6 @@ export function useHomeNodeOrder({
       } else {
         ring.set(node.uuid, [total]);
       }
-    }
-    for (const uuid of ring.keys()) {
-      if (!seen.has(uuid)) ring.delete(uuid);
     }
   }, [nodes, field]);
 
@@ -110,7 +109,7 @@ export function useHomeNodeOrder({
     recompute();
     const id = window.setInterval(recompute, HOME_SPEED_RESORT_INTERVAL_MS);
     return () => window.clearInterval(id);
-  }, [field, direction]);
+  }, [field, direction, membershipKey]);
 
   const speedOrder = useMemo(
     () => (field === "speed" ? reconcileSpeedOrder(nodes, speedUuids) : null),

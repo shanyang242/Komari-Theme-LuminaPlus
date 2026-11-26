@@ -1,4 +1,5 @@
 import type { LoadRecord } from "@/types/komari";
+import { parseTimestampMs } from "@/utils/format";
 
 export const TRAFFIC_UP_METRIC = "traffic.up";
 export const TRAFFIC_DOWN_METRIC = "traffic.down";
@@ -74,7 +75,7 @@ export function summarizeTodayTrafficMetrics(
     if (!stat) continue;
     for (const point of item.points) {
       if (!validPoint(point)) continue;
-      const timeMs = Date.parse(point.time);
+      const timeMs = parseTimeMs(point.time);
       if (!Number.isFinite(timeMs)) continue;
       const value = Math.max(0, point.value ?? 0);
       sampleTimes.get(item.client)?.add(timeMs);
@@ -109,21 +110,24 @@ export function summarizeTodayTrafficMetrics(
   return [...stats.values()];
 }
 
-export function buildTodayTrafficMetricSamples(
+export function buildTodayTrafficMetricSamplesByUuid(
   series: TrafficMetricSeries[],
-  uuid: string,
-): TodayTrafficSample[] {
-  const samples = new Map<number, TodayTrafficSample>();
+  uuids: readonly string[],
+): Record<string, TodayTrafficSample[]> {
+  const sampleMaps = new Map<string, Map<number, TodayTrafficSample>>();
+  for (const uuid of uuids) {
+    sampleMaps.set(uuid, new Map());
+  }
+
   for (const item of series) {
-    if (
-      item.client !== uuid ||
-      (item.metricKey !== RATE_UP_METRIC && item.metricKey !== RATE_DOWN_METRIC)
-    ) {
+    if (item.metricKey !== RATE_UP_METRIC && item.metricKey !== RATE_DOWN_METRIC) {
       continue;
     }
+    const samples = sampleMaps.get(item.client);
+    if (!samples) continue;
     for (const point of item.points) {
       if (!validPoint(point)) continue;
-      const timeMs = Date.parse(point.time);
+      const timeMs = parseTimeMs(point.time);
       if (!Number.isFinite(timeMs)) continue;
       const sample = samples.get(timeMs) ?? { timeMs, up: 0, down: 0 };
       if (item.metricKey === RATE_UP_METRIC) sample.up = Math.max(0, point.value ?? 0);
@@ -131,20 +135,103 @@ export function buildTodayTrafficMetricSamples(
       samples.set(timeMs, sample);
     }
   }
-  return [...samples.values()].sort((left, right) => right.timeMs - left.timeMs);
+
+  const out: Record<string, TodayTrafficSample[]> = {};
+  for (const [uuid, samples] of sampleMaps) {
+    out[uuid] = [...samples.values()].sort((left, right) => right.timeMs - left.timeMs);
+  }
+  return out;
+}
+
+export function buildTodayTrafficMetricSamples(
+  series: TrafficMetricSeries[],
+  uuid: string,
+): TodayTrafficSample[] {
+  return buildTodayTrafficMetricSamplesByUuid(series, [uuid])[uuid] ?? [];
+}
+
+const COUNTER_RESET_RATIO = 0.5;
+
+function parseTimeMs(value: string | number): number {
+  return parseTimestampMs(value) ?? Number.NaN;
 }
 
 function recordTimeMs(record: LoadRecord) {
-  if (typeof record.time === "number") {
-    return record.time > 1_000_000_000_000 ? record.time : record.time * 1000;
-  }
-  return Date.parse(record.time);
+  return parseTimeMs(record.time);
 }
 
-function counterDelta(current: number, previous: number) {
-  if (!Number.isFinite(current) || current < 0) return 0;
-  if (!Number.isFinite(previous) || previous < 0) return 0;
-  return current >= previous ? current - previous : current;
+function advanceCounter(
+  previous: number | null,
+  current: number,
+): { delta: number; next: number | null } {
+  if (!Number.isFinite(current) || current < 0) {
+    return { delta: 0, next: previous };
+  }
+  if (current === 0) {
+    // 0 值帧（如 agent 重连/字段缺失）既不建立 0 基线也不覆盖正基线，
+    // 避免下一帧恢复计数时把历史累计流量全量计为今日增量。
+    return { delta: 0, next: previous };
+  }
+  if (previous == null) {
+    return { delta: 0, next: current };
+  }
+  if (current >= previous) {
+    return { delta: current - previous, next: current };
+  }
+  // 仅当计数显著回落（低于前值 50%）才视为真实重启归零；微小回落/抖动不计增量并保留高水位。
+  if (current < previous * COUNTER_RESET_RATIO) {
+    return { delta: current, next: current };
+  }
+  return { delta: 0, next: previous };
+}
+
+/** 单次排序同时产出累计统计与倒序速率明细，避免兼容回退路径对同一份 records 重复解析排序。 */
+export function summarizeTodayTrafficRecordsWithSamples(
+  uuid: string,
+  records: LoadRecord[],
+  startMs: number,
+  endMs: number,
+): { stat: TodayTrafficStat; samples: TodayTrafficSample[] } {
+  const stat = emptyStat(uuid);
+  const sorted = records
+    .map((record) => ({ record, timeMs: recordTimeMs(record) }))
+    .filter(({ timeMs }) => Number.isFinite(timeMs) && timeMs <= endMs)
+    .sort((left, right) => left.timeMs - right.timeMs);
+
+  const ascSamples: TodayTrafficSample[] = [];
+  let previousUp: number | null = null;
+  let previousDown: number | null = null;
+  for (const item of sorted) {
+    const { record, timeMs } = item;
+    if (timeMs < startMs) {
+      previousUp = advanceCounter(previousUp, record.net_total_up).next;
+      previousDown = advanceCounter(previousDown, record.net_total_down).next;
+      continue;
+    }
+
+    stat.hasSamples = true;
+    stat.sampleCount += 1;
+    const upStep = advanceCounter(previousUp, record.net_total_up);
+    const downStep = advanceCounter(previousDown, record.net_total_down);
+    stat.trafficUp += upStep.delta;
+    stat.trafficDown += downStep.delta;
+    previousUp = upStep.next;
+    previousDown = downStep.next;
+
+    const netOut = Math.max(0, Number.isFinite(record.net_out) ? record.net_out : 0);
+    const netIn = Math.max(0, Number.isFinite(record.net_in) ? record.net_in : 0);
+    ascSamples.push({ timeMs, up: netOut, down: netIn });
+    if (netOut > stat.peakUp) {
+      stat.peakUp = netOut;
+      stat.peakUpAt = timeMs;
+    }
+    if (netIn > stat.peakDown) {
+      stat.peakDown = netIn;
+      stat.peakDownAt = timeMs;
+    }
+  }
+
+  return { stat, samples: ascSamples.reverse() };
 }
 
 export function summarizeTodayTrafficRecords(
@@ -153,40 +240,7 @@ export function summarizeTodayTrafficRecords(
   startMs: number,
   endMs: number,
 ): TodayTrafficStat {
-  const stat = emptyStat(uuid);
-  const sorted = records
-    .map((record) => ({ record, timeMs: recordTimeMs(record) }))
-    .filter(({ timeMs }) => Number.isFinite(timeMs) && timeMs <= endMs)
-    .sort((left, right) => left.timeMs - right.timeMs);
-
-  let previous: LoadRecord | null = null;
-  for (const item of sorted) {
-    const { record, timeMs } = item;
-    if (timeMs < startMs) {
-      previous = record;
-      continue;
-    }
-
-    stat.hasSamples = true;
-    stat.sampleCount += 1;
-    if (previous) {
-      stat.trafficUp += counterDelta(record.net_total_up, previous.net_total_up);
-      stat.trafficDown += counterDelta(record.net_total_down, previous.net_total_down);
-    }
-    const netOut = Number.isFinite(record.net_out) ? record.net_out : 0;
-    const netIn = Number.isFinite(record.net_in) ? record.net_in : 0;
-    if (netOut > stat.peakUp) {
-      stat.peakUp = Math.max(0, netOut);
-      stat.peakUpAt = timeMs;
-    }
-    if (netIn > stat.peakDown) {
-      stat.peakDown = Math.max(0, netIn);
-      stat.peakDownAt = timeMs;
-    }
-    previous = record;
-  }
-
-  return stat;
+  return summarizeTodayTrafficRecordsWithSamples(uuid, records, startMs, endMs).stat;
 }
 
 export function buildTodayTrafficRecordSamples(
@@ -194,15 +248,5 @@ export function buildTodayTrafficRecordSamples(
   startMs: number,
   endMs: number,
 ): TodayTrafficSample[] {
-  return records
-    .map((record) => ({ record, timeMs: recordTimeMs(record) }))
-    .filter(
-      ({ timeMs }) => Number.isFinite(timeMs) && timeMs >= startMs && timeMs <= endMs,
-    )
-    .map(({ record, timeMs }) => ({
-      timeMs,
-      up: Math.max(0, Number.isFinite(record.net_out) ? record.net_out : 0),
-      down: Math.max(0, Number.isFinite(record.net_in) ? record.net_in : 0),
-    }))
-    .sort((left, right) => right.timeMs - left.timeMs);
+  return summarizeTodayTrafficRecordsWithSamples("", records, startMs, endMs).samples;
 }

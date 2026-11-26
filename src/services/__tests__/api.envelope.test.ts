@@ -6,7 +6,7 @@ vi.mock("@/services/rpc2Client", () => ({
   getRpc2Client: () => ({ call: rpcCallMock }),
 }));
 
-import { getPublic } from "@/services/api";
+import { getPublic, saveThemeSettings } from "@/services/api";
 
 describe("API envelope parsing", () => {
   afterEach(() => {
@@ -50,5 +50,23 @@ describe("API envelope parsing", () => {
     const result = await getPublic();
     expect(result.sitename).toBe("Test site");
     expect(result.theme_settings).toEqual({ showPingChart: false });
+  });
+
+  it("rejects saveThemeSettings when HTTP 200 body reports status=error", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ status: "error", message: "permission denied" }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      ),
+    );
+
+    await expect(saveThemeSettings("LuminaPlus", { showRegionBar: false })).rejects.toMatchObject({
+      name: "ApiRequestError",
+      message: "permission denied",
+      status: 200,
+    });
   });
 });

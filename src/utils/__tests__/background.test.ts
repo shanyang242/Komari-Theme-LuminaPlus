@@ -76,6 +76,17 @@ describe("normalizeBackgroundUrl", () => {
     expect(normalizeBackgroundUrl("/a b.webp")).toBe("/ab.webp");
     expect(normalizeBackgroundUrl("/a(b).webp")).toBe("/ab.webp");
   });
+
+  it("rejects dangerous URI schemes while keeping http(s) and relative paths", () => {
+    expect(normalizeBackgroundUrl("javascript:alert(1)")).toBe("");
+    expect(normalizeBackgroundUrl("java\nscript:alert(1)")).toBe("");
+    expect(normalizeBackgroundUrl("data:image/svg+xml,<svg/>")).toBe("");
+    expect(normalizeBackgroundUrl("vbscript:msgbox(1)")).toBe("");
+    expect(normalizeBackgroundUrl("//evil.example/bg.png")).toBe("");
+    expect(normalizeBackgroundUrl("javascript:alert(1)|https://ok.example/dark.webp")).toBe(
+      "|https://ok.example/dark.webp",
+    );
+  });
 });
 
 describe("normalizeBackgroundVideoUrl", () => {

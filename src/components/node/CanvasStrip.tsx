@@ -1,4 +1,5 @@
 import {
+  useCallback,
   useEffect,
   useLayoutEffect,
   useRef,
@@ -6,7 +7,7 @@ import {
   useSyncExternalStore,
   type PointerEvent,
 } from "react";
-import { supportsFineHover } from "@/utils/mediaQuery";
+import { subscribeMediaQuery, supportsFineHover } from "@/utils/mediaQuery";
 
 export interface CanvasStripInteraction {
   hoverIndex: number | null;
@@ -177,6 +178,7 @@ function fallbackCanvasColor(varName: string | null): string {
 // 自定义配色不改变 appearance，需要显式失效。
 export function clearCssColorCache() {
   cssColorCache.clear();
+  cssEngineColorCache.clear();
   cssColorCacheKey = null;
 }
 
@@ -188,6 +190,7 @@ function resolveCssColor(color: string): string {
   if (appearance !== cssColorCacheKey) {
     cssColorCacheKey = appearance;
     cssColorCache.clear();
+    cssEngineColorCache.clear();
   }
 
   const cached = cssColorCache.get(varName);
@@ -211,7 +214,10 @@ function resolveWithCssEngine(value: string): string | null {
   if (!cssEngineProbe) {
     cssEngineProbe = document.createElement("span");
     cssEngineProbe.style.display = "none";
-    document.documentElement.appendChild(cssEngineProbe);
+  }
+  const host = document.body ?? document.documentElement;
+  if (cssEngineProbe.parentNode !== host) {
+    host.appendChild(cssEngineProbe);
   }
   cssEngineProbe.style.color = "";
   cssEngineProbe.style.color = value;
@@ -311,13 +317,18 @@ export function safeCanvasColor(color: string): string {
 
   const hsl = /^hsla?\(([^)]+)\)$/i.exec(value);
   if (hsl) {
-    const parts = hsl[1]
+    const rawParts = hsl[1]
       .replace(/\//g, " ")
       .split(/[\s,]+/)
-      .filter(Boolean)
-      .map((part) => parseFloat(part));
+      .filter(Boolean);
+    const parts = rawParts.map((part) => parseFloat(part));
     if (parts.length >= 3 && parts.slice(0, 3).every((n) => Number.isFinite(n))) {
       const { r, g, b } = hslToRgb(parts[0], parts[1], parts[2]);
+      if (rawParts.length >= 4 && Number.isFinite(parts[3])) {
+        const rawAlpha = rawParts[3].endsWith("%") ? parts[3] / 100 : parts[3];
+        const alpha = Math.max(0, Math.min(1, rawAlpha));
+        return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+      }
       return `rgb(${r}, ${g}, ${b})`;
     }
   }
@@ -352,7 +363,7 @@ export function fillRoundedRect(
 // 否则整条发虚。matchMedia 的 resolution 查询只在离开当前值时触发一次,变化后要重新
 // 绑定新值的查询;所有 CanvasStrip 共享一个监听。
 const dprListeners = new Set<() => void>();
-let dprQuery: MediaQueryList | null = null;
+let dprUnsubscribe: (() => void) | null = null;
 
 function currentDpr() {
   if (typeof window === "undefined") return 1;
@@ -361,14 +372,16 @@ function currentDpr() {
 }
 
 function handleDprChange() {
-  dprQuery?.removeEventListener("change", handleDprChange);
+  dprUnsubscribe?.();
+  dprUnsubscribe = null;
   bindDprQuery();
   for (const listener of dprListeners) listener();
 }
 
 function bindDprQuery() {
-  dprQuery = window.matchMedia(`(resolution: ${currentDpr()}dppx)`);
-  dprQuery.addEventListener("change", handleDprChange);
+  if (typeof window === "undefined" || !window.matchMedia) return;
+  const query = window.matchMedia(`(resolution: ${currentDpr()}dppx)`);
+  dprUnsubscribe = subscribeMediaQuery(query, handleDprChange);
 }
 
 function subscribeToDpr(listener: () => void) {
@@ -377,8 +390,8 @@ function subscribeToDpr(listener: () => void) {
   return () => {
     dprListeners.delete(listener);
     if (dprListeners.size === 0) {
-      dprQuery?.removeEventListener("change", handleDprChange);
-      dprQuery = null;
+      dprUnsubscribe?.();
+      dprUnsubscribe = null;
     }
   };
 }
@@ -395,14 +408,36 @@ export function CanvasStrip({
   const lastHoverIndexRef = useRef<number | null>(null);
   const hoverAnimationFrameRef = useRef<number | null>(null);
   const interactionRef = useRef<CanvasStripInteraction>({ hoverIndex: null, hoverProgress: 0 });
-  const [interaction, setInteraction] = useState<CanvasStripInteraction>(interactionRef.current);
   const [width, setWidth] = useState(0);
   const [visible, setVisible] = useState(() => typeof IntersectionObserver === "undefined");
   const dpr = useSyncExternalStore(subscribeToDpr, currentDpr, () => 1);
+  const paintStateRef = useRef({ dpr, draw, height, visible, width });
+
+  // 悬停过渡期间直接命令式重绘 canvas，避免每帧 60fps 触发 React 重渲染。
+  const paintCanvas = useCallback(() => {
+    const canvas = canvasRef.current;
+    const state = paintStateRef.current;
+    if (!canvas || !state.visible || state.width <= 0) return;
+
+    const pixelWidth = Math.max(1, Math.round(state.width * state.dpr));
+    const pixelHeight = Math.max(1, Math.round(state.height * state.dpr));
+
+    // 重设 canvas 尺寸会清空状态并重新分配位图；数据重绘时尺寸通常没有变化。
+    if (canvas.width !== pixelWidth) canvas.width = pixelWidth;
+    if (canvas.height !== pixelHeight) canvas.height = pixelHeight;
+
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    ctx.setTransform(state.dpr, 0, 0, state.dpr, 0, 0);
+    ctx.globalAlpha = 1;
+    ctx.clearRect(0, 0, state.width, state.height);
+    state.draw(ctx, state.width, state.height, interactionRef.current);
+  }, []);
 
   const commitInteraction = (next: CanvasStripInteraction) => {
     interactionRef.current = next;
-    setInteraction(next);
+    paintCanvas();
   };
 
   const animateHover = (hoverIndex: number | null, target: 0 | 1) => {
@@ -468,24 +503,9 @@ export function CanvasStrip({
   }, []);
 
   useLayoutEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas || !visible || width <= 0) return;
-
-    const pixelWidth = Math.max(1, Math.round(width * dpr));
-    const pixelHeight = Math.max(1, Math.round(height * dpr));
-
-    // 重设 canvas 尺寸会清空状态并重新分配位图；数据重绘时尺寸通常没有变化。
-    if (canvas.width !== pixelWidth) canvas.width = pixelWidth;
-    if (canvas.height !== pixelHeight) canvas.height = pixelHeight;
-
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.globalAlpha = 1;
-    ctx.clearRect(0, 0, width, height);
-    draw(ctx, width, height, interaction);
-  }, [dpr, draw, height, interaction, redrawKey, visible, width]);
+    paintStateRef.current = { dpr, draw, height, visible, width };
+    paintCanvas();
+  }, [dpr, draw, height, paintCanvas, redrawKey, visible, width]);
 
   const handlePointerLeave = () => {
     if (lastHoverIndexRef.current === null) return;

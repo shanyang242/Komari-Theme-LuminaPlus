@@ -12,6 +12,10 @@ import {
 } from "lucide-react";
 import { clsx } from "clsx";
 import { ThemeConfigSaveFooter } from "@/components/theme/ThemeConfigSaveFooter";
+import {
+  resolveNextSelectedUuid,
+  resolvePanelSelectedClient,
+} from "@/components/theme/configPanelSelection";
 import { Flag } from "@/components/ui/Flag";
 import type { AdminClient, PingTask } from "@/types/komari";
 import {
@@ -87,6 +91,8 @@ export function MultiPingNodeConfigPanel({
   const [firstVisibleNodeIndex, setFirstVisibleNodeIndex] = useState(0);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const nodeListRef = useRef<HTMLDivElement>(null);
+  const filterKey = `${filter}\0${group}\0${search}`;
+  const prevFilterKeyRef = useRef(filterKey);
 
   const tasksById = useMemo(
     () => new Map(tasks.map((task) => [task.id, task])),
@@ -131,10 +137,8 @@ export function MultiPingNodeConfigPanel({
     });
   }, [clients, filter, group, nodeTaskIds, search]);
   const selectedClient = useMemo(
-    () =>
-      filteredClients.find((client) => client.uuid === selectedUuid) ??
-      filteredClients[0],
-    [filteredClients, selectedUuid],
+    () => resolvePanelSelectedClient(clients, filteredClients, selectedUuid),
+    [clients, filteredClients, selectedUuid],
   );
   const selectedTaskIds = selectedClient ? nodeTaskIds[selectedClient.uuid] : undefined;
   const effectiveTaskIds = selectedTaskIds ?? globalTaskIds;
@@ -174,9 +178,16 @@ export function MultiPingNodeConfigPanel({
 
   useEffect(() => {
     if (!open) return;
-    const nextUuid = selectedClient?.uuid ?? "";
+    const filterChanged = prevFilterKeyRef.current !== filterKey;
+    prevFilterKeyRef.current = filterKey;
+    const nextUuid = resolveNextSelectedUuid(
+      clients,
+      filteredClients,
+      selectedUuid,
+      filterChanged,
+    );
     if (nextUuid !== selectedUuid) setSelectedUuid(nextUuid);
-  }, [open, selectedClient?.uuid, selectedUuid]);
+  }, [clients, filterKey, filteredClients, open, selectedUuid]);
 
   useEffect(() => {
     setFirstVisibleNodeIndex(0);

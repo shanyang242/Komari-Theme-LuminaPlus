@@ -79,31 +79,47 @@ export function resolvePingChartInterval(
  * 少量丢包被人为拉低延迟曲线。
  */
 export function mergePingMetricSeries(series: PingMetricSeries[]): PingRecord[] {
-  const lossSeries = new Map<string, PingMetricSeries>();
+  const latencySeries = new Map<string, { client: string; taskId: number; series: PingMetricSeries }>();
+  const lossSeries = new Map<string, { client: string; taskId: number; series: PingMetricSeries }>();
+  const pairOrder: Array<{ key: string; client: string; taskId: number }> = [];
+  const seenPairs = new Set<string>();
+
   for (const item of series) {
-    if (item.metricKey !== PING_LOSS_METRIC) continue;
+    if (item.metricKey !== PING_LATENCY_METRIC && item.metricKey !== PING_LOSS_METRIC) continue;
     const taskId = parseTaskId(item.tags);
     if (taskId == null || !item.client) continue;
-    lossSeries.set(seriesKey(item.client, taskId), item);
+    const key = seriesKey(item.client, taskId);
+    if (!seenPairs.has(key)) {
+      seenPairs.add(key);
+      pairOrder.push({ key, client: item.client, taskId });
+    }
+    if (item.metricKey === PING_LATENCY_METRIC) {
+      latencySeries.set(key, { client: item.client, taskId, series: item });
+    } else {
+      lossSeries.set(key, { client: item.client, taskId, series: item });
+    }
   }
 
   const records: PingRecord[] = [];
-  for (const latency of series) {
-    if (latency.metricKey !== PING_LATENCY_METRIC) continue;
-    const taskId = parseTaskId(latency.tags);
-    if (taskId == null || !latency.client) continue;
-
-    const matchingLoss = lossSeries.get(seriesKey(latency.client, taskId));
-    const lossByTime = new Map(
-      (matchingLoss?.points ?? []).map((point) => [pointTimeKey(point.time), point] as const),
+  for (const { key, client, taskId } of pairOrder) {
+    const latency = latencySeries.get(key)?.series;
+    const loss = lossSeries.get(key)?.series;
+    const latencyByTime = new Map(
+      (latency?.points ?? []).map((point) => [pointTimeKey(point.time), point] as const),
     );
+    const lossByTime = new Map(
+      (loss?.points ?? []).map((point) => [pointTimeKey(point.time), point] as const),
+    );
+    const timeKeys = new Set<string>([...latencyByTime.keys(), ...lossByTime.keys()]);
 
-    for (const point of latency.points) {
-      const lossPoint = lossByTime.get(pointTimeKey(point.time));
-      const total = Math.max(point.count, lossPoint?.count ?? 0);
+    for (const timeKey of timeKeys) {
+      const point = latencyByTime.get(timeKey);
+      const lossPoint = lossByTime.get(timeKey);
+      const total = Math.max(point?.count ?? 0, lossPoint?.count ?? 0);
       if (total <= 0) continue; // fill_empty 产生的空格，不伪造成丢包。
 
-      const fallbackLossRatio = point.value != null && point.value < 0 ? 1 : 0;
+      const fallbackLossRatio =
+        point?.value != null && point.value < 0 ? 1 : point ? 0 : 1;
       const lossRatio = Math.max(
         0,
         Math.min(1, lossPoint?.value ?? fallbackLossRatio),
@@ -114,20 +130,20 @@ export function mergePingMetricSeries(series: PingMetricSeries[]): PingRecord[] 
       let value: number;
       if (valid <= 0) {
         value = -1;
-      } else if (point.value == null) {
-        // 有样本但 latency 为 null 只应出现在全丢包桶；防御性地跳过不完整响应。
+      } else if (point == null || point.value == null) {
+        // 有成功样本但 latency 缺失时跳过不完整响应；全丢包桶已在 valid <= 0 分支保留。
         continue;
       } else if (lost > 0) {
-        value = (point.value * total + lost) / valid;
+        value = Math.max(0, (point.value * total + lost) / valid);
       } else {
-        value = point.value;
+        value = Math.max(0, point.value);
       }
 
       records.push({
         task_id: taskId,
-        time: point.time,
+        time: point?.time ?? lossPoint!.time,
         value,
-        client: latency.client,
+        client,
         count: total,
         loss: lossRatio * 100,
       });

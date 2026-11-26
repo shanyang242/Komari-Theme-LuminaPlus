@@ -9,26 +9,6 @@ interface JsonRpcRequest<TParams = unknown> {
   id?: JsonRpcId;
 }
 
-interface JsonRpcSuccess<TResult = unknown> {
-  jsonrpc?: string;
-  id?: JsonRpcId;
-  result: TResult;
-}
-
-interface JsonRpcFailure {
-  jsonrpc?: string;
-  id?: JsonRpcId;
-  error: {
-    code?: number;
-    message?: string;
-    data?: unknown;
-  };
-}
-
-type JsonRpcResponse<TResult = unknown> =
-  | JsonRpcSuccess<TResult>
-  | JsonRpcFailure;
-
 type PendingRequest = {
   resolve: (value: unknown) => void;
   reject: (reason?: unknown) => void;
@@ -39,6 +19,22 @@ type RpcCallOptions = {
   timeout?: number;
   signal?: AbortSignal;
 };
+
+function isJsonRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function extractRpcError(errorValue: unknown): RpcResponseError {
+  if (isJsonRecord(errorValue)) {
+    const code = typeof errorValue.code === "number" ? errorValue.code : undefined;
+    const message =
+      typeof errorValue.message === "string" && errorValue.message.length > 0
+        ? errorValue.message
+        : `RPC Error ${code ?? "unknown"}`;
+    return new RpcResponseError(message, code);
+  }
+  return new RpcResponseError(String(errorValue || "RPC Error unknown"));
+}
 
 const DEFAULT_TIMEOUT_MS = 30_000;
 const HEARTBEAT_INTERVAL_MS = 15_000;
@@ -57,7 +53,14 @@ export class RpcResponseError extends Error {
   }
 }
 
-class RPC2Client {
+class RpcWebSocketTimeoutError extends Error {
+  constructor(method: string) {
+    super(`RPC2 request timed out: ${method}`);
+    this.name = "RpcWebSocketTimeoutError";
+  }
+}
+
+export class RPC2Client {
   private ws: WebSocket | null = null;
   private requestId = 0;
   private pending = new Map<JsonRpcId, PendingRequest>();
@@ -78,26 +81,53 @@ class RPC2Client {
     params?: TParams,
     options: RpcCallOptions = {},
   ): Promise<TResult> {
-    if (this.state === "disconnected") {
+    if (this.state === "disconnected" && this.reconnectTimer == null) {
       this.autoConnect();
     }
 
+    const timeoutMs = options.timeout ?? DEFAULT_TIMEOUT_MS;
+    if (timeoutMs <= 0) {
+      throw new Error(`RPC2 request timed out: ${method}`);
+    }
+    const deadline = Date.now() + timeoutMs;
+
     if (this.state === "connected") {
+      const socket = this.ws;
+      // 为 HTTP 回退预留预算：总预算 > 1ms 时最多分配一半给 WS，避免半开/无响应连接
+      // 耗尽全部超时导致无法回退 HTTP，同时保持总耗时仍受调用方 timeout 约束。
+      const wsTimeoutMs =
+        timeoutMs > 1 ? Math.max(1, Math.floor(timeoutMs / 2)) : timeoutMs;
       try {
-        return await this.callViaWebSocket<TParams, TResult>(method, params, options);
+        return await this.callViaWebSocket<TParams, TResult>(method, params, {
+          ...options,
+          timeout: wsTimeoutMs,
+        });
       } catch (error) {
         // 服务端已拒绝的 RPC 不能再用 HTTP 重试。
         if (error instanceof RpcResponseError) throw error;
         if (options.signal?.aborted) throw error;
-        return await this.callViaHttp<TParams, TResult>(method, params, options);
+        // WS 请求超时说明当前 OPEN 连接可能已半开/黑洞，关闭失效连接并转入重连退避，
+        // 使本次请求剩余预算与后续请求都能避开该失效连接直接走 HTTP 兜底。
+        if (error instanceof RpcWebSocketTimeoutError && socket) {
+          this.resetUnresponsiveSocket(socket);
+        }
+        const remaining = deadline - Date.now();
+        if (remaining <= 0) throw error;
+        return await this.callViaHttp<TParams, TResult>(method, params, {
+          ...options,
+          timeout: remaining,
+        });
       }
     }
 
-    return await this.callViaHttp<TParams, TResult>(method, params, options);
+    return await this.callViaHttp<TParams, TResult>(method, params, {
+      ...options,
+      timeout: timeoutMs,
+    });
   }
 
   private autoConnect() {
-    if (this.closed) return;
+    if (this.closed || this.reconnectTimer != null) return;
     void this.connect().catch(() => {
       // socket 不可用时仍可走 HTTP 兜底。
     });
@@ -112,6 +142,7 @@ class RPC2Client {
     }
     this.rejectPendingRequests(new Error("RPC2 client closed"));
     if (this.ws) {
+      this.ws.onmessage = null;
       this.ws.onclose = null;
       try {
         this.ws.close();
@@ -138,6 +169,7 @@ class RPC2Client {
         try {
           ws.close();
         } catch {}
+        this.scheduleReconnect();
         reject(new Error("RPC2 WebSocket connection timed out"));
       }, 10_000);
 
@@ -166,6 +198,11 @@ class RPC2Client {
 
       const handleError = () => {
         cleanup();
+        if (this.closed) {
+          this.state = "disconnected";
+          reject(new Error("RPC2 client closed during connect"));
+          return;
+        }
         this.state = "error";
         this.scheduleReconnect();
         reject(new Error("RPC2 WebSocket connection failed"));
@@ -174,7 +211,13 @@ class RPC2Client {
       // 握手关闭可能没有 error 事件，需立即结算 promise 以允许重连。
       const handleConnectClose = () => {
         cleanup();
+        if (this.closed) {
+          this.state = "disconnected";
+          reject(new Error("RPC2 client closed during connect"));
+          return;
+        }
         this.state = "error";
+        this.scheduleReconnect();
         reject(new Error("RPC2 WebSocket closed during connect"));
       };
 
@@ -193,7 +236,7 @@ class RPC2Client {
     ws.onmessage = (event) => {
       if (this.ws !== ws) return;
       try {
-        const payload = JSON.parse(String(event.data)) as JsonRpcResponse;
+        const payload: unknown = JSON.parse(String(event.data));
         this.handleMessage(payload);
       } catch {
         // 忽略传输层的非法帧。
@@ -212,22 +255,24 @@ class RPC2Client {
     // 握手后的传输错误由 close 事件统一处理。
   }
 
-  private handleMessage(payload: JsonRpcResponse) {
-    if (payload.id == null) return;
+  private handleMessage(payload: unknown) {
+    if (!isJsonRecord(payload)) return;
+    const id = payload.id;
+    if (typeof id !== "number" && typeof id !== "string") return;
 
-    const pending = this.pending.get(payload.id);
+    const pending = this.pending.get(id);
     if (!pending) return;
 
-    this.pending.delete(payload.id);
+    this.pending.delete(id);
     window.clearTimeout(pending.timeout);
 
-    if ("error" in payload) {
-      pending.reject(
-        new RpcResponseError(
-          payload.error.message || `RPC Error ${payload.error.code ?? "unknown"}`,
-          payload.error.code,
-        ),
-      );
+    if (payload.error != null) {
+      pending.reject(extractRpcError(payload.error));
+      return;
+    }
+
+    if (!("result" in payload)) {
+      pending.reject(new Error("Invalid RPC2 response: missing result"));
       return;
     }
 
@@ -250,6 +295,9 @@ class RPC2Client {
 
     const id = ++this.requestId;
     const timeoutMs = options.timeout ?? DEFAULT_TIMEOUT_MS;
+    if (timeoutMs <= 0) {
+      throw new RpcWebSocketTimeoutError(method);
+    }
     const request: JsonRpcRequest<TParams> = {
       jsonrpc: "2.0",
       method,
@@ -261,7 +309,7 @@ class RPC2Client {
       const timeout = window.setTimeout(() => {
         cleanup();
         this.pending.delete(id);
-        reject(new Error(`RPC2 request timed out: ${method}`));
+        reject(new RpcWebSocketTimeoutError(method));
       }, timeoutMs);
 
       const onAbort = () => {
@@ -306,6 +354,9 @@ class RPC2Client {
   ): Promise<TResult> {
     const id = ++this.requestId;
     const timeoutMs = options.timeout ?? DEFAULT_TIMEOUT_MS;
+    if (timeoutMs <= 0) {
+      throw new Error(`RPC2 request timed out: ${method}`);
+    }
     const response = await fetchWithTimeout(
       this.baseUrl,
       {
@@ -330,15 +381,18 @@ class RPC2Client {
       throw new Error(`Request ${this.baseUrl} failed: ${response.status}`);
     }
 
-    const payload = (await response.json()) as JsonRpcResponse<TResult>;
-    if ("error" in payload) {
-      throw new RpcResponseError(
-        payload.error.message || `RPC Error ${payload.error.code ?? "unknown"}`,
-        payload.error.code,
-      );
+    const payload: unknown = await response.json();
+    if (!isJsonRecord(payload)) {
+      throw new Error("Invalid RPC2 response payload");
+    }
+    if (payload.error != null) {
+      throw extractRpcError(payload.error);
+    }
+    if (!("result" in payload)) {
+      throw new Error("Invalid RPC2 response: missing result");
     }
 
-    return payload.result;
+    return payload.result as TResult;
   }
 
   private startHeartbeat() {
@@ -365,10 +419,13 @@ class RPC2Client {
   }
 
   private scheduleReconnect() {
-    if (this.closed || this.reconnectTimer) return;
+    if (this.closed) return;
+    // 即使定时器已在等待中（例如 handleError 先调度、随后 onclose 覆写 state="disconnected"），
+    // 也必须保持 reconnecting，避免轮询 call() 提前触发 autoConnect() 破坏退避。
+    this.state = "reconnecting";
+    if (this.reconnectTimer != null) return;
 
     // 指数退避并持续重试，连接成功后归零。
-    this.state = "reconnecting";
     const delay = Math.min(
       RECONNECT_INTERVAL_MS * 2 ** this.reconnectAttempts,
       MAX_RECONNECT_INTERVAL_MS,
@@ -378,6 +435,19 @@ class RPC2Client {
       this.reconnectTimer = null;
       this.autoConnect();
     }, delay);
+  }
+
+  private resetUnresponsiveSocket(socket: WebSocket) {
+    if (this.ws !== socket) return;
+    this.stopHeartbeat();
+    socket.onmessage = null;
+    socket.onclose = null;
+    this.ws = null;
+    try {
+      socket.close();
+    } catch {}
+    this.rejectPendingRequests(new Error("RPC2 WebSocket unresponsive"));
+    this.scheduleReconnect();
   }
 
   private rejectPendingRequests(error: Error) {

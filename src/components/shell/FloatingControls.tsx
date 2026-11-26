@@ -3,7 +3,7 @@ import { AlertTriangle, ChevronLeft, ChevronRight, Grid3x3, LayoutGrid, List, Mo
 import { Link } from "react-router-dom";
 import { usePreferences } from "@/hooks/usePreferences";
 import { useViewMode } from "@/hooks/useViewMode";
-import { useNodeStoreStatus } from "@/hooks/useNode";
+import { useNodeFailureStreak } from "@/hooks/useNode";
 import { useAuth } from "@/hooks/useAuth";
 import { useAdminEntryPath } from "@/hooks/useAdminEntryPath";
 import { useThemeSettings } from "@/hooks/useThemeSettings";
@@ -42,7 +42,7 @@ export function FloatingControls({
   const { data: me } = useAuth();
   const adminEntryPath = useAdminEntryPath();
   const themeSettings = useThemeSettings();
-  const { failureStreak } = useNodeStoreStatus();
+  const failureStreak = useNodeFailureStreak();
   const [collapsed, setCollapsed] = useState(true);
   const [colorsOpen, setColorsOpen] = useState(false);
   const [colorsMounted, setColorsMounted] = useState(false);

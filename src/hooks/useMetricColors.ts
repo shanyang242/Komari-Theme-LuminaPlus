@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore
 import { useQueryClient } from "@tanstack/react-query";
 import { clearCssColorCache } from "@/components/node/CanvasStrip";
 import { usePublicConfig } from "@/hooks/usePublicConfig";
-import { saveThemeSettings } from "@/services/api";
+import { getPublic, saveThemeSettings } from "@/services/api";
 import type { PublicConfig } from "@/types/komari";
 
 // 指标色和暗色深度保存到 theme_settings，并通过 CSS 变量全局应用。
@@ -159,24 +159,49 @@ function applyPalette(palette: PaletteDraft) {
   applyDarkDepth(palette.darkDepth);
 }
 
+function subscribeMetricColorsVersion(listener: () => void) {
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+  };
+}
+
+function getMetricColorsVersionSnapshot() {
+  return version;
+}
+
 /** 供 canvas 卡片（NodeCard）订阅：配色变化时拼进 redrawKey 触发重绘。 */
 export function useMetricColorsVersion(): number {
   return useSyncExternalStore(
-    (l) => {
-      listeners.add(l);
-      return () => void listeners.delete(l);
-    },
-    () => version,
-    () => version,
+    subscribeMetricColorsVersion,
+    getMetricColorsVersionSnapshot,
+    getMetricColorsVersionSnapshot,
   );
 }
 
-/** 读取每个指标当前生效的 hex（含默认 token），供取色器显示初值。 */
-export function readEffectiveColors(): Record<MetricColorKey, string> {
-  const styles = getComputedStyle(document.documentElement);
-  const out = {} as Record<MetricColorKey, string>;
-  for (const { key, cssVar } of METRIC_COLOR_META) out[key] = toInputHex(styles.getPropertyValue(cssVar));
-  return out;
+/** 读取每个指标不含内联自定义覆盖的默认 token 色值，供取色器显示无覆盖基准色。 */
+export function readDefaultMetricColors(): Record<MetricColorKey, string> {
+  const root = document.documentElement;
+  const savedInline = new Map<string, string>();
+  for (const { cssVar } of METRIC_COLOR_META) {
+    const inlineValue = root.style.getPropertyValue(cssVar);
+    if (inlineValue) {
+      savedInline.set(cssVar, inlineValue);
+      root.style.removeProperty(cssVar);
+    }
+  }
+  try {
+    const styles = getComputedStyle(root);
+    const out = {} as Record<MetricColorKey, string>;
+    for (const { key, cssVar } of METRIC_COLOR_META) {
+      out[key] = toInputHex(styles.getPropertyValue(cssVar));
+    }
+    return out;
+  } finally {
+    for (const [cssVar, inlineValue] of savedInline) {
+      root.style.setProperty(cssVar, inlineValue);
+    }
+  }
 }
 
 /** 全局：把后端保存的配色应用到所有访客（在 AppShell 挂载一次）。 */
@@ -248,8 +273,11 @@ export function useMetricColorsEditor() {
       let savedAny = false;
       try {
         for (;;) {
-          // 合并最新 public 缓存，保留同期保存的其他主题设置。
-          const latest = queryClient.getQueryData<PublicConfig>(["public"]) ?? config;
+          // 保存前拉取远端最新配置，避免陈旧 public 缓存覆盖其他页签刚保存的主题设置。
+          const latest =
+            (await getPublic().catch(() => null)) ??
+            queryClient.getQueryData<PublicConfig>(["public"]) ??
+            config;
           const nextSettings: Record<string, unknown> = { ...(latest.theme_settings ?? {}) };
           if (Object.keys(current.colors).length > 0) nextSettings[SETTINGS_KEY] = current.colors;
           else delete nextSettings[SETTINGS_KEY];
@@ -260,6 +288,11 @@ export function useMetricColorsEditor() {
           }
           try {
             await saveThemeSettings(latest.theme, nextSettings);
+            queryClient.setQueryData<PublicConfig>(["public"], (prev) =>
+              prev
+                ? { ...prev, theme_settings: nextSettings }
+                : { ...latest, theme_settings: nextSettings },
+            );
             lastOk = true;
             savedAny = true;
             serverPaletteRef.current = current;

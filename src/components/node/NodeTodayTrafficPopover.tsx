@@ -127,10 +127,28 @@ export function NodeTodayTrafficPopover({
     [cancelClose, cancelFocusCheck],
   );
 
+  const wasActiveRef = useRef(false);
   useEffect(() => {
-    if (!trafficAvailable) return;
-    setTrafficActive(open);
-    return () => setTrafficActive(false);
+    if (!trafficAvailable) {
+      if (wasActiveRef.current) {
+        wasActiveRef.current = false;
+        setTrafficActive(false);
+      }
+      return;
+    }
+    if (!open) {
+      if (wasActiveRef.current) {
+        wasActiveRef.current = false;
+        setTrafficActive(false);
+      }
+      return;
+    }
+    wasActiveRef.current = true;
+    setTrafficActive(true);
+    return () => {
+      wasActiveRef.current = false;
+      setTrafficActive(false);
+    };
   }, [open, setTrafficActive, trafficAvailable]);
 
   useEffect(() => {

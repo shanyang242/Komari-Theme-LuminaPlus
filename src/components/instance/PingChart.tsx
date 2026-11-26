@@ -1,11 +1,13 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import UplotReact from "uplot-react";
 import type uPlot from "uplot";
 import { Eye, EyeOff, RefreshCw } from "lucide-react";
 import { usePingRecords } from "@/hooks/useRecords";
 import { InstancePanel, InstanceChartLoading } from "./InstancePanel";
 import {
+  buildChartCursor,
   buildChartTooltipHooks,
+  buildChartXScale,
   colorForSeries,
   createTimeAxisFormatter,
   getAxisColors,
@@ -99,6 +101,7 @@ export function summarizePingRecords(records: PingRecord[]) {
 }
 
 const EMPTY_PING_STATS: PingTaskStats[] = [];
+const EMPTY_HIDDEN_TASKS = new Set<number>();
 const MAX_RENDER_POINTS = 160;
 // 1 即关闭平滑(smoothByCount 对 <=1 原样返回);保留常量便于调参,非削峰模式当前不平滑。
 const SMOOTH_WINDOW_POINTS = 1;
@@ -124,11 +127,27 @@ export function PingChart({
   const pingStats = data?.stats ?? EMPTY_PING_STATS;
   const { resolvedAppearance } = usePreferences();
   const { w, h, ref: chartSizeRef } = useResponsiveChartSize("wide");
-  const [hiddenTasks, setHiddenTasks] = useState<Set<number>>(new Set());
+  const [hiddenState, setHiddenState] = useState<{ uuid: string; tasks: Set<number> }>(() => ({
+    uuid,
+    tasks: EMPTY_HIDDEN_TASKS,
+  }));
+  const hiddenTasks = hiddenState.uuid === uuid ? hiddenState.tasks : EMPTY_HIDDEN_TASKS;
+  const setHiddenTasks = useCallback(
+    (updater: Set<number> | ((prev: Set<number>) => Set<number>)) => {
+      setHiddenState((current) => {
+        const prev = current.uuid === uuid ? current.tasks : EMPTY_HIDDEN_TASKS;
+        const next = typeof updater === "function" ? updater(prev) : updater;
+        if (current.uuid === uuid && next === prev) return current;
+        return { uuid, tasks: next };
+      });
+    },
+    [uuid],
+  );
   const [chartMetric, setChartMetric] = useState<"latency" | "loss">("latency");
   const [connectNulls, setConnectNulls] = useState(false);
   const [cutPeak, setCutPeak] = useState(false);
   const chartRef = useRef<uPlot.AlignedData>([[]]);
+  const uplotRef = useRef<uPlot | null>(null);
   const [tooltip, setTooltip] = useState<ChartTooltipState>({
     show: false,
     left: 0,
@@ -171,10 +190,9 @@ export function PingChart({
     () => new Set(visibleTasks.map((task) => task.id)),
     [visibleTasks],
   );
-
-  useEffect(() => {
-    setHiddenTasks(new Set());
-  }, [uuid]);
+  const hiddenTasksRef = useRef(hiddenTasks);
+  const visibleTasksRef = useRef(visibleTasks);
+  const tasksRef = useRef(tasks);
 
   useEffect(() => {
     setHiddenTasks((prev) => {
@@ -182,7 +200,7 @@ export function PingChart({
       const next = new Set([...prev].filter((taskId) => validTaskIds.has(taskId)));
       return next.size === prev.size ? prev : next;
     });
-  }, [tasks]);
+  }, [setHiddenTasks, tasks]);
 
   // 只依赖 data:切换削峰等开关时不重跑解析/排序。
   const sortedRecords = useMemo(
@@ -277,11 +295,15 @@ export function PingChart({
 
   const chart = chartMetric === "loss" ? lossChart : latencyChart;
 
-  useEffect(() => {
-    if (chart) chartRef.current = chart;
+  useLayoutEffect(() => {
+    chartRef.current = chart ?? ([[]] as uPlot.AlignedData);
   }, [chart]);
 
   const requestedXRange = useMemo(() => historyChartRangeSeconds(data), [data]);
+  const requestedXRangeRef = useRef<[number, number] | null>(requestedXRange);
+  useLayoutEffect(() => {
+    requestedXRangeRef.current = requestedXRange;
+  }, [requestedXRange]);
   const coverageMeta = useMemo(() => {
     if (!data) return null;
     const taskIntervals = tasks
@@ -332,8 +354,36 @@ export function PingChart({
     return [Math.max(0, min - pad), max + pad];
   }, [chart, chartMetric, tasks, visibleTaskIds]);
 
+  const yRangeRef = useRef(yRange);
+  useLayoutEffect(() => {
+    hiddenTasksRef.current = hiddenTasks;
+    visibleTasksRef.current = visibleTasks;
+    tasksRef.current = tasks;
+    yRangeRef.current = yRange;
+  }, [hiddenTasks, tasks, visibleTasks, yRange]);
+
+  const syncPlot = useCallback((plot: uPlot | null) => {
+    if (!plot) return;
+    const currentTasks = tasksRef.current;
+    const currentHidden = hiddenTasksRef.current;
+    const currentYRange = yRangeRef.current;
+    plot.batch(() => {
+      currentTasks.forEach((task, index) => {
+        const series = plot.series[index + 1];
+        const nextShow = !currentHidden.has(task.id);
+        if (series && series.show !== nextShow) {
+          plot.setSeries(index + 1, { show: nextShow }, false);
+        }
+      });
+      if (currentYRange[0] != null && currentYRange[1] != null) {
+        plot.setScale("y", { min: currentYRange[0], max: currentYRange[1] });
+      }
+    });
+  }, []);
+
+  const hasChartData = chart != null;
   const baseOptions = useMemo<Omit<uPlot.Options, "width" | "height"> | null>(() => {
-    if (!chart) return null;
+    if (!hasChartData) return null;
     const { grid, text } = getAxisColors(isDark);
     const tooltipHooks = buildChartTooltipHooks({
       dataRef: chartRef,
@@ -341,7 +391,7 @@ export function PingChart({
       estimatedWidth: 196,
       setTooltip,
       buildRows: (idx) =>
-        visibleTasks
+        visibleTasksRef.current
           .map((task) => {
             const taskIndex = taskIndexById.get(task.id) ?? 0;
             const raw = chartRef.current[taskIndex + 1]?.[idx] as number | null | undefined;
@@ -367,15 +417,14 @@ export function PingChart({
             color,
           })),
     });
+    const cursor = buildChartCursor(() => requestedXRangeRef.current);
     return {
       padding: [10, 14, 12, 2],
-      cursor: { drag: { x: true, y: false } },
+      cursor,
       legend: { show: false },
       scales: {
-        x: requestedXRange
-          ? { time: true, auto: false, range: () => requestedXRange }
-          : { time: true },
-        y: { auto: false, range: yRange },
+        x: buildChartXScale(requestedXRange),
+        y: { auto: false, range: () => yRangeRef.current },
       },
       axes: [
         {
@@ -407,7 +456,7 @@ export function PingChart({
           stroke: taskColors.get(task.id) ?? colorForSeries(index, tasks.length),
           width: 1.7,
           spanGaps: connectNulls,
-          show: !hiddenTasks.has(task.id),
+          show: !hiddenTasksRef.current.has(task.id),
           points: { show: false },
         })),
       ],
@@ -426,7 +475,12 @@ export function PingChart({
         setCursor: [tooltipHooks.onSetCursor],
       },
     };
-  }, [chart, chartMetric, connectNulls, hiddenTasks, hours, isDark, requestedXRange, taskColors, taskIndexById, taskLabels, tasks, visibleTasks, yRange]);
+  }, [chartMetric, connectNulls, hasChartData, hours, isDark, requestedXRange, taskColors, taskIndexById, taskLabels, tasks]);
+
+  // 切换线路显隐、削峰平滑或 yRange 更新时直接原地同步 uPlot，避免整图销毁重建。
+  useEffect(() => {
+    syncPlot(uplotRef.current);
+  }, [hiddenTasks, syncPlot, tasks, yRange]);
 
   const options = useMemo<uPlot.Options | null>(
     () => (baseOptions ? { ...baseOptions, width: w, height: h } : null),
@@ -464,7 +518,10 @@ export function PingChart({
           ? Math.max(0, p99 - p50) / Math.min(50, Math.max(10, p50))
           : null;
       const volatility =
-        server && Number.isFinite(server.p99P50Ratio)
+        server &&
+        server.valid > 0 &&
+        Number.isFinite(server.p99P50Ratio) &&
+        (server.p99P50Ratio > 0 || (p50 != null && p99 != null))
           ? server.p99P50Ratio
           : fallbackVolatility;
       const total = server?.total ?? fallback?.total ?? 0;
@@ -635,9 +692,17 @@ export function PingChart({
         {chart && options && visibleTasks.length > 0 ? (
           <>
             <UplotReact
-              key={`${uuid}-${hours}-${chartMetric}-${cutPeak ? "smooth" : "raw"}-${connectNulls ? "span" : "gap"}`}
+              key={`${uuid}-${hours}-${chartMetric}-${connectNulls ? "span" : "gap"}`}
               options={options}
               data={chart}
+              resetScales={false}
+              onCreate={(plot) => {
+                uplotRef.current = plot;
+                syncPlot(plot);
+              }}
+              onDelete={() => {
+                uplotRef.current = null;
+              }}
             />
             <ChartTooltip tooltip={tooltip} />
           </>

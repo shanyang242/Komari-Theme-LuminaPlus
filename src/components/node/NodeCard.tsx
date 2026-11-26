@@ -598,6 +598,49 @@ function FooterPriceChip({ renewalPrice, titled }: { renewalPrice: string; title
   );
 }
 
+const observedFooterRows = new Map<Element, () => void>();
+const fallbackFooterResizeListeners = new Set<() => void>();
+let sharedFooterResizeObserver: ResizeObserver | null = null;
+let fallbackFooterResizeListening = false;
+
+function notifyFallbackFooterResizeListeners() {
+  for (const listener of fallbackFooterResizeListeners) listener();
+}
+
+// 所有 NodeCard 共用一个 ResizeObserver，避免每张卡片各自创建 observer 实例。
+function subscribeFooterRowResize(element: HTMLElement, listener: () => void) {
+  if (typeof ResizeObserver !== "undefined") {
+    sharedFooterResizeObserver ??= new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        observedFooterRows.get(entry.target)?.();
+      }
+    });
+    observedFooterRows.set(element, listener);
+    sharedFooterResizeObserver.observe(element);
+    return () => {
+      observedFooterRows.delete(element);
+      sharedFooterResizeObserver?.unobserve(element);
+      if (observedFooterRows.size === 0) {
+        sharedFooterResizeObserver?.disconnect();
+        sharedFooterResizeObserver = null;
+      }
+    };
+  }
+
+  fallbackFooterResizeListeners.add(listener);
+  if (!fallbackFooterResizeListening) {
+    fallbackFooterResizeListening = true;
+    window.addEventListener("resize", notifyFallbackFooterResizeListeners);
+  }
+  return () => {
+    fallbackFooterResizeListeners.delete(listener);
+    if (fallbackFooterResizeListeners.size === 0 && fallbackFooterResizeListening) {
+      fallbackFooterResizeListening = false;
+      window.removeEventListener("resize", notifyFallbackFooterResizeListeners);
+    }
+  };
+}
+
 function NodeCardFooter({
   expire,
   expireColor,
@@ -655,13 +698,7 @@ function NodeCardFooter({
     updateVisibleTags();
 
     let cancelled = false;
-    const observer =
-      typeof ResizeObserver === "undefined" ? null : new ResizeObserver(updateVisibleTags);
-    if (observer) {
-      observer.observe(row);
-    } else {
-      window.addEventListener("resize", updateVisibleTags);
-    }
+    const unsubscribeResize = subscribeFooterRowResize(row, updateVisibleTags);
     // 字体替换会在首次绘制后改变 tag 宽度;字体就绪后重新测量一次,
     // 但若卡片在 promise resolve 前已卸载则跳过。
     document.fonts?.ready.then(() => {
@@ -670,8 +707,7 @@ function NodeCardFooter({
 
     return () => {
       cancelled = true;
-      observer?.disconnect();
-      if (!observer) window.removeEventListener("resize", updateVisibleTags);
+      unsubscribeResize();
     };
   }, [footerTags, renewalPrice]);
 

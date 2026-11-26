@@ -15,7 +15,9 @@ import { useLoadRecords } from "@/hooks/useRecords";
 import { useNodeMeta, useNodeMetrics } from "@/hooks/useNode";
 import { InstancePanel, InstanceChartLoading } from "./InstancePanel";
 import {
+  buildChartCursor,
   buildChartTooltipHooks,
+  buildChartXScale,
   CHART_PALETTE,
   createTimeAxisFormatter,
   formatChartCoverageTime,
@@ -64,7 +66,7 @@ const SERIES_LABELS: Record<string, string> = {
   udp: "UDP",
   process: "进程",
 };
-const LOAD_INTERPOLATE_KEYS = [
+const LOAD_METRIC_KEYS = [
   "cpu",
   "ram",
   "swap",
@@ -75,6 +77,13 @@ const LOAD_INTERPOLATE_KEYS = [
   "udp",
   "process",
 ];
+
+const CPU_ICON = <Cpu size={13} />;
+const MEMORY_ICON = <MemoryStick size={13} />;
+const DISK_ICON = <HardDrive size={13} />;
+const NETWORK_ICON = <Network size={13} />;
+const CONNECTION_ICON = <Workflow size={13} />;
+const PROCESS_ICON = <Gauge size={13} />;
 
 interface ChartPoint {
   time: number;
@@ -91,29 +100,17 @@ function getHistoryRenderLimit(hours: number) {
   return LOAD_HISTORY_RENDER_LIMIT;
 }
 
-const DOWNSAMPLE_KEYS = [
-  "cpu",
-  "ram",
-  "swap",
-  "disk",
-  "netIn",
-  "netOut",
-  "connections",
-  "udp",
-  "process",
-] as const;
-
 // 走与 Ping 图同一套时间分桶保峰降采样:抽点式降采样会随机丢掉桶内尖峰,
 // 而负载/网速的瞬时突刺正是最需要保留的信息。
 function downsamplePoints(points: ChartPoint[], limit: number) {
   if (points.length <= limit || limit < 2) return points;
 
   const times = points.map((point) => point.time);
-  const perKey = DOWNSAMPLE_KEYS.map((key) => points.map((point) => point[key]));
+  const perKey = LOAD_METRIC_KEYS.map((key) => points.map((point) => point[key]));
   const reduced = downsampleAligned(times, perKey, limit, true);
   return reduced.times.map((time, index) => {
     const point: ChartPoint = { time };
-    DOWNSAMPLE_KEYS.forEach((key, keyIndex) => {
+    LOAD_METRIC_KEYS.forEach((key, keyIndex) => {
       point[key] = reduced.perTask[keyIndex][index] ?? null;
     });
     return point;
@@ -204,7 +201,7 @@ function buildBaseOptions({
     cursor: { drag: { x: true, y: false } },
     legend: { show: false },
     scales: {
-      x: xRange ? { time: true, auto: false, range: () => xRange } : { time: true },
+      x: buildChartXScale(xRange),
       y: { auto: true },
     },
     axes: [
@@ -289,6 +286,7 @@ const ChartCard = memo(function ChartCard({
 }) {
   const { w, h, ref: chartSizeRef } = useResponsiveChartSize("grid");
   const dataRef = useRef<uPlot.AlignedData>([[]]);
+  const xRangeRef = useRef<[number, number] | null | undefined>(xRange);
   const [tooltip, setTooltip] = useState<ChartTooltipState>({
     show: false,
     left: 0,
@@ -300,6 +298,9 @@ const ChartCard = memo(function ChartCard({
   useLayoutEffect(() => {
     dataRef.current = data;
   }, [data]);
+  useLayoutEffect(() => {
+    xRangeRef.current = xRange;
+  }, [xRange]);
   const baseOptions = useMemo(
     () =>
       buildBaseOptions({
@@ -333,8 +334,10 @@ const ChartCard = memo(function ChartCard({
           color: colors[keyIndex] ?? colors[0],
         })),
     });
+    const cursor = buildChartCursor(() => xRangeRef.current);
     return {
       ...baseOptions,
+      cursor,
       hooks: {
         ...baseOptions.hooks,
         init: [...(baseOptions.hooks?.init ?? []), tooltip.onInit],
@@ -377,6 +380,8 @@ const ChartCard = memo(function ChartCard({
   );
 });
 
+const EMPTY_CHART_POINTS: ChartPoint[] = [];
+
 export function LoadChart({
   uuid,
   hours,
@@ -396,7 +401,13 @@ export function LoadChart({
   const node = useNodeMetrics(uuid, isRealtime && active);
   const meta = useNodeMeta(uuid);
   const { resolvedAppearance } = usePreferences();
-  const [realtimePoints, setRealtimePoints] = useState<ChartPoint[]>([]);
+  const realtimeScope = `${uuid}:${hours}`;
+  const [realtimeState, setRealtimeState] = useState<{
+    scope: string;
+    points: ChartPoint[];
+  }>(() => ({ scope: realtimeScope, points: EMPTY_CHART_POINTS }));
+  const realtimePoints =
+    realtimeState.scope === realtimeScope ? realtimeState.points : EMPTY_CHART_POINTS;
   const [connectNulls, setConnectNulls] = useState(false);
   const totalFallbacks = useMemo(
     () => ({
@@ -408,18 +419,27 @@ export function LoadChart({
   );
 
   useEffect(() => {
-    if (!active || !isRealtime || !node || node.online !== true) return;
+    if (!active || !isRealtime || !node || node.online !== true) {
+      setRealtimeState((prev) =>
+        prev.scope === realtimeScope
+          ? prev
+          : { scope: realtimeScope, points: EMPTY_CHART_POINTS },
+      );
+      return;
+    }
     const point = pointFromNode(node);
-    setRealtimePoints((prev) => {
-      const last = prev[prev.length - 1];
-      if (last && Math.abs(last.time - point.time) < 1) return prev;
-      return [...prev, point].slice(-REALTIME_SAMPLE_LIMIT);
+    setRealtimeState((prev) => {
+      const base = prev.scope === realtimeScope ? prev.points : EMPTY_CHART_POINTS;
+      const last = base[base.length - 1];
+      if (last && Math.abs(last.time - point.time) < 1) {
+        return prev.scope === realtimeScope ? prev : { scope: realtimeScope, points: base };
+      }
+      return {
+        scope: realtimeScope,
+        points: [...base, point].slice(-REALTIME_SAMPLE_LIMIT),
+      };
     });
-  }, [active, isRealtime, node]);
-
-  useEffect(() => {
-    setRealtimePoints([]);
-  }, [hours, uuid]);
+  }, [active, isRealtime, node, realtimeScope]);
 
   const historyRecords = useMemo<Array<{ record: LoadRecord; time: number }>>(
     () =>
@@ -448,7 +468,7 @@ export function LoadChart({
     });
     const sampled = downsamplePoints(rawPoints, getHistoryRenderLimit(hours));
     const filled = fillMissingMetricPoints(sampled);
-    return interpolateMetricGaps(filled, LOAD_INTERPOLATE_KEYS) as ChartPoint[];
+    return interpolateMetricGaps(filled, LOAD_METRIC_KEYS) as ChartPoint[];
   }, [historyRecords, hours, totalFallbacks]);
 
   const points = useMemo<ChartPoint[]>(() => {
@@ -490,6 +510,33 @@ export function LoadChart({
         ? null
         : historyCoverageLabel(data, points[0]?.time, points[points.length - 1]?.time),
     [data, isRealtime, points],
+  );
+  const networkTotalDownText =
+    isRealtime && node
+      ? formatBytes(node.trafficDown)
+      : latestHistoryRecord
+        ? formatBytes(latestHistoryRecord.net_total_down ?? 0)
+        : "—";
+  const networkTotalUpText =
+    isRealtime && node
+      ? formatBytes(node.trafficUp)
+      : latestHistoryRecord
+        ? formatBytes(latestHistoryRecord.net_total_up ?? 0)
+        : "—";
+  const networkNote = useMemo(
+    () => (
+      <span className="instance-overview-multi">
+        <span className="inline-flex items-center gap-1">
+          <ArrowDown size={11} />
+          {networkTotalDownText}
+        </span>
+        <span className="inline-flex items-center gap-1">
+          <ArrowUp size={11} />
+          {networkTotalUpText}
+        </span>
+      </span>
+    ),
+    [networkTotalDownText, networkTotalUpText],
   );
 
   if (isLoading) {
@@ -558,13 +605,15 @@ export function LoadChart({
     >
       <div className="instance-chart-grid">
         <ChartCard
-          icon={<Cpu size={13} />}
+          icon={CPU_ICON}
           title="CPU"
           uuid={uuid}
           value={
             isRealtime && node
               ? `${node.cpuPct.toFixed(2)}%`
-              : `${(points[points.length - 1]?.cpu ?? 0).toFixed(2)}%`
+              : latestHistoryRecord && Number.isFinite(latestHistoryRecord.cpu)
+                ? `${latestHistoryRecord.cpu.toFixed(2)}%`
+                : "—"
           }
           note="使用率"
           points={points}
@@ -578,7 +627,7 @@ export function LoadChart({
           xRange={requestedXRange}
         />
         <ChartCard
-          icon={<MemoryStick size={13} />}
+          icon={MEMORY_ICON}
           title="内存"
           uuid={uuid}
           value={
@@ -608,7 +657,7 @@ export function LoadChart({
           xRange={requestedXRange}
         />
         <ChartCard
-          icon={<HardDrive size={13} />}
+          icon={DISK_ICON}
           title="磁盘"
           uuid={uuid}
           value={
@@ -630,7 +679,7 @@ export function LoadChart({
           xRange={requestedXRange}
         />
         <ChartCard
-          icon={<Network size={13} />}
+          icon={NETWORK_ICON}
           title="网络"
           uuid={uuid}
           value={
@@ -640,12 +689,7 @@ export function LoadChart({
                 ? `${formatTrafficRateLabel(latestHistoryRecord.net_in ?? 0)} / ${formatTrafficRateLabel(latestHistoryRecord.net_out ?? 0)}`
                 : "—"
           }
-          note={
-            <span className="instance-overview-multi">
-              <span className="inline-flex items-center gap-1"><ArrowDown size={11} />{isRealtime && node ? formatBytes(node.trafficDown) : latestHistoryRecord ? formatBytes(latestHistoryRecord.net_total_down ?? 0) : "—"}</span>
-              <span className="inline-flex items-center gap-1"><ArrowUp size={11} />{isRealtime && node ? formatBytes(node.trafficUp) : latestHistoryRecord ? formatBytes(latestHistoryRecord.net_total_up ?? 0) : "—"}</span>
-            </span>
-          }
+          note={networkNote}
           points={points}
           keys={NETWORK_KEYS}
           colors={NETWORK_COLORS}
@@ -657,7 +701,7 @@ export function LoadChart({
           xRange={requestedXRange}
         />
         <ChartCard
-          icon={<Workflow size={13} />}
+          icon={CONNECTION_ICON}
           title="连接数"
           uuid={uuid}
           value={
@@ -678,7 +722,7 @@ export function LoadChart({
           xRange={requestedXRange}
         />
         <ChartCard
-          icon={<Gauge size={13} />}
+          icon={PROCESS_ICON}
           title="进程"
           uuid={uuid}
           value={

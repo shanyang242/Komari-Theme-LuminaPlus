@@ -272,11 +272,7 @@ body::after {
 }
 
 .pwa-pull-refresh[data-state="refreshing"] svg {
-  animation: pwa-pull-refresh-spin 650ms linear infinite;
-}
-
-@keyframes pwa-pull-refresh-spin {
-  to { transform: rotate(360deg); }
+  animation: lumina-spin 650ms linear infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -439,7 +435,7 @@ body::after {
   content: "";
   flex: 1 1 auto;
   height: 1px;
-  background: color-mix(in srgb, var(--hairline) 120%, transparent);
+  background: color-mix(in srgb, var(--border-strong) 85%, transparent);
 }
 
 .metric-color-picker-head {
@@ -447,7 +443,7 @@ body::after {
   align-items: center;
   justify-content: space-between;
   padding-bottom: 12px;
-  border-bottom: 1px solid color-mix(in srgb, var(--hairline) 110%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--border-strong) 78%, transparent);
   color: var(--text-secondary);
   font-size: 11px;
   font-weight: 700;
@@ -1652,13 +1648,7 @@ body::after {
 }
 
 .instance-info-refresh.is-spinning svg {
-  animation: instance-info-refresh-spin 900ms linear infinite;
-}
-
-@keyframes instance-info-refresh-spin {
-  to {
-    transform: rotate(360deg);
-  }
+  animation: lumina-spin 900ms linear infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1814,7 +1804,7 @@ body::after {
 }
 
 .ip-info-refresh.is-spinning svg {
-  animation: ip-info-refresh-spin 700ms linear infinite;
+  animation: lumina-spin 700ms linear infinite;
 }
 
 .ip-info-refresh-error {
@@ -2069,10 +2059,6 @@ body::after {
 @keyframes ip-info-latency-loading {
   from { background-position: 100% 0; }
   to { background-position: -100% 0; }
-}
-
-@keyframes ip-info-refresh-spin {
-  to { transform: rotate(360deg); }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -2456,7 +2442,6 @@ body::after {
   .instance-chart-panel .instance-panel-header {
     flex-direction: column;
     align-items: flex-start;
-    padding-right: 88px;
   }
 
   .instance-chart-grid {

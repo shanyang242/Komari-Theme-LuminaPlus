@@ -5,6 +5,7 @@ import { AmbientEffectLayer } from "./AmbientEffectLayer";
 import { Spinner } from "@/components/ui/Spinner";
 import { useAppearance } from "@/hooks/useAppearance";
 import { useAuth } from "@/hooks/useAuth";
+import { usePreferencesSync } from "@/hooks/usePreferences";
 import { usePublicConfig } from "@/hooks/usePublicConfig";
 import { useSiteMetadata } from "@/hooks/useSiteMetadata";
 import { useMetricColorsSync } from "@/hooks/useMetricColors";
@@ -12,6 +13,7 @@ import { useNodeStoreStatus } from "@/hooks/useNode";
 import { PwaPullToRefresh } from "./PwaPullToRefresh";
 
 export function AppShell() {
+  usePreferencesSync();
   useAppearance();
   useSiteMetadata();
   useMetricColorsSync();
@@ -48,7 +50,7 @@ export function AppShell() {
       <PwaPullToRefresh active={pullRefreshActive} />
       <BackgroundLayer />
       <AmbientEffectLayer />
-      <main className="app-main flex-1 px-3 pb-8 sm:px-5 md:px-6 lg:px-8">
+      <main className="app-main flex-1 pb-8">
         <div className="mx-auto w-full max-w-[1720px]">
           {isCheckingShell ? (
             <div className="flex min-h-[60vh] items-center justify-center">

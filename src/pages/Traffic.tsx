@@ -7,7 +7,8 @@ import { useMinuteClock } from "@/hooks/useClock";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { useTodayTrafficStats } from "@/hooks/useTodayTrafficStats";
 import { useVisibleNodes } from "@/hooks/useVisibleNodes";
-import { formatByteRateLabel, formatBytes } from "@/utils/format";
+import { formatByteRateLabel, formatBytes, formatClockTime } from "@/utils/format";
+import { MOBILE_VIEWPORT_QUERY } from "@/utils/mediaQuery";
 import type { NodeInfo } from "@/types/komari";
 import type { TodayTrafficSample, TodayTrafficStat } from "@/utils/trafficStats";
 
@@ -16,13 +17,6 @@ const DAY_FORMATTER = new Intl.DateTimeFormat("zh-CN", {
   day: "numeric",
   weekday: "short",
 });
-const TIME_FORMATTER = new Intl.DateTimeFormat("zh-CN", {
-  hour: "2-digit",
-  minute: "2-digit",
-  hour12: false,
-});
-// 与 traffic-stats.css 的表格/卡片切换断点保持一致。
-const TRAFFIC_MOBILE_QUERY = "(max-width: 720px)";
 
 const TrafficRateChart = lazy(() =>
   import("@/components/traffic/TrafficRateChart").then((module) => ({
@@ -37,7 +31,7 @@ interface TrafficDetail {
 }
 
 function formatPeakTime(timeMs: number | null, value: number) {
-  return timeMs != null && value > 0 ? TIME_FORMATTER.format(timeMs) : "—";
+  return timeMs != null && value > 0 ? formatClockTime(timeMs) : "—";
 }
 
 function PeakValue({ value, timeMs }: { value: number; timeMs: number | null }) {
@@ -132,7 +126,7 @@ function TrafficSampleChart({
 export function Traffic() {
   const [expandedUuid, setExpandedUuid] = useState<string | null>(null);
   const now = useMinuteClock();
-  const isMobileLayout = useMediaQuery(TRAFFIC_MOBILE_QUERY);
+  const isMobileLayout = useMediaQuery(MOBILE_VIEWPORT_QUERY);
   const nodes = useVisibleNodes();
   const uuids = useMemo(() => nodes.map((node) => node.uuid), [nodes]);
   const trafficQuery = useTodayTrafficStats(uuids, now);
@@ -235,7 +229,7 @@ export function Traffic() {
             <article className="traffic-summary-card">
               <div className="traffic-summary-head">
                 <span className="assets-eyebrow">今日采样峰值</span>
-                <span>统计至 {TIME_FORMATTER.format(updatedAt)}</span>
+                <span>统计至 {formatClockTime(updatedAt)}</span>
               </div>
               <div className="traffic-summary-peak-list">
                 <PeakSummaryRow direction="up" detail={peakUp} />

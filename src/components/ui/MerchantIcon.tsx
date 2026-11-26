@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Store } from "lucide-react";
+import { sanitizeMerchantIconUrl } from "@/utils/merchantLinks";
 
 export function MerchantIcon({
   iconUrl,
@@ -10,19 +11,20 @@ export function MerchantIcon({
   enabled: boolean;
   size?: number;
 }) {
+  const safeIconUrl = sanitizeMerchantIconUrl(iconUrl);
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {
     setFailed(false);
-  }, [iconUrl]);
+  }, [safeIconUrl]);
 
-  if (!enabled || !iconUrl || failed) {
+  if (!enabled || !safeIconUrl || failed) {
     return <Store size={size} strokeWidth={2} aria-hidden />;
   }
 
   return (
     <img
-      src={iconUrl}
+      src={safeIconUrl}
       alt=""
       width={size}
       height={size}

@@ -279,21 +279,26 @@ describe("metric boundary repair in the API adapter", () => {
   });
 
   it("skips the metric probe when the traffic compatibility path already failed it", async () => {
+    const nowSpy = vi.spyOn(Date, "now").mockReturnValue(100_000);
     rpcCallMock.mockResolvedValue({ count: 0, records: [] });
 
-    const result = await getLoadRecords("node-a", 24, {
-      skipMetricQuery: true,
-      timeout: 8_000,
-    });
+    try {
+      const result = await getLoadRecords("node-a", 24, {
+        skipMetricQuery: true,
+        timeout: 8_000,
+      });
 
-    expect(result.records).toEqual([]);
-    expect(rpcCallMock).toHaveBeenCalledTimes(1);
-    expect(metricDataCalls()).toHaveLength(0);
-    expect(rpcCallMock).toHaveBeenCalledWith(
-      "common:getRecords",
-      expect.objectContaining({ uuid: "node-a", hours: 24, type: "load" }),
-      { signal: undefined, timeout: 8_000 },
-    );
+      expect(result.records).toEqual([]);
+      expect(rpcCallMock).toHaveBeenCalledTimes(1);
+      expect(metricDataCalls()).toHaveLength(0);
+      expect(rpcCallMock).toHaveBeenCalledWith(
+        "common:getRecords",
+        expect.objectContaining({ uuid: "node-a", hours: 24, type: "load" }),
+        { signal: undefined, timeout: 8_000 },
+      );
+    } finally {
+      nowSpy.mockRestore();
+    }
   });
 
   it("does not send removed Komari 1.3.0 total metrics in load queries", async () => {
@@ -350,5 +355,30 @@ describe("metric boundary repair in the API adapter", () => {
       }),
       expect.anything(),
     );
+  });
+
+  it("shares timeout budget across getPingOverview fallback layers and stops when budget expires", async () => {
+    let now = 10_000;
+    const nowSpy = vi.spyOn(Date, "now").mockImplementation(() => now);
+    const seenTimeouts: Array<[string, number | undefined]> = [];
+    rpcCallMock.mockImplementation(
+      (method: string, _params: Record<string, unknown>, options?: { timeout?: number }) => {
+        seenTimeouts.push([method, options?.timeout]);
+        if (method === "public:queryMetrics") {
+          now += 30_000;
+          return Promise.reject(new Error("metrics timed out"));
+        }
+        return Promise.reject(new Error(`Unexpected fallback after budget exhausted: ${method}`));
+      },
+    );
+
+    try {
+      await expect(getPingOverview(1, 7, { entityIds: ["node-a"] })).rejects.toThrow(
+        "metrics timed out",
+      );
+      expect(seenTimeouts.some(([method]) => method === "common:getRecords")).toBe(false);
+    } finally {
+      nowSpy.mockRestore();
+    }
   });
 });

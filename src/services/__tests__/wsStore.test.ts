@@ -3,6 +3,8 @@ import {
   resolveFlatConnectionsTcp,
   resolveLatestNodeMetrics,
   resolveTrafficTotal,
+  TRAFFIC_TREND_SAMPLE_COUNT,
+  updateTrafficTrendSeries,
 } from "@/services/wsStore";
 import { NodeInfoSchema, type NodeInfo, type NodeMetrics } from "@/types/komari";
 
@@ -272,5 +274,34 @@ describe("resolveLatestNodeMetrics", () => {
     expect(recovered.trafficUp).toBe(505 * 1024 ** 3);
     expect(recovered.trafficDown).toBe(910 * 1024 ** 3);
     expect(recovered.updatedAt).toBe(Date.parse(recoveredAtIso));
+  });
+});
+
+describe("updateTrafficTrendSeries", () => {
+  it("excludes the evicted oldest peak from visibleMax and rescales existing bars on window peak change", () => {
+    let series: Parameters<typeof updateTrafficTrendSeries>[0] = {
+      buffer: [],
+      start: 0,
+      size: 0,
+      signature: "",
+      snapshot: [],
+    };
+    // 第一帧注入 1000 峰值，后续 17 帧都是 100（填满 18 帧窗口）
+    series = updateTrafficTrendSeries(series, 1000, 1, true).series;
+    for (let tick = 2; tick <= TRAFFIC_TREND_SAMPLE_COUNT; tick += 1) {
+      series = updateTrafficTrendSeries(series, 100, tick, true).series;
+    }
+    expect(series.snapshot[0].value).toBe(1000);
+    expect(series.snapshot[0].level).toBe(1);
+    expect(series.snapshot[TRAFFIC_TREND_SAMPLE_COUNT - 1].level).toBeCloseTo(0.2, 6);
+
+    // 再推入一帧 100：旧峰值 1000 滑出窗口，全窗口均为 100，所有柱高应重缩放至 1
+    series = updateTrafficTrendSeries(series, 100, TRAFFIC_TREND_SAMPLE_COUNT + 1, true).series;
+    expect(series.snapshot.every((bar) => bar.value === 100 && bar.level === 1)).toBe(true);
+
+    // 再推入一帧 200：新峰值进入窗口，旧的 100 柱高应同步重缩放至 0.5
+    series = updateTrafficTrendSeries(series, 200, TRAFFIC_TREND_SAMPLE_COUNT + 2, true).series;
+    expect(series.snapshot[0].level).toBeCloseTo(0.5, 6);
+    expect(series.snapshot[TRAFFIC_TREND_SAMPLE_COUNT - 1].level).toBe(1);
   });
 });

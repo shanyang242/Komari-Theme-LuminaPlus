@@ -195,13 +195,7 @@
 }
 
 .node-traffic-popover-retry.is-spinning svg {
-  animation: node-traffic-popover-spin 900ms linear infinite;
-}
-
-@keyframes node-traffic-popover-spin {
-  to {
-    transform: rotate(360deg);
-  }
+  animation: lumina-spin 900ms linear infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {

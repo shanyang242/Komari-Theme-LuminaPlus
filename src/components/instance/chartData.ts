@@ -1,3 +1,5 @@
+import { clamp } from "@/utils/format";
+
 export type TimedMetricPoint = {
   time: number;
   // null = 真实断点 (丢包或检测到的中断)——切断线条。
@@ -96,11 +98,15 @@ export function detectTypicalIntervalSeconds(
   return gaps.length > 0 ? median(gaps) : fallbackSeconds;
 }
 
+// fillMissingMetricPoints 默认最大输出点数，避免异常时间跨度同步分配海量对象。
+const DEFAULT_MAX_FILLED_POINTS = 4_000;
+
 export function fillMissingMetricPoints(
   points: TimedMetricPoint[],
   options?: {
     intervalSeconds?: number;
     matchToleranceSeconds?: number;
+    maxPoints?: number;
   },
 ) {
   const normalized = normalizePoints(points);
@@ -114,6 +120,11 @@ export function fillMissingMetricPoints(
   }
 
   const matchToleranceSeconds = options?.matchToleranceSeconds ?? intervalSeconds / 2;
+  const maxPoints = Math.max(
+    sortedPoints.length,
+    Math.floor(options?.maxPoints ?? DEFAULT_MAX_FILLED_POINTS),
+  );
+  const maxSyntheticNulls = Math.max(0, maxPoints - sortedPoints.length);
   const base = Object.fromEntries(keys.map((key) => [key, null] as const));
   const filled: TimedMetricPoint[] = [];
   const appendUnmatched = (point: TimedMetricPoint) => {
@@ -124,11 +135,25 @@ export function fillMissingMetricPoints(
       filled[filled.length - 1] = { ...previous, ...point };
     }
   };
+  let syntheticNulls = 0;
+  const appendSyntheticNull = (time: number) => {
+    if (syntheticNulls >= maxSyntheticNulls) return false;
+    const previous = filled[filled.length - 1];
+    if (previous && time <= previous.time) return false;
+    filled.push({ ...base, time });
+    syntheticNulls += 1;
+    return true;
+  };
   const start = sortedPoints[0].time;
   const end = sortedPoints[sortedPoints.length - 1].time;
+  const sparseSpan = (end - start) / intervalSeconds > maxPoints;
   let pointer = 0;
+  let current = start;
+  let guardSteps = 0;
+  const maxIterations = maxPoints + sortedPoints.length + 16;
 
-  for (let current = start; current <= end; current += intervalSeconds) {
+  while (current <= end && guardSteps < maxIterations) {
+    guardSteps += 1;
     while (
       pointer < sortedPoints.length &&
       sortedPoints[pointer].time < current - matchToleranceSeconds
@@ -143,18 +168,41 @@ export function fillMissingMetricPoints(
         ? sortedPoints[pointer]
         : null;
 
-    // 内部采样吸附到网格时间，但保留最新采样自己的时间戳——否则不在网格上的末点会被前移
-    // 半个 interval，导致图表右边缘和覆盖范围标签都偏移。
-    const isLastSample = matched === sortedPoints[sortedPoints.length - 1];
-    filled.push(
-      matched
-        ? { ...base, ...matched, time: isLastSample ? matched.time : current }
-        : { ...base, time: current },
-    );
-
     if (matched) {
+      // 内部采样吸附到网格时间，但保留最新采样自己的时间戳——否则不在网格上的末点会被前移
+      // 半个 interval，导致图表右边缘和覆盖范围标签都偏移。
+      const isLastSample = matched === sortedPoints[sortedPoints.length - 1];
+      appendUnmatched({ ...base, ...matched, time: isLastSample ? matched.time : current });
       pointer += 1;
+      const next = current + intervalSeconds;
+      if (!(next > current)) break;
+      current = next;
+      continue;
     }
+
+    if (pointer >= sortedPoints.length) break;
+
+    const nextSampleTime = sortedPoints[pointer].time;
+    const gapSteps = (nextSampleTime - current) / intervalSeconds;
+    const shouldJumpGap =
+      sparseSpan || syntheticNulls + gapSteps > maxSyntheticNulls;
+
+    if (shouldJumpGap) {
+      // 超大空缺无需逐格补 null：只在空缺两端各放最多一个 null 断线，再直接跳到下一个真实采样。
+      appendSyntheticNull(current);
+      const trailingNullTime = nextSampleTime - intervalSeconds;
+      if (trailingNullTime > current && trailingNullTime < nextSampleTime - matchToleranceSeconds) {
+        appendSyntheticNull(trailingNullTime);
+      }
+      if (!(nextSampleTime > current)) break;
+      current = nextSampleTime;
+      continue;
+    }
+
+    appendSyntheticNull(current);
+    const next = current + intervalSeconds;
+    if (!(next > current)) break;
+    current = next;
   }
 
   while (pointer < sortedPoints.length) {
@@ -255,8 +303,6 @@ export function interpolateMetricGaps(
   const multiplier = options?.maxGapMultiplier ?? 6;
   const minCapSeconds = options?.minCapSeconds ?? 120;
   const maxCapSeconds = options?.maxCapSeconds ?? 1_800;
-  const clamp = (value: number, min: number, max: number) =>
-    Math.max(min, Math.min(max, value));
 
   for (const key of keys) {
     const validIndices: number[] = [];
@@ -319,64 +365,73 @@ export function cutPeakValues<T extends { [key: string]: number | null | undefin
     // 记下哪些点本来就没值 (丢包/空缺)。下面的 EWMA 过程绝不能回填这些点——只能补它自己
     // 移除的尖峰——否则丢包空缺会被渲染成假的延迟。
     const originallyMissing = new Set<number>();
-    for (let index = 0; index < result.length; index += 1) {
-      const value = result[index][key];
+    for (let index = 0; index < data.length; index += 1) {
+      const value = data[index][key];
       if (value == null || typeof value !== "number" || !Number.isFinite(value)) {
         originallyMissing.add(index);
       }
     }
 
-    for (let index = 0; index < result.length; index += 1) {
-      const currentValue = result[index][key];
-      if (currentValue == null || typeof currentValue !== "number") continue;
+    // 仅基于原始未修改序列做尖峰判定，避免左侧被置空后污染右侧邻域基准。
+    const spikes = new Set<number>();
+    for (let index = 0; index < data.length; index += 1) {
+      if (originallyMissing.has(index)) continue;
+      const currentValue = data[index][key] as number;
 
-      const neighbors: number[] = [];
+      const windowValues: number[] = [];
       for (
         let pointer = Math.max(0, index - halfWindow);
-        pointer <= Math.min(result.length - 1, index + halfWindow);
+        pointer <= Math.min(data.length - 1, index + halfWindow);
         pointer += 1
       ) {
-        if (pointer === index) continue;
-        const neighbor = result[pointer][key];
-        if (neighbor != null && typeof neighbor === "number" && Number.isFinite(neighbor)) {
-          neighbors.push(neighbor);
+        if (originallyMissing.has(pointer)) continue;
+        const value = data[pointer][key];
+        if (value != null && typeof value === "number" && Number.isFinite(value)) {
+          windowValues.push(value);
         }
       }
 
-      if (neighbors.length < 2) continue;
+      if (windowValues.length < 3) continue;
 
-      const mean = neighbors.reduce((sum, value) => sum + value, 0) / neighbors.length;
-      if (mean > 0) {
-        const relativeChange = Math.abs(currentValue - mean) / mean;
-        if (relativeChange > spikeThreshold) {
-          result[index] = {
-            ...result[index],
-            [key]: null,
-          };
+      // 用含自身窗口的中位数作基准并仅削向上尖峰：防止极端高点拉偏邻域均值并反向误杀正常基线点。
+      const baseline = median(windowValues);
+      if (baseline > 0) {
+        if (currentValue > baseline && (currentValue - baseline) / baseline > spikeThreshold) {
+          spikes.add(index);
         }
-      } else if (Math.abs(currentValue) > 10) {
-        result[index] = {
-          ...result[index],
-          [key]: null,
-        };
+      } else if (currentValue > 10) {
+        spikes.add(index);
+      }
+    }
+
+    // 找到首个未被判定为尖峰的有效点，用于回填开头连续尖峰（单向 EWMA 在首点之前无历史值）。
+    let firstBaseline: number | null = null;
+    for (let index = 0; index < data.length; index += 1) {
+      if (!originallyMissing.has(index) && !spikes.has(index)) {
+        firstBaseline = data[index][key] as number;
+        break;
       }
     }
 
     let ewma: number | null = null;
     for (let index = 0; index < result.length; index += 1) {
-      const currentValue = result[index][key];
-      if (currentValue != null && typeof currentValue === "number" && Number.isFinite(currentValue)) {
+      if (originallyMissing.has(index)) continue;
+      if (!spikes.has(index)) {
+        const currentValue = data[index][key] as number;
         ewma = ewma == null ? currentValue : alpha * currentValue + (1 - alpha) * ewma;
         result[index] = {
           ...result[index],
           [key]: ewma,
         };
-      } else if (ewma != null && !originallyMissing.has(index)) {
-        // 平滑掉刚移除的尖峰，但真实丢包空缺保持 null。
-        result[index] = {
-          ...result[index],
-          [key]: ewma,
-        };
+      } else {
+        // 平滑掉刚移除的尖峰：有前序 EWMA 用前序值，首段尖峰回退至首个正常基准值，避免首点出现伪丢包断点。
+        const replacement = ewma ?? firstBaseline;
+        if (replacement != null) {
+          result[index] = {
+            ...result[index],
+            [key]: replacement,
+          };
+        }
       }
     }
   }

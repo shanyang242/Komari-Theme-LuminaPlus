@@ -3,6 +3,7 @@ import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { usePreferences } from "@/hooks/usePreferences";
 import { useSaveDataPreference } from "@/hooks/useSaveDataPreference";
 import { useThemeSettings } from "@/hooks/useThemeSettings";
+import { clamp } from "@/utils/format";
 import type { AmbientEffect } from "@/utils/themeSettings";
 import { MOBILE_VIEWPORT_QUERY, REDUCED_MOTION_QUERY } from "@/utils/mediaQuery";
 
@@ -52,10 +53,6 @@ function random(min: number, max: number) {
 
 function randomFrom<T>(items: readonly T[]) {
   return items[Math.floor(Math.random() * items.length)] as T;
-}
-
-function clamp(value: number, min: number, max: number) {
-  return Math.min(max, Math.max(min, value));
 }
 
 function particleCount(effect: AmbientEffect, width: number, height: number, isMobile: boolean) {
@@ -387,35 +384,43 @@ function drawFireworks(
     scene.nextEventAt = now + random(3800, 5000);
   }
 
-  const ascendingRockets: FireworkRocket[] = [];
-  for (const rocket of scene.rockets) {
+  // 原地压缩活跃火箭与火花数组，避免 60fps 帧循环每帧分配新数组和 per-spark save/restore。
+  let activeRocketCount = 0;
+  for (let index = 0; index < scene.rockets.length; index += 1) {
+    const rocket = scene.rockets[index];
     if (now < rocket.launchAt) {
-      ascendingRockets.push(rocket);
+      scene.rockets[activeRocketCount++] = rocket;
       continue;
     }
     drawRocket(context, rocket, now, isDark);
     if (now - rocket.launchAt >= rocket.duration) {
       burstFirework(scene, rocket.x, rocket.y, rocket.color, isMobile);
     } else {
-      ascendingRockets.push(rocket);
+      scene.rockets[activeRocketCount++] = rocket;
     }
   }
-  scene.rockets = ascendingRockets;
+  scene.rockets.length = activeRocketCount;
 
-  for (const spark of scene.particles) {
+  const dragX = Math.pow(0.986, step);
+  const dragY = Math.pow(0.988, step);
+  const gravityStep = 0.035 * step;
+  const lifeStep = 0.0125 * step;
+  const lineScale = isDark ? 1 : 1.25;
+  context.lineCap = "round";
+  let activeSparkCount = 0;
+  for (let index = 0; index < scene.particles.length; index += 1) {
+    const spark = scene.particles[index];
     const oldX = spark.x;
     const oldY = spark.y;
-    spark.vx *= Math.pow(0.986, step);
-    spark.vy = spark.vy * Math.pow(0.988, step) + 0.035 * step;
+    spark.vx *= dragX;
+    spark.vy = spark.vy * dragY + gravityStep;
     spark.x += spark.vx * step;
     spark.y += spark.vy * step;
-    spark.life -= 0.0125 * step;
-    context.save();
+    spark.life -= lifeStep;
     context.globalAlpha = Math.max(0, spark.alpha * spark.life);
     context.strokeStyle = spark.color;
     context.fillStyle = spark.color;
-    context.lineCap = "round";
-    context.lineWidth = spark.size * (isDark ? 1 : 1.25);
+    context.lineWidth = spark.size * lineScale;
     context.beginPath();
     context.moveTo(oldX, oldY);
     context.lineTo(spark.x, spark.y);
@@ -423,9 +428,12 @@ function drawFireworks(
     context.beginPath();
     context.arc(spark.x, spark.y, Math.max(0.8, spark.size * 0.62), 0, TAU);
     context.fill();
-    context.restore();
+    if (spark.life > 0) {
+      scene.particles[activeSparkCount++] = spark;
+    }
   }
-  scene.particles = scene.particles.filter((spark) => spark.life > 0);
+  scene.particles.length = activeSparkCount;
+  context.globalAlpha = 1;
 }
 
 function drawScene(
@@ -446,21 +454,24 @@ function drawScene(
   }
 
   updateAmbientParticles(scene, effect, width, height, step);
+  if (effect === "rain") {
+    context.strokeStyle = isDark ? "#bae6fd" : "#475569";
+    for (const particle of scene.particles) {
+      context.globalAlpha = particle.alpha;
+      context.lineWidth = particle.depth < 0.68 ? 0.55 : 0.9;
+      context.beginPath();
+      context.moveTo(particle.x, particle.y);
+      context.lineTo(particle.x - particle.size * 0.16, particle.y + particle.size);
+      context.stroke();
+    }
+    context.globalAlpha = 1;
+    return;
+  }
+
   for (const particle of scene.particles) {
     switch (effect) {
       case "sakura":
         drawPetal(context, particle);
-        break;
-      case "rain":
-        context.save();
-        context.globalAlpha = particle.alpha;
-        context.strokeStyle = isDark ? "#bae6fd" : "#475569";
-        context.lineWidth = particle.depth < 0.68 ? 0.55 : 0.9;
-        context.beginPath();
-        context.moveTo(particle.x, particle.y);
-        context.lineTo(particle.x - particle.size * 0.16, particle.y + particle.size);
-        context.stroke();
-        context.restore();
         break;
       case "snow":
         drawSnow(context, particle, isDark);
@@ -482,6 +493,8 @@ function drawScene(
 export function AmbientEffectLayer() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const { resolvedAppearance } = usePreferences();
+  const isDarkRef = useRef(resolvedAppearance === "dark");
+  isDarkRef.current = resolvedAppearance === "dark";
   const { enableAmbientEffect, ambientEffect, isReady } = useThemeSettings();
   const isMobile = useMediaQuery(MOBILE_VIEWPORT_QUERY, true);
   const reducedMotion = useMediaQuery(REDUCED_MOTION_QUERY, true);
@@ -535,7 +548,7 @@ export function AmbientEffectLayer() {
         height,
         step,
         now,
-        resolvedAppearance === "dark",
+        isDarkRef.current,
         isMobile,
       );
       frameId = window.requestAnimationFrame(render);
@@ -574,7 +587,7 @@ export function AmbientEffectLayer() {
       document.removeEventListener("visibilitychange", onVisibilityChange);
       context.clearRect(0, 0, width, height);
     };
-  }, [active, ambientEffect, isMobile, resolvedAppearance]);
+  }, [active, ambientEffect, isMobile]);
 
   if (!active) return null;
   return (

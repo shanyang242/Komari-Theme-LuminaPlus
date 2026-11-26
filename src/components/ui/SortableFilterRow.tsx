@@ -75,18 +75,28 @@ export function SortableFilterRow({
   const previewOrder = drag?.sourceKey === sourceKey ? drag.order : items;
   const enabled = canReorder && items.length > 1;
 
+  const detachListenersRef = useRef<(() => void) | null>(null);
+
   useEffect(() => { onReorderRef.current = onReorder; }, [onReorder]);
 
   const finish = useCallback((commit: boolean) => {
     const session = sessionRef.current;
     if (!session) return;
     sessionRef.current = null;
+    detachListenersRef.current?.();
+    detachListenersRef.current = null;
     window.clearTimeout(session.timer);
     if (session.frame !== undefined) window.cancelAnimationFrame(session.frame);
     if (session.active) {
       document.documentElement.classList.remove("home-filter-sorting");
       const row = rowRef.current;
-      if (row?.hasPointerCapture(session.pointerId)) row.releasePointerCapture(session.pointerId);
+      try {
+        if (row?.hasPointerCapture(session.pointerId)) {
+          row.releasePointerCapture(session.pointerId);
+        }
+      } catch {
+        // 指针在捕获释放前已被浏览器销毁或离屏时忽略异常。
+      }
     }
     positionsRef.current = null;
     setDrag(null);
@@ -152,7 +162,9 @@ export function SortableFilterRow({
     if (!enabled || sessionRef.current?.sourceKey !== sourceKey) finish(false);
   }, [enabled, sourceKey, finish]);
 
-  useEffect(() => {
+  // 仅在按下启动拖拽会话期间挂载全局事件监听，空闲态不驻留 window/document 监听器。
+  const attachDragListeners = useCallback(() => {
+    detachListenersRef.current?.();
     const onMove = (event: globalThis.PointerEvent) => {
       const session = sessionRef.current;
       if (!session || session.pointerId !== event.pointerId) return;
@@ -192,16 +204,17 @@ export function SortableFilterRow({
     window.addEventListener("keydown", onKey);
     window.addEventListener("blur", onBlur);
     document.addEventListener("visibilitychange", onVisibilityChange);
-    return () => {
+    detachListenersRef.current = () => {
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
       window.removeEventListener("pointercancel", onCancel);
       window.removeEventListener("keydown", onKey);
       window.removeEventListener("blur", onBlur);
       document.removeEventListener("visibilitychange", onVisibilityChange);
-      finish(false);
     };
   }, [finish, updatePreview]);
+
+  useEffect(() => () => finish(false), [finish]);
 
   const onPointerDown = (event: PointerEvent<HTMLDivElement>) => {
     if (event.button !== 0 || !event.isPrimary) return;
@@ -219,12 +232,17 @@ export function SortableFilterRow({
       width: rect.width, height: rect.height, active: false,
     };
     sessionRef.current = session;
+    attachDragListeners();
     session.timer = window.setTimeout(() => {
       if (sessionRef.current !== session) return;
       session.active = true;
       suppressClickRef.current = true;
       document.documentElement.classList.add("home-filter-sorting");
-      rowRef.current?.setPointerCapture(session.pointerId);
+      try {
+        rowRef.current?.setPointerCapture(session.pointerId);
+      } catch {
+        // 指针在长按触发前已失效时不抛出未捕获异常。
+      }
       const tick = () => {
         if (sessionRef.current !== session) return;
         updatePreview(session);

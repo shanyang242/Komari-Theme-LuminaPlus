@@ -7,21 +7,29 @@ const coordinates: Record<string, number[]> = worldMap.points;
 const regionNames = new Intl.DisplayNames(["zh-Hans"], { type: "region" });
 
 type MapNode = { region: string; online: boolean | null };
+type MapRegionSummary = { total: number; online: number; offline: number };
+
+function resolveMapRegionStatus(region: MapRegionSummary | undefined) {
+  if (!region) return undefined;
+  if (region.offline > 0) return "offline";
+  if (region.online > 0) return "online";
+  return "unknown";
+}
 
 const CountryShapes = memo(function CountryShapes({
   regions,
 }: {
-  regions: Map<string, { total: number; online: number; offline: number }>;
+  regions: Map<string, MapRegionSummary>;
 }) {
-  return worldMap.countries.map(({ code, name, path }) => {
+  return worldMap.countries.map(({ code, name, path }, index) => {
     const region = regions.get(code);
     const label = code.length === 2 ? regionNames.of(code) : name;
     return (
       <path
-        key={name}
+        key={`${code}-${name}-${index}`}
         d={path}
         className="node-map-country"
-        data-status={region ? (region.online > 0 ? "online" : region.offline > 0 ? "offline" : "unknown") : undefined}
+        data-status={resolveMapRegionStatus(region)}
       >
         <title>{region
           ? `${label}：${region.total} 台，${region.online} 在线，${region.offline} 离线`
@@ -66,7 +74,7 @@ export function NodeMapBackground({ nodes }: { nodes: MapNode[] }) {
               key={code}
               transform={`translate(${x} ${y})`}
               className="node-map-point"
-              data-status={region.offline > 0 ? "offline" : region.online > 0 ? "online" : "unknown"}
+              data-status={resolveMapRegionStatus(region)}
             >
               <title>{`${regionNames.of(code)}：${region.total} 台，${region.online} 在线，${region.offline} 离线`}</title>
               <circle

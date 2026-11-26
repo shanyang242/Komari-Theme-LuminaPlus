@@ -20,6 +20,40 @@ interface TrafficRateDisplay {
   unit: TrafficRateUnit;
 }
 
+export function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
+}
+
+export function clamp01(value: number): number {
+  return Number.isFinite(value) ? Math.max(0, Math.min(1, value)) : 0;
+}
+
+/** 统一解析时间戳（Unix 秒/毫秒数值、纯数字字符串或 ISO 日期串），失败返回 null。 */
+export function parseTimestampMs(value: string | number | null | undefined): number | null {
+  if (typeof value === "number") {
+    if (!Number.isFinite(value) || value <= 0) return null;
+    return value > 1_000_000_000_000 ? value : value * 1000;
+  }
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  // 纯数字字符串（排除 4 位年份等短数字，避免与 Date.parse("2026") 冲突）按 Unix 秒/毫秒解析。
+  if (/^\d{5,}(?:\.\d+)?$/.test(trimmed)) {
+    const numeric = Number(trimmed);
+    if (Number.isFinite(numeric) && numeric > 0) {
+      return numeric > 1_000_000_000_000 ? numeric : numeric * 1000;
+    }
+  }
+  const parsed = Date.parse(trimmed);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+/** 按本地时区格式化 YYYY-MM-DD 日期键。 */
+export function formatLocalDateKey(value: Date | number): string {
+  const date = value instanceof Date ? value : new Date(value);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
 export function trimFixed(value: number, digits: number): string {
   if (!Number.isFinite(value)) return "0";
   return value

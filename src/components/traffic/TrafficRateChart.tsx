@@ -27,12 +27,47 @@ export function TrafficRateChart({ samples }: { samples: TodayTrafficSample[] })
   const { w, ref: chartSizeRef } = useResponsiveChartSize("grid");
   const height = w < 560 ? 182 : 220;
   const data = useMemo<uPlot.AlignedData>(() => {
-    const ordered = [...samples].sort((left, right) => left.timeMs - right.timeMs);
-    return [
-      ordered.map((sample) => sample.timeMs / 1000),
-      ordered.map((sample) => sample.up),
-      ordered.map((sample) => sample.down),
-    ] as uPlot.AlignedData;
+    const count = samples.length;
+    if (count === 0) return [[], [], []] as uPlot.AlignedData;
+
+    // 常规路径 samples 已按时间降序（或升序）排列，O(N) 线性生成避免 O(N log N) 重复排序。
+    let isAsc = true;
+    let isDesc = true;
+    for (let index = 1; index < count; index += 1) {
+      const prev = samples[index - 1].timeMs;
+      const curr = samples[index].timeMs;
+      if (curr < prev) isAsc = false;
+      if (curr > prev) isDesc = false;
+      if (!isAsc && !isDesc) break;
+    }
+
+    const times = new Array<number>(count);
+    const up = new Array<number>(count);
+    const down = new Array<number>(count);
+    if (isAsc) {
+      for (let index = 0; index < count; index += 1) {
+        const sample = samples[index];
+        times[index] = sample.timeMs / 1000;
+        up[index] = sample.up;
+        down[index] = sample.down;
+      }
+    } else if (isDesc) {
+      for (let index = 0; index < count; index += 1) {
+        const sample = samples[count - 1 - index];
+        times[index] = sample.timeMs / 1000;
+        up[index] = sample.up;
+        down[index] = sample.down;
+      }
+    } else {
+      const ordered = [...samples].sort((left, right) => left.timeMs - right.timeMs);
+      for (let index = 0; index < count; index += 1) {
+        const sample = ordered[index];
+        times[index] = sample.timeMs / 1000;
+        up[index] = sample.up;
+        down[index] = sample.down;
+      }
+    }
+    return [times, up, down] as uPlot.AlignedData;
   }, [samples]);
   const dataRef = useRef<uPlot.AlignedData>(data);
   dataRef.current = data;

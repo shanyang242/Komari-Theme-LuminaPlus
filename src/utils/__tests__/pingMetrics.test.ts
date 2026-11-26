@@ -60,6 +60,29 @@ describe("mergePingMetricSeries", () => {
     ]);
     expect(empty).toEqual([]);
   });
+
+  it("keeps pure-loss buckets present only in ping.loss and clamps rounding drift to >= 0", () => {
+    const lossOnly = mergePingMetricSeries([series(PING_LOSS_METRIC, 1, 4)]);
+    expect(lossOnly).toEqual([
+      {
+        client: CLIENT,
+        task_id: 7,
+        time: TIME,
+        value: -1,
+        count: 4,
+        loss: 100,
+      },
+    ]);
+
+    // 浮点舍入导致 (avg * total + lost) / valid 略小于 0 时应夹断到 0，不得变成负数被判为丢包
+    const clamped = mergePingMetricSeries([
+      series(PING_LATENCY_METRIC, -0.25, 4),
+      series(PING_LOSS_METRIC, 0.25, 4),
+    ]);
+    expect(clamped).toHaveLength(1);
+    expect(clamped[0].value).toBe(0);
+    expect(clamped[0].loss).toBe(25);
+  });
 });
 
 describe("resolvePingChartInterval", () => {

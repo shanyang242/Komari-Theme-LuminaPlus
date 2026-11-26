@@ -1,8 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   getAdminDestination,
   isAdminPath,
   isKomariRootServiceWorker,
+  repairKomariServiceWorker,
 } from "@/utils/komariServiceWorker";
 
 function registration(
@@ -68,5 +69,20 @@ describe("Komari service worker recovery", () => {
         hash: "#site",
       }),
     ).toBe("/admin/settings#site");
+  });
+
+  it("handles CacheStorage errors gracefully during repair", async () => {
+    const originalCaches = globalThis.caches;
+    vi.stubGlobal("caches", {
+      keys: vi.fn(async () => {
+        throw new Error("SecurityError: storage denied");
+      }),
+      delete: vi.fn(),
+    });
+    try {
+      await expect(repairKomariServiceWorker()).resolves.toBeUndefined();
+    } finally {
+      vi.stubGlobal("caches", originalCaches);
+    }
   });
 });

@@ -33,7 +33,7 @@
 }
 
 .cost-summary-action.is-spinning svg {
-  animation: cost-summary-spin 900ms linear infinite;
+  animation: lumina-spin 900ms linear infinite;
 }
 
 /* 报表头:剩余价值大数 + 右侧账目分行。 */
@@ -364,8 +364,8 @@
   display: inline-flex;
   flex: 0 0 auto;
   border-radius: 6px;
-  background: color-mix(in srgb, #3b82f6 13%, transparent);
-  color: #2563eb;
+  background: color-mix(in srgb, var(--status-info) 14%, transparent);
+  color: color-mix(in srgb, var(--status-info) 88%, var(--text-primary));
   padding: 2px 6px;
   font-size: 11px;
   font-weight: 680;
@@ -522,12 +522,6 @@
 .cost-summary-ball-icon {
   display: grid;
   place-items: center;
-}
-
-@keyframes cost-summary-spin {
-  to {
-    transform: rotate(360deg);
-  }
 }
 
 /* 资产页明细:桌面账本表格,≤720px 退化为卡片列表 + 排序工具条。 */

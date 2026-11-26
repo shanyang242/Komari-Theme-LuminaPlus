@@ -5,20 +5,23 @@ import { InstancePanel } from "@/components/instance/InstancePanel";
 import { Flag } from "@/components/ui/Flag";
 import { useIpNetworkProfile } from "@/hooks/useIpNetworkProfile";
 import { forceRefreshIpInfo, selectIpClassification, type IpInfoLookup } from "@/services/ipInfo";
+import { joinDisplayParts } from "@/utils/format";
 
 function joinText(values: Array<string | null | undefined>) {
-  return values.filter(Boolean).join(" · ") || "暂无数据";
+  return joinDisplayParts(values) || "暂无数据";
 }
+
+const UPDATED_AT_FORMATTER = new Intl.DateTimeFormat("zh-CN", {
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+});
 
 function formatUpdatedAt(value: string) {
   const date = new Date(value);
   if (!Number.isFinite(date.getTime())) return "";
-  return new Intl.DateTimeFormat("zh-CN", {
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(date);
+  return UPDATED_AT_FORMATTER.format(date);
 }
 
 function latencyTone(value: number | null | undefined) {
@@ -73,6 +76,10 @@ export function IpInfoPanel({ lookups }: { lookups: IpInfoLookup[] }) {
       ]);
     },
   });
+  const resetRefresh = refresh.reset;
+  useEffect(() => {
+    resetRefresh();
+  }, [resetRefresh, selectedIp, selectedUuid]);
   if (!selected) return null;
   const { data, meta } = selected;
   const profile = networkProfile.data;

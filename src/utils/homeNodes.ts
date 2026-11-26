@@ -133,7 +133,7 @@ export function dedupeGroupLabels(groups: Iterable<string | null | undefined>): 
   return result;
 }
 
-export function getHomeGroupOptions(nodes: HomeNodeSummary[]) {
+export function getHomeGroupOptions(nodes: readonly Pick<HomeNodeSummary, "group">[]) {
   return dedupeGroupLabels(nodes.map((node) => node.group));
 }
 

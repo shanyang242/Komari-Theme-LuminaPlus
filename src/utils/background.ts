@@ -20,9 +20,20 @@ const MAX_URL_LENGTH = 2048;
 
 // 移除可能逃出 CSS url("…") 上下文的字符；空格需由 URL 自身编码。
 const UNSAFE_URL_CHARS = new RegExp("[\\x00-\\x1f\\x7f\"'`()<>\\\\\\s]", "g");
+const EXPLICIT_SCHEME_RE = /^[a-zA-Z][a-zA-Z0-9+.-]*:/;
 
 function sanitizeUrlPart(part: string): string {
-  return part.replace(UNSAFE_URL_CHARS, "").slice(0, MAX_URL_LENGTH);
+  const cleaned = part.replace(UNSAFE_URL_CHARS, "").slice(0, MAX_URL_LENGTH);
+  if (!cleaned || cleaned.startsWith("//")) return "";
+  if (EXPLICIT_SCHEME_RE.test(cleaned)) {
+    try {
+      const parsed = new URL(cleaned);
+      if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return "";
+    } catch {
+      return "";
+    }
+  }
+  return cleaned;
 }
 
 /** 规范化 `lightUrl|darkUrl`，清理两段 URL 并折叠相同值。 */
@@ -247,7 +258,7 @@ export function applyBackgroundCache(
   }
   const dark = appearance === "dark";
   const desktop = dark ? cache.darkDesktop : cache.lightDesktop;
-  const mobile = (dark ? cache.darkMobile : cache.lightMobile) || desktop;
+  const mobile = dark ? cache.darkMobile : cache.lightMobile;
   const videoState = options.videoState ?? "inactive";
   const suppressDesktopImage =
     !options.isMobile && (videoState === "loading" || videoState === "playing");

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import type uPlot from "uplot";
+import { clamp } from "@/utils/format";
 
 // 共享的图表配色。LoadChart 按指标 (cpu/memory/…) 取色，PingChart 按 task 循环取色；
 // 两者都取自这一处单一来源，避免 hex 值在两个图表间漂移。
@@ -133,7 +134,8 @@ export function buildPingTimeRangeOptions(maxHours: number | null | undefined) {
     return [...PING_TIME_RANGE_OPTIONS];
   }
   const safeMaxHours = Math.floor(maxHours);
-  return PING_TIME_RANGE_OPTIONS.filter((option) => option.value <= safeMaxHours);
+  const resolved = PING_TIME_RANGE_OPTIONS.filter((option) => option.value <= safeMaxHours);
+  return resolved.length > 0 ? resolved : [PING_TIME_RANGE_OPTIONS[0]!];
 }
 
 const GRID_CHART_DEFAULT = { w: 320, h: 132 };
@@ -193,10 +195,6 @@ export function formatChartCoverageTime(timestampSeconds: number): string {
   return `${parts.month}/${parts.day} ${parts.hour}:${parts.minute}`;
 }
 
-function clamp(value: number, min: number, max: number) {
-  return Math.min(Math.max(value, min), max);
-}
-
 function getChartTooltipPosition({
   containerWidth,
   containerHeight,
@@ -230,6 +228,41 @@ function getChartTooltipPosition({
   top = clamp(top, margin, maxTop);
 
   return { left, top };
+}
+
+export function buildChartXScale(xRange?: [number, number] | null): uPlot.Scale {
+  if (!xRange) return { time: true };
+  // 使用初始 min/max 而非常量 range() 回调，否则 uPlot 水平拖拽缩放释放后
+  // setScales() 会重新求值 range() 并把缩放范围覆盖回原区间。
+  return {
+    time: true,
+    auto: false,
+    min: xRange[0],
+    max: xRange[1],
+  };
+}
+
+export function buildChartCursor(
+  getXRange: () => [number, number] | null | undefined,
+): uPlot.Cursor {
+  return {
+    drag: { x: true, y: false },
+    bind: {
+      // 通过 uPlot 原生 cursor.bind.dblclick 接管双击复位，避免先跑一次 autoScaleX() 再跑 setScale() 导致双重重绘。
+      dblclick: (u, targ, handler) => (e) => {
+        if (e.button !== 0 || e.target !== targ) return null;
+        const range = getXRange();
+        if (range) {
+          const cursor = u.cursor as uPlot.Cursor & { _lock?: boolean };
+          if (!cursor._lock) {
+            u.setScale("x", { min: range[0], max: range[1] });
+          }
+          return null;
+        }
+        return handler(e);
+      },
+    },
+  };
 }
 
 export function buildChartTooltipHooks({

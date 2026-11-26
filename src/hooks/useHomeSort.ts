@@ -84,7 +84,7 @@ function emitChange(next: SortPref | null) {
 export interface HomeSortControlState {
   field: HomeSortField;
   direction: HomeSortDirection;
-  setField: (field: HomeSortField) => void;
+  setField: (field: HomeSortField, direction?: HomeSortDirection) => void;
   toggleDirection: () => void;
 }
 
@@ -111,9 +111,12 @@ export function useHomeSort(): HomeSortControlState {
   );
 
   const setField = useCallback(
-    (nextField: HomeSortField) => {
-      // 切到新维度时用该维度的自然方向(文本升、数值降)。
-      apply({ field: nextField, dir: HOME_SORT_NATURAL_DIRECTION[nextField] });
+    (nextField: HomeSortField, nextDirection?: HomeSortDirection) => {
+      // 切到新维度时默认用该维度的自然方向(文本升、数值降)，允许显式指定方向。
+      apply({
+        field: nextField,
+        dir: nextDirection ?? HOME_SORT_NATURAL_DIRECTION[nextField],
+      });
     },
     [apply],
   );

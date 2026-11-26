@@ -7,6 +7,7 @@ import {
   normalizeHomeGroupOrder,
   normalizeHomeRegionOrder,
   sortHomeGroupOptions,
+  summarizeHomeOverview,
 } from "@/utils/homeNodes";
 
 function node(partial: Partial<HomeNodeSummary> & Pick<HomeNodeSummary, "uuid">): HomeNodeSummary {
@@ -36,6 +37,44 @@ describe("home node helpers", () => {
     ).toEqual(["US 美国", "HK 香港"]);
   });
 
+  it("summarizes live bandwidth from online nodes only while retaining offline cumulative traffic", () => {
+    expect(
+      summarizeHomeOverview([
+        node({
+          uuid: "online-1",
+          online: true,
+          netUp: 1_000,
+          netDown: 2_000,
+          trafficUp: 100,
+          trafficDown: 200,
+        }),
+        node({
+          uuid: "offline-1",
+          online: false,
+          netUp: 50_000,
+          netDown: 80_000,
+          trafficUp: 300,
+          trafficDown: 400,
+        }),
+        node({
+          uuid: "unknown-1",
+          online: null,
+          netUp: 9_000,
+          netDown: 9_000,
+          trafficUp: 50,
+          trafficDown: 60,
+        }),
+      ]),
+    ).toEqual({
+      totalNodes: 3,
+      onlineNodes: 1,
+      offlineNodes: 1,
+      netUp: 1_000,
+      netDown: 2_000,
+      trafficUp: 450,
+      trafficDown: 660,
+    });
+  });
 });
 
 describe("home group ordering", () => {

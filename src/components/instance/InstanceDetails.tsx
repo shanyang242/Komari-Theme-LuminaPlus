@@ -43,7 +43,9 @@ export function InstanceDetails({
 
   if (!meta || !metrics) return null;
 
-  const isOnline = metrics.online;
+  const isOnline = metrics.online === true;
+  const isOffline = metrics.online === false;
+  const statusLabel = isOnline ? "在线" : isOffline ? "离线" : "状态未知";
   const uptime = formatUptimeDays(metrics.uptime);
   // 按 traffic_limit_type (max/sum/up/down/min) 归并上下行，和卡片、后端保持一致——
   // 对非 "sum" 节点直接把上下行相加是错的。
@@ -63,13 +65,15 @@ export function InstanceDetails({
       title={panelTitle}
       titleAction={<InstanceSwitcher currentUuid={uuid} />}
       description={
-        isOnline ? undefined : "节点当前离线，以下展示最近一次上报的缓存数据。"
+        isOffline
+          ? "节点当前离线，实时运行指标已清零，保留累计流量与历史记录。"
+          : undefined
       }
     >
       <div className="instance-info-groups">
         <div className="instance-info-group">
           <div className="instance-info-group-title">系统</div>
-          <InfoRow label="状态" value={isOnline ? "在线" : "离线"} />
+          <InfoRow label="状态" value={statusLabel} />
           <InfoRow
             label="CPU"
             value={`${meta.cpu_name || "—"}${meta.cpu_cores > 0 ? ` (x${meta.cpu_cores})` : ""}`}
@@ -105,10 +109,10 @@ export function InstanceDetails({
         <div className="instance-info-group">
           <div className="instance-info-group-title">网络</div>
           <InfoRow
-            label={isOnline ? "实时网络" : "缓存网络"}
+            label="实时网络"
             value={`↑ ${formatBytes(metrics.netUp)}/s · ↓ ${formatBytes(metrics.netDown)}/s`}
           />
-          <InfoRow label={isOnline ? "最近更新" : "最后上报"} value={lastUpdated} />
+          <InfoRow label={isOffline ? "最后上报" : "最近更新"} value={lastUpdated} />
           <InfoRow
             label="今日流量"
             value={

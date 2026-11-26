@@ -4,6 +4,50 @@ import { getDisplayRegionCode, normalizeRegionCode } from "@/utils/geo";
 export const HOME_ALL_GROUP = "__all__";
 export const HOME_ALL_REGION = "__all__";
 
+export interface HomeOverview {
+  totalNodes: number;
+  onlineNodes: number;
+  offlineNodes: number;
+  trafficUp: number;
+  trafficDown: number;
+  netUp: number;
+  netDown: number;
+}
+
+/** 汇总首页总览：离线或状态未知节点不计入实时带宽，累计流量仍照常计入。 */
+export function summarizeHomeOverview(
+  nodes: readonly HomeNodeSummary[],
+): HomeOverview {
+  let onlineNodes = 0;
+  let offlineNodes = 0;
+  let trafficUp = 0;
+  let trafficDown = 0;
+  let netUp = 0;
+  let netDown = 0;
+
+  for (const node of nodes) {
+    if (node.online === true) {
+      onlineNodes += 1;
+      netUp += node.netUp;
+      netDown += node.netDown;
+    } else if (node.online === false) {
+      offlineNodes += 1;
+    }
+    trafficUp += node.trafficUp;
+    trafficDown += node.trafficDown;
+  }
+
+  return {
+    totalNodes: nodes.length,
+    onlineNodes,
+    offlineNodes,
+    trafficUp,
+    trafficDown,
+    netUp,
+    netDown,
+  };
+}
+
 export interface HomeRegionOption {
   /** 展示地区代码(如 "US"),同时用作国旗输入与筛选键;无法识别的地区归入 "UN"。 */
   code: string;

@@ -152,6 +152,55 @@ function resolveTrafficTotals(previous: NodeMetrics, nextUp: number, nextDown: n
   };
 }
 
+function clearOfflineLiveMetrics(
+  metrics: NodeMetrics,
+  info: NodeInfo,
+  realtime: NodeRealtime | null,
+): NodeMetrics {
+  const updatedAt = realtime ? toTimestamp(realtime.updated_at) : 0;
+  const trafficTotals = realtime
+    ? resolveTrafficTotals(
+        metrics,
+        realtime.network?.totalUp ?? 0,
+        realtime.network?.totalDown ?? 0,
+      )
+    : { up: metrics.trafficUp, down: metrics.trafficDown };
+
+  return {
+    online: false,
+    cpuPct: 0,
+    ramUsed: 0,
+    ramTotal:
+      realtime && realtime.ram.total > 0
+        ? realtime.ram.total
+        : metrics.ramTotal || info.mem_total,
+    ramPct: 0,
+    swapUsed: 0,
+    swapTotal:
+      realtime && realtime.swap.total > 0
+        ? realtime.swap.total
+        : metrics.swapTotal || info.swap_total,
+    diskUsed: 0,
+    diskTotal:
+      realtime && realtime.disk.total > 0
+        ? realtime.disk.total
+        : metrics.diskTotal || info.disk_total,
+    diskPct: 0,
+    netUp: 0,
+    netDown: 0,
+    trafficUp: trafficTotals.up,
+    trafficDown: trafficTotals.down,
+    uptime: 0,
+    load1: 0,
+    load5: 0,
+    load15: 0,
+    process: 0,
+    connectionsTcp: 0,
+    connectionsUdp: 0,
+    updatedAt: updatedAt > 0 ? updatedAt : metrics.updatedAt,
+  };
+}
+
 function mergeRealtime(
   metrics: NodeMetrics,
   rt: NodeRealtime,
@@ -606,6 +655,23 @@ function normalizeRealtime(
   };
 }
 
+// 离线节点可能仍带后端缓存的最后一次快照或完全缺席：实时运行指标一律清零，
+// 仅保留硬件总量、累计流量与最后上报时间。
+export function resolveLatestNodeMetrics(
+  prev: NodeMetrics,
+  meta: NodeInfo,
+  rawRecord: unknown,
+): NodeMetrics {
+  const online = resolveOnline(rawRecord);
+  const realtime = normalizeRealtime(rawRecord, meta, prev);
+
+  if (!online) {
+    return clearOfflineLiveMetrics(prev, meta, realtime);
+  }
+
+  return realtime ? mergeRealtime(prev, realtime, true) : { ...prev, online: true };
+}
+
 function applyLatestStatus(records: Record<string, unknown>) {
   const touchedMetrics = new Set<string>();
   const touchedTrafficTrends = new Set<string>();
@@ -618,11 +684,7 @@ function applyLatestStatus(records: Record<string, unknown>) {
     const prev = state.metricsByUuid[uuid];
     if (!meta || !prev) continue;
     const rawRecord = records[uuid];
-    const online = resolveOnline(rawRecord);
-    const realtime = normalizeRealtime(rawRecord, meta, prev);
-    const merged = realtime
-      ? mergeRealtime(prev, realtime, online)
-      : { ...prev, online };
+    const merged = resolveLatestNodeMetrics(prev, meta, rawRecord);
 
     if (!shallowEqualMetrics(prev, merged)) {
       if (nextMetricsByUuid === state.metricsByUuid) {
@@ -1081,6 +1143,7 @@ export function getHomeNodeSummariesSnapshot(): HomeNodeSummary[] {
       const meta = state.metaByUuid[uuid];
       if (!meta) return null;
       const metrics = state.metricsByUuid[uuid];
+      const isOnline = metrics?.online === true;
       return {
         uuid,
         group: String(meta.group || "").trim(),
@@ -1090,8 +1153,8 @@ export function getHomeNodeSummariesSnapshot(): HomeNodeSummary[] {
         online: metrics?.online ?? null,
         trafficUp: metrics?.trafficUp ?? 0,
         trafficDown: metrics?.trafficDown ?? 0,
-        netUp: metrics?.netUp ?? 0,
-        netDown: metrics?.netDown ?? 0,
+        netUp: isOnline ? (metrics?.netUp ?? 0) : 0,
+        netDown: isOnline ? (metrics?.netDown ?? 0) : 0,
       };
     })
     .filter((item): item is HomeNodeSummary => Boolean(item));

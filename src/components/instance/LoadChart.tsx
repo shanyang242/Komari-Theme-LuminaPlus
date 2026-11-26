@@ -408,7 +408,7 @@ export function LoadChart({
   );
 
   useEffect(() => {
-    if (!active || !isRealtime || !node) return;
+    if (!active || !isRealtime || !node || node.online !== true) return;
     const point = pointFromNode(node);
     setRealtimePoints((prev) => {
       const last = prev[prev.length - 1];

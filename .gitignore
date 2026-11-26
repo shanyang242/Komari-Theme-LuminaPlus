@@ -16,6 +16,8 @@ Thumbs.db
 .vscode/
 .claude/
 .codex
+.agent/
+.agents/
 .env
 .env.*
 !.env.example

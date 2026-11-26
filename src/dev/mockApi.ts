@@ -212,7 +212,33 @@ function latestStatus() {
     nodes.map((node, index) => {
       const [cpu, load, swapPct, diskPct, , up, down, totalUp, totalDown, online] =
         statusProfiles[index];
-      if (!online) return [node.uuid, { online: false }];
+      if (!online) {
+        return [
+          node.uuid,
+          {
+            online: false,
+            cpu: 14,
+            ram: (node.mem_total * 28) / 100,
+            ram_total: node.mem_total,
+            swap: (node.swap_total * 4) / 100,
+            swap_total: node.swap_total,
+            load: 0.42,
+            load5: 0.36,
+            load15: 0.28,
+            disk: (node.disk_total * diskPct) / 100,
+            disk_total: node.disk_total,
+            net_out: 6_400_000,
+            net_in: 19_200_000,
+            net_total_up: totalUp,
+            net_total_down: totalDown,
+            uptime: (index + 3) * 864_000,
+            process: 112,
+            connections: 94,
+            connections_udp: 8,
+            updated_at: now - 15 * 60_000,
+          },
+        ];
+      }
       const memoryPct = index === 2 ? 88 : 36 + index * 7;
       return [
         node.uuid,

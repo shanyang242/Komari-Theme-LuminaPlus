@@ -28,6 +28,8 @@ import {
   HOME_ALL_GROUP,
   HOME_ALL_REGION,
   sortHomeGroupOptions,
+  summarizeHomeOverview,
+  type HomeOverview,
 } from "@/utils/homeNodes";
 import { getDisplayRegionCode } from "@/utils/geo";
 import { useHomeSort } from "@/hooks/useHomeSort";
@@ -78,16 +80,6 @@ type IdleCapableWindow = Window & {
   requestIdleCallback?: (callback: () => void, options?: { timeout: number }) => number;
   cancelIdleCallback?: (handle: number) => void;
 };
-
-interface HomeOverview {
-  totalNodes: number;
-  onlineNodes: number;
-  offlineNodes: number;
-  trafficUp: number;
-  trafficDown: number;
-  netUp: number;
-  netDown: number;
-}
 
 function formatCompactBytes(value: number): string {
   const [amount, unit = "B"] = formatBytes(value).split(" ");
@@ -390,32 +382,10 @@ export function NodeGrid() {
     for (const node of visibleMeta) map.set(node.uuid, node.name?.trim() || node.uuid);
     return map;
   }, [visibleMeta]);
-  const overview = useMemo<HomeOverview>(() => {
-    let onlineNodes = 0;
-    let offlineNodes = 0;
-    let trafficUp = 0;
-    let trafficDown = 0;
-    let netUp = 0;
-    let netDown = 0;
-    for (const node of visibleNodes) {
-      if (node.online === true) onlineNodes += 1;
-      else if (node.online === false) offlineNodes += 1;
-      trafficUp += node.trafficUp;
-      trafficDown += node.trafficDown;
-      netUp += node.netUp;
-      netDown += node.netDown;
-    }
-
-    return {
-      totalNodes: visibleNodes.length,
-      onlineNodes,
-      offlineNodes,
-      trafficUp,
-      trafficDown,
-      netUp,
-      netDown,
-    };
-  }, [visibleNodes]);
+  const overview = useMemo<HomeOverview>(
+    () => summarizeHomeOverview(visibleNodes),
+    [visibleNodes],
+  );
   const showHomeOverview = themeSettings.isReady && themeSettings.showHomeOverview;
   const showTrafficPopover = themeSettings.isReady && themeSettings.showTodayTrafficPopover;
   const hasNodes = visibleMeta.length > 0;

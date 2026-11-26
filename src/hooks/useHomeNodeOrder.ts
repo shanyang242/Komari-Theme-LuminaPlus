@@ -43,6 +43,10 @@ export function useHomeNodeOrder({
     const seen = new Set<string>();
     for (const node of nodes) {
       seen.add(node.uuid);
+      if (node.online !== true) {
+        ring.delete(node.uuid);
+        continue;
+      }
       const total = (node.netUp || 0) + (node.netDown || 0);
       const arr = ring.get(node.uuid);
       if (arr) {

@@ -186,7 +186,7 @@ describe("RPC2Client", () => {
     client.close();
   });
 
-  it("reserves HTTP fallback budget on silent OPEN WebSocket and bypasses dead socket on subsequent calls", async () => {
+  it("uses an independent health probe before closing a silent socket and bypasses it while probing", async () => {
     const fetchMock = vi.fn(async () =>
       new Response(JSON.stringify({ jsonrpc: "2.0", id: 1, result: "from-http" }), {
         status: 200,
@@ -198,19 +198,72 @@ describe("RPC2Client", () => {
     const ws = MockWebSocket.instances[0]!;
     ws.emitOpen();
 
-    // 第 1 次调用：WS 保持 OPEN 但不回包，应在半数预算超时后关闭僵尸连接并用剩余预算回退 HTTP 成功
+    // 单次请求超时只触发独立探测，当前请求仍按原预算回退 HTTP。
     const first = client.call("common:getNodes", {}, { timeout: 2_000 });
     await vi.advanceTimersByTimeAsync(1_000);
     await expect(first).resolves.toBe("from-http");
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(ws.readyState).toBe(MockWebSocket.CLOSED);
+    expect(ws.readyState).toBe(MockWebSocket.OPEN);
+    expect(JSON.parse(ws.sent[1]!).method).toBe("rpc.ping");
 
-    // 第 2 次调用：应直接走 HTTP，不再卡在失效 WS 上，也不破坏重连退避
+    // 探测期间的新调用直接走 HTTP，已有连接尚未被关闭。
     const second = client.call("common:getNodes", {}, { timeout: 2_000 });
     await expect(second).resolves.toBe("from-http");
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(MockWebSocket.instances).toHaveLength(1);
 
+    await vi.advanceTimersByTimeAsync(9_999);
+    expect(ws.readyState).toBe(MockWebSocket.OPEN);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(ws.readyState).toBe(MockWebSocket.CLOSED);
+    await vi.advanceTimersByTimeAsync(3_000);
+    expect(MockWebSocket.instances).toHaveLength(2);
+
+    client.close();
+  });
+
+  it("preserves a concurrent long-budget WS request when a 500ms call times out after 250ms", async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ result: "http" })));
+    globalThis.fetch = fetchMock as typeof fetch;
+    const client = new RPC2Client();
+    const ws = MockWebSocket.instances[0]!;
+    ws.emitOpen();
+    const normal = client.call("normal", {}, { timeout: 8_000 });
+    const normalId = JSON.parse(ws.sent[0]!).id;
+    const short = client.call("short", {}, { timeout: 500 });
+
+    await vi.advanceTimersByTimeAsync(250);
+    await expect(short).resolves.toBe("http");
+    expect(ws.readyState).toBe(MockWebSocket.OPEN);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    ws.emitMessage(JSON.stringify({ id: normalId, result: "ws" }));
+    await expect(normal).resolves.toBe("ws");
+
+    const probeId = JSON.parse(ws.sent[2]!).id;
+    ws.emitMessage(JSON.stringify({ id: probeId, result: "pong" }));
+    await vi.advanceTimersByTimeAsync(0);
+    const next = client.call("next");
+    const nextId = JSON.parse(ws.sent[3]!).id;
+    ws.emitMessage(JSON.stringify({ id: nextId, result: "still-ws" }));
+    await expect(next).resolves.toBe("still-ws");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(ws.readyState).toBe(MockWebSocket.OPEN);
+    client.close();
+  });
+
+  it("treats an RPC error from the health probe as evidence that the socket is responsive", async () => {
+    globalThis.fetch = vi.fn(async () => new Response(JSON.stringify({ result: "http" }))) as typeof fetch;
+    const client = new RPC2Client();
+    const ws = MockWebSocket.instances[0]!;
+    ws.emitOpen();
+    const request = client.call("short", {}, { timeout: 500 });
+    await vi.advanceTimersByTimeAsync(250);
+    await request;
+    const probeId = JSON.parse(ws.sent[1]!).id;
+    ws.emitMessage(JSON.stringify({ id: probeId, error: { code: -32601, message: "not found" } }));
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(ws.readyState).toBe(MockWebSocket.OPEN);
     client.close();
   });
 

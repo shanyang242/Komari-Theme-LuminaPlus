@@ -167,6 +167,15 @@ describe("reconcilePingMetricStats", () => {
 });
 
 describe("pingTasksFromMetricStats", () => {
+  it("weights all nodes by sample count in the fallback task list regardless of their order", () => {
+    const stats = [
+      { client: "a", taskId: 7, interval: 60, total: 100, valid: 90, loss: 10 },
+      { client: "b", taskId: 7, interval: 60, total: 10, valid: 0, loss: 100 },
+    ] as PingTaskStats[];
+    expect(pingTasksFromMetricStats(stats)[0].loss).toBeCloseTo(20 / 110 * 100);
+    expect(pingTasksFromMetricStats([...stats].reverse())[0].loss).toBeCloseTo(20 / 110 * 100);
+  });
+
   it("deduplicates per-client stats into one task and preserves assigned clients", () => {
     const base: PingTaskStats = {
       client: CLIENT,

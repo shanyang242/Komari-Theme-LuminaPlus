@@ -207,9 +207,32 @@ export function reconcilePingMetricStats(
   });
 }
 
+/** 同一任务的多节点丢包率按真实样本数加权，公开任务与统计回退路径共用。 */
+export function aggregatePingTaskLoss(stats: PingTaskStats[]): Map<number, number> {
+  const totals = new Map<number, { total: number; lost: number; singleLoss: number }>();
+  for (const stat of stats) {
+    const total = Math.max(0, stat.total);
+    const lost = Math.max(0, total - Math.max(0, stat.valid));
+    const existing = totals.get(stat.taskId);
+    if (existing) {
+      existing.total += total;
+      existing.lost += lost;
+    } else {
+      totals.set(stat.taskId, { total, lost, singleLoss: stat.loss });
+    }
+  }
+  return new Map(
+    [...totals].map(([taskId, value]) => [
+      taskId,
+      value.total > 0 ? (value.lost / value.total) * 100 : value.singleLoss,
+    ]),
+  );
+}
+
 /** 把按节点返回的统计行去重成旧 UI 使用的任务清单。 */
 export function pingTasksFromMetricStats(stats: PingTaskStats[]): PingTask[] {
   const tasks = new Map<number, PingTask>();
+  const lossByTask = aggregatePingTaskLoss(stats);
   for (const stat of stats) {
     const existing = tasks.get(stat.taskId);
     if (existing) {
@@ -222,7 +245,7 @@ export function pingTasksFromMetricStats(stats: PingTaskStats[]): PingTask[] {
       id: stat.taskId,
       interval: stat.interval || 60,
       name: stat.name || `任务 #${stat.taskId}`,
-      loss: stat.loss,
+      loss: lossByTask.get(stat.taskId) ?? stat.loss,
       clients: stat.client ? [stat.client] : [],
       type: stat.type || "icmp",
       target: "",

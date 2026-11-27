@@ -1,10 +1,48 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { fetchWithTimeout, withTimeoutSignal } from "@/utils/abort";
+import { fetchWithTimeout, waitForSharedRequest, withTimeoutSignal } from "@/utils/abort";
 
 afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
   vi.useRealTimers();
+});
+
+describe("waitForSharedRequest", () => {
+  it("does not start a request for an already cancelled or exhausted caller", async () => {
+    const start = vi.fn(() => Promise.reject(new Error("must not start")));
+    const controller = new AbortController();
+    controller.abort();
+    await expect(waitForSharedRequest(start, controller.signal)).rejects.toMatchObject({ name: "AbortError" });
+    await expect(waitForSharedRequest(start, undefined, 0)).rejects.toMatchObject({ name: "TimeoutError" });
+    await expect(waitForSharedRequest(start, undefined, -1)).rejects.toMatchObject({ name: "TimeoutError" });
+    expect(start).not.toHaveBeenCalled();
+  });
+
+  it("cancels one waiter without cancelling a shared request needed by another", async () => {
+    let resolve!: (value: number) => void;
+    const shared = new Promise<number>((done) => { resolve = done; });
+    const controller = new AbortController();
+    const cancelled = waitForSharedRequest(() => shared, controller.signal);
+    const other = waitForSharedRequest(() => shared);
+    const assertion = expect(cancelled).rejects.toMatchObject({ name: "AbortError" });
+    controller.abort();
+    await assertion;
+    resolve(42);
+    await expect(other).resolves.toBe(42);
+  });
+
+  it("consumes a late shared rejection after the caller has timed out", async () => {
+    vi.useFakeTimers();
+    let reject!: (error: Error) => void;
+    const shared = new Promise<never>((_done, fail) => { reject = fail; });
+    const waiting = waitForSharedRequest(() => shared, undefined, 50);
+    const assertion = expect(waiting).rejects.toMatchObject({ name: "TimeoutError" });
+    await vi.advanceTimersByTimeAsync(50);
+    await assertion;
+    reject(new Error("late shared failure"));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(vi.getTimerCount()).toBe(0);
+  });
 });
 
 describe("fetchWithTimeout", () => {

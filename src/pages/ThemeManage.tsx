@@ -51,6 +51,7 @@ import {
   DEFAULT_BACKGROUND_VIDEO_URL,
   type BackgroundPosition,
   type BackgroundSize,
+  isBackgroundUrlValid,
   normalizeBackgroundAlignment,
   normalizeBackgroundUrl,
   normalizeBackgroundVideoUrl,
@@ -72,7 +73,9 @@ import {
 } from "@/utils/cost";
 import { normalizeNodeIdentityList } from "@/utils/nodeIdentity";
 import {
+  hasInvalidMerchantLinks,
   normalizeNodeMerchantLinks,
+  sanitizeMerchantUrl,
   type NodeMerchantLinks,
 } from "@/utils/merchantLinks";
 import { normalizeTrafficResetDays } from "@/utils/trafficReset";
@@ -1061,11 +1064,16 @@ export function ThemeManage() {
   const [accessRevoked, setAccessRevoked] = useState(false);
   const savingDraftRef = useRef<ThemeDraft | null>(null);
   const editVersionRef = useRef(0);
+  const draftRef = useRef(draft);
+  useLayoutEffect(() => {
+    draftRef.current = draft;
+  }, [draft]);
 
-  // 单字段更新收口,所有表单控件都走它。值未变时原样返回 prev,保留旧的独立 useState
-  // 在同值 set 时不触发重渲染的行为。
+  // 同值失焦不计作新编辑；同步更新引用也能识别同一批次内连续修改同一字段。
   const patch = useCallback(
     <K extends keyof ThemeDraft>(key: K, value: ThemeDraft[K]) => {
+      if (Object.is(draftRef.current[key], value)) return;
+      draftRef.current = { ...draftRef.current, [key]: value };
       editVersionRef.current += 1;
       setDraft((prev) => (Object.is(prev[key], value) ? prev : { ...prev, [key]: value }));
     },
@@ -1307,6 +1315,14 @@ export function ThemeManage() {
   );
   const draftCostRateApiUrlInvalid =
     draft.costRateApiUrl.trim() !== "" && !isCostRateApiUrlValid(draft.costRateApiUrl.trim());
+  const draftMerchantLinksInvalid = hasInvalidMerchantLinks(draft.nodeMerchantLinks);
+  const draftBackgroundImageInvalid = !isBackgroundUrlValid(draft.backgroundImage);
+  const draftBackgroundImageMobileInvalid = !isBackgroundUrlValid(draft.backgroundImageMobile);
+  const draftUrlValidationError = draftMerchantLinksInvalid
+    ? "商家官网或图标地址格式有误，请在商家跳转设置中修正后保存。"
+    : draftBackgroundImageInvalid || draftBackgroundImageMobileInvalid
+      ? "背景图片地址格式有误，请修正后保存。"
+      : null;
   const draftMultiPingInvalid =
     draft.enableHomepageMultiPing &&
     (draft.homepageMultiPingTaskSlots.some((id) => id == null) ||
@@ -1402,9 +1418,10 @@ export function ThemeManage() {
   const isDirty =
     draftSignature !== seededSignature ||
     costRateApiUrlDirty ||
+    Boolean(draftUrlValidationError) ||
     videoInputInvalid;
   const draftSaveInvalid =
-    draftCostRateApiUrlInvalid || videoInputInvalid || draftMultiPingInvalid;
+    draftCostRateApiUrlInvalid || Boolean(draftUrlValidationError) || videoInputInvalid || draftMultiPingInvalid;
   const saveDisabled = !isDirty || draftSaveInvalid;
 
   const adminAccessDenied =
@@ -1451,7 +1468,7 @@ export function ThemeManage() {
   const merchantConfiguredNodeCount = useMemo(
     () =>
       sortedClients.filter((client) =>
-        Boolean(draft.nodeMerchantLinks[client.uuid]?.url.trim()),
+        Boolean(sanitizeMerchantUrl(draft.nodeMerchantLinks[client.uuid]?.url)),
       ).length,
     [draft.nodeMerchantLinks, sortedClients],
   );
@@ -1681,7 +1698,7 @@ export function ThemeManage() {
         </div>
       </header>
 
-      {(message || error || adminError) && (
+      {(message || error || draftUrlValidationError || adminError) && (
         <div className="flex flex-col gap-3">
           {message && (
             <div
@@ -1692,12 +1709,12 @@ export function ThemeManage() {
               {message}
             </div>
           )}
-          {error && (
+          {(error || draftUrlValidationError) && (
             <div
               role="alert"
               className="rounded-[12px] border border-[color-mix(in_srgb,var(--status-offline)_28%,transparent)] bg-[color-mix(in_srgb,var(--status-offline)_11%,var(--surface))] px-4 py-3 text-[13px] text-[var(--status-offline)]"
             >
-              {error}
+              {error || draftUrlValidationError}
             </div>
           )}
           {adminError && (
@@ -1881,8 +1898,15 @@ export function ThemeManage() {
                 value={draft.backgroundImage}
                 onChange={(event) => patch("backgroundImage", event.target.value)}
                 placeholder="https://example.com/bg.webp"
+                aria-invalid={draftBackgroundImageInvalid}
+                aria-describedby={draftBackgroundImageInvalid ? "background-image-error" : undefined}
                 className="surface-inset w-full px-3 py-2 text-[13px] outline-none"
               />
+              {draftBackgroundImageInvalid && (
+                <span id="background-image-error" role="alert" className="text-[12px] text-[var(--status-offline)]">
+                  请使用 HTTP(S) 图片地址或站内路径；特殊字符需编码，不支持 // 地址或内联图片。
+                </span>
+              )}
               <span className="text-[11px] text-[var(--text-tertiary)]">
                 留空则不显示背景图；可用 <code>浅色图|深色图</code> 分别设置两种外观。
               </span>
@@ -1895,8 +1919,15 @@ export function ThemeManage() {
                 value={draft.backgroundImageMobile}
                 onChange={(event) => patch("backgroundImageMobile", event.target.value)}
                 placeholder="留空则沿用桌面端背景图"
+                aria-invalid={draftBackgroundImageMobileInvalid}
+                aria-describedby={draftBackgroundImageMobileInvalid ? "background-mobile-image-error" : undefined}
                 className="surface-inset w-full px-3 py-2 text-[13px] outline-none"
               />
+              {draftBackgroundImageMobileInvalid && (
+                <span id="background-mobile-image-error" role="alert" className="text-[12px] text-[var(--status-offline)]">
+                  请使用 HTTP(S) 图片地址或站内路径；特殊字符需编码，不支持 // 地址或内联图片。
+                </span>
+              )}
               <span className="text-[11px] text-[var(--text-tertiary)]">
                 屏宽不超过 720px 时生效；同样支持 <code>浅色图|深色图</code>。
               </span>
@@ -2282,7 +2313,7 @@ export function ThemeManage() {
             disabled={clientsLoading || Boolean(clientsError)}
             saving={saving}
             saveDisabled={saveDisabled}
-            saveError={error}
+            saveError={error || draftUrlValidationError}
             onChange={patchNodeMerchantLinks}
             onSave={handleSave}
           />
@@ -2333,7 +2364,7 @@ export function ThemeManage() {
           disabled={clientsLoading || Boolean(clientsError)}
           saving={saving}
           saveDisabled={saveDisabled}
-          saveError={error}
+          saveError={error || draftUrlValidationError}
           onChange={patchTrafficResetDays}
           onSave={handleSave}
         />
@@ -2589,7 +2620,7 @@ export function ThemeManage() {
                   fakePingForUnbound={draft.fakePingForUnbound}
                   disabled={draftMultiPingInvalid || clientsLoading || tasksLoading}
                   saving={saving}
-                  saveError={error}
+                  saveError={error || draftUrlValidationError}
                   saveDisabled={saveDisabled}
                   onChange={patchNodeMultiPingTaskIds}
                   onSave={handleSave}

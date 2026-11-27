@@ -39,11 +39,12 @@ export function AppShell() {
   const isHomeDashboard =
     normalizedPath === "/" && new URLSearchParams(search).get("view") !== "theme-manage";
   const pullRefreshActive = isDataRoute && (normalizedPath !== "/" || isHomeDashboard);
-  const canHydrateHome =
-    isHomeDashboard && !isCheckingAccess && !accessError && !isPrivateVisitor;
-  const homeStoreStatus = useNodeStoreStatus(canHydrateHome);
+  // 外层跨数据路由保活，懒加载目标页时也不会因暂时没有页面订阅者而清空节点与趋势。
+  const canRetainNodeStore =
+    pullRefreshActive && !isCheckingAccess && !accessError && !isPrivateVisitor;
+  const homeStoreStatus = useNodeStoreStatus(canRetainNodeStore);
   const isCheckingHomeData =
-    canHydrateHome && !homeStoreStatus.hydrated && !homeStoreStatus.nodeInfoError;
+    isHomeDashboard && canRetainNodeStore && !homeStoreStatus.hydrated && !homeStoreStatus.nodeInfoError;
   const isCheckingShell = isCheckingAccess || isCheckingHomeData;
   return (
     <div className="relative flex min-h-screen flex-col">

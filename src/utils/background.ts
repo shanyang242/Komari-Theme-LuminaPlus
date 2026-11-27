@@ -46,6 +46,12 @@ export function normalizeBackgroundUrl(value: unknown): string {
   return light;
 }
 
+/** 编辑态校验每一段，避免安全归一化静默删除协议或截断输入。空段允许留空。 */
+export function isBackgroundUrlValid(value: string): boolean {
+  const parts = value.split("|").map((part) => part.trim());
+  return parts.length <= 2 && parts.every((part) => !part || sanitizeUrlPart(part) === part);
+}
+
 /** 规范化单个视频 URL，拒绝非 HTTP(S) 与非站内路径。 */
 export function normalizeBackgroundVideoUrl(value: unknown): string {
   if (typeof value !== "string") return "";

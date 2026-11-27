@@ -17,7 +17,7 @@ import {
   type PingTask,
   type PingTaskStats,
 } from "@/types/komari";
-import { fetchWithTimeout } from "@/utils/abort";
+import { fetchWithTimeout, waitForSharedRequest } from "@/utils/abort";
 import { inferHistoryIntervalSeconds } from "@/utils/historyRange";
 import {
   LOAD_LAST_AGGREGATION,
@@ -26,6 +26,7 @@ import {
   type LoadMetricSeries,
 } from "@/utils/loadMetrics";
 import {
+  aggregatePingTaskLoss,
   mergePingMetricSeries,
   pingTasksFromMetricStats,
   reconcilePingMetricStats,
@@ -417,50 +418,6 @@ function remainingRequestTimeout(deadline: number | null) {
   return deadline == null ? undefined : Math.max(0, deadline - Date.now());
 }
 
-function waitForSharedRequest<T>(
-  request: Promise<T>,
-  signal?: AbortSignal,
-  timeout?: number,
-): Promise<T> {
-  if (signal?.aborted) {
-    return Promise.reject(signal.reason ?? new DOMException("Aborted", "AbortError"));
-  }
-  if (timeout !== undefined && timeout <= 0) {
-    return Promise.reject(new DOMException("Request timed out", "TimeoutError"));
-  }
-  if (!signal && timeout === undefined) return request;
-
-  return new Promise<T>((resolve, reject) => {
-    let timer: ReturnType<typeof globalThis.setTimeout> | undefined;
-    const cleanup = () => {
-      if (timer !== undefined) globalThis.clearTimeout(timer);
-      signal?.removeEventListener("abort", onAbort);
-    };
-    const onAbort = () => {
-      cleanup();
-      reject(signal?.reason ?? new DOMException("Aborted", "AbortError"));
-    };
-
-    signal?.addEventListener("abort", onAbort, { once: true });
-    if (timeout !== undefined) {
-      timer = globalThis.setTimeout(() => {
-        cleanup();
-        reject(new DOMException("Request timed out", "TimeoutError"));
-      }, timeout);
-    }
-    request.then(
-      (value) => {
-        cleanup();
-        resolve(value);
-      },
-      (error) => {
-        cleanup();
-        reject(error);
-      },
-    );
-  });
-}
-
 async function probeMetricQueryApi() {
   try {
     // 空参数只触发参数校验，不读取指标数据；除 Method not found 外的 RPC 错误均说明方法存在。
@@ -502,7 +459,7 @@ function loadMetricQueryCapability() {
 
 function waitForMetricQueryCapability(options?: ApiCallOptions) {
   return waitForSharedRequest(
-    loadMetricQueryCapability(),
+    loadMetricQueryCapability,
     options?.signal,
     options?.timeout,
   );
@@ -592,7 +549,7 @@ function fetchPublicPingTasks() {
 
 function loadPublicPingTasks(options?: ApiCallOptions) {
   return waitForSharedRequest(
-    fetchPublicPingTasks(),
+    fetchPublicPingTasks,
     options?.signal,
     options?.timeout,
   );
@@ -839,35 +796,12 @@ async function getPingMetricData({
     ...records.map((record) => record.task_id),
     ...stats.map((stat) => stat.taskId),
   ]);
-  const lossByTask = new Map<number, { total: number; lost: number; singleLoss: number }>();
-  for (const stat of stats) {
-    const existing = lossByTask.get(stat.taskId);
-    const statTotal = Math.max(0, stat.total);
-    const statLost = Math.max(0, statTotal - Math.max(0, stat.valid));
-    if (existing) {
-      existing.total += statTotal;
-      existing.lost += statLost;
-    } else {
-      lossByTask.set(stat.taskId, {
-        total: statTotal,
-        lost: statLost,
-        singleLoss: stat.loss,
-      });
-    }
-  }
+  const lossByTask = aggregatePingTaskLoss(stats);
   const tasks = publicTasks
     ?.filter((task) =>
       taskId != null ? task.id === taskId : observedTaskIds.has(task.id),
     )
-    .map((task) => {
-      const agg = lossByTask.get(task.id);
-      const loss = agg
-        ? agg.total > 0
-          ? (agg.lost / agg.total) * 100
-          : agg.singleLoss
-        : task.loss;
-      return { ...task, loss };
-    });
+    .map((task) => ({ ...task, loss: lossByTask.get(task.id) ?? task.loss }));
   const statsTasks = pingTasksFromMetricStats(stats);
   return {
     count: records.length,

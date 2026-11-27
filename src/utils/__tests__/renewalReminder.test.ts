@@ -126,7 +126,7 @@ describe("renewal reminders", () => {
     ).toEqual(["snooze", "visible"]);
   });
 
-  it("prunes expired snoozes and obsolete dismissed cycles while preserving active offline expired cycles", () => {
+  it("prunes expired snoozes and known obsolete cycles while preserving unavailable nodes", () => {
     const activeUpcoming = node({ uuid: "node-renewed", expired_at: inDays(30) });
     const offlineExpired = node({ uuid: "node-expired", expired_at: inDays(-3), online: false });
     const activeKey = renewalCycleKey(activeUpcoming)!;
@@ -148,7 +148,7 @@ describe("renewal reminders", () => {
     );
 
     expect(pruned).toEqual({
-      dismissedCycles: [activeKey, offlineExpiredKey],
+      dismissedCycles: [activeKey, offlineExpiredKey, deletedOldKey],
       snoozedUntil: { [activeKey]: NOW + DAY_MS },
     });
   });
@@ -174,19 +174,35 @@ describe("renewal reminders", () => {
       snoozedUntil: {},
     });
 
-    // 节点列表加载后：仍在且到期日未变的 31 天过期在线节点保持忽略，已删除节点记录被清理
+    // 列表可能过滤了其他节点，加载后仍不能凭缺席删除其记录。
     const afterNodesLoaded = pruneRenewalReminderPreferences(
       beforeNodesLoaded,
       [expired31d],
       NOW,
     );
     expect(afterNodesLoaded).toEqual({
-      dismissedCycles: [expired31dKey],
+      dismissedCycles: [expired31dKey, deleted31dKey],
       snoozedUntil: {},
     });
 
     const reminders = getRenewalReminders([expired31d], NOW, { requireOnlineForExpired: true });
     expect(reminders).toHaveLength(1);
     expect(getVisibleRenewalReminders(reminders, afterNodesLoaded, NOW)).toEqual([]);
+  });
+
+  it("preserves hidden expired dismissals and snoozes while authentication exposes only public nodes", () => {
+    const visible = node({ uuid: "public", expired_at: inDays(30) });
+    const hidden = node({ uuid: "hidden", expired_at: inDays(-2), online: true });
+    const cycleKey = renewalCycleKey(hidden)!;
+    const preferences = { dismissedCycles: [cycleKey], snoozedUntil: { [cycleKey]: NOW + DAY_MS } };
+
+    const pendingAuth = pruneRenewalReminderPreferences(preferences, [visible], NOW);
+    expect(pendingAuth).toEqual(preferences);
+    const authenticated = pruneRenewalReminderPreferences(pendingAuth, [visible, hidden], NOW);
+    expect(authenticated).toEqual(preferences);
+    expect(getVisibleRenewalReminders(getRenewalReminders([hidden], NOW), authenticated, NOW)).toEqual([]);
+
+    const renewed = pruneRenewalReminderPreferences(authenticated, [visible, { ...hidden, expired_at: inDays(30) }], NOW);
+    expect(renewed).toEqual({ dismissedCycles: [], snoozedUntil: {} });
   });
 });

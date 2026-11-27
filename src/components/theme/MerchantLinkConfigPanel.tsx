@@ -17,7 +17,11 @@ import {
   resolvePanelSelectedClient,
 } from "@/components/theme/configPanelSelection";
 import type { AdminClient } from "@/types/komari";
-import type { NodeMerchantLinks } from "@/utils/merchantLinks";
+import {
+  getMerchantLinkErrors,
+  sanitizeMerchantUrl,
+  type NodeMerchantLinks,
+} from "@/utils/merchantLinks";
 
 type ConfigFilter = "all" | "configured" | "unconfigured";
 
@@ -38,7 +42,7 @@ interface MerchantLinkConfigPanelProps {
 }
 
 function isConfigured(links: NodeMerchantLinks, uuid: string) {
-  return Boolean(links[uuid]?.url.trim());
+  return Boolean(sanitizeMerchantUrl(links[uuid]?.url));
 }
 
 export function MerchantLinkConfigPanel({
@@ -90,7 +94,8 @@ export function MerchantLinkConfigPanel({
   const selectedLink = selectedClient
     ? links[selectedClient.uuid] ?? { url: "", iconUrl: "" }
     : { url: "", iconUrl: "" };
-  const selectedConfigured = Boolean(selectedLink.url.trim());
+  const selectedConfigured = Boolean(sanitizeMerchantUrl(selectedLink.url));
+  const selectedErrors = getMerchantLinkErrors(selectedLink);
   const nodeWindowStart = Math.max(
     0,
     Math.min(
@@ -251,7 +256,7 @@ export function MerchantLinkConfigPanel({
               {visibleNodeWindow.map((client, windowIndex) => {
                 const index = nodeWindowStart + windowIndex;
                 const link = links[client.uuid];
-                const configured = Boolean(link?.url.trim());
+                const configured = isConfigured(links, client.uuid);
                 return (
                   <button
                     key={client.uuid}
@@ -353,8 +358,15 @@ export function MerchantLinkConfigPanel({
                       value={selectedLink.url}
                       onChange={(event) => patchSelected("url", event.target.value)}
                       placeholder="https://example.com"
+                      aria-invalid={Boolean(selectedErrors.url)}
+                      aria-describedby={selectedErrors.url ? "merchant-url-error" : undefined}
                       className="surface-inset w-full px-3 py-2.5 text-[13px] outline-none"
                     />
+                    {selectedErrors.url && (
+                      <span id="merchant-url-error" role="alert" className="text-[12px] text-[var(--status-offline)]">
+                        {selectedErrors.url}
+                      </span>
+                    )}
                   </label>
 
                   <label className="flex flex-col gap-2">
@@ -365,8 +377,15 @@ export function MerchantLinkConfigPanel({
                       value={selectedLink.iconUrl}
                       onChange={(event) => patchSelected("iconUrl", event.target.value)}
                       placeholder="https://example.com/logo.png"
+                      aria-invalid={Boolean(selectedErrors.iconUrl)}
+                      aria-describedby={selectedErrors.iconUrl ? "merchant-icon-url-error" : undefined}
                       className="surface-inset w-full px-3 py-2.5 text-[13px] outline-none"
                     />
+                    {selectedErrors.iconUrl && (
+                      <span id="merchant-icon-url-error" role="alert" className="text-[12px] text-[var(--status-offline)]">
+                        {selectedErrors.iconUrl}
+                      </span>
+                    )}
                     <span className="text-[11px] leading-relaxed text-[var(--text-tertiary)]">
                       不自动读取网站图标；留空或加载失败时使用默认商家图标。
                     </span>

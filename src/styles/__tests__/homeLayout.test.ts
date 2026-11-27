@@ -90,7 +90,7 @@ describe("home responsive layout contracts", () => {
   });
 
   it("keeps access and initial home hydration behind one shell-owned spinner", () => {
-    expect(appShellSource).toContain("useNodeStoreStatus(canHydrateHome)");
+    expect(appShellSource).toContain("useNodeStoreStatus(canRetainNodeStore)");
     expect(appShellSource).toContain("isCheckingAccess || isCheckingHomeData");
     expect(appShellSource).toContain("isCheckingShell ?");
     expect(routerSource).toContain('import { Home } from "@/pages/Home"');

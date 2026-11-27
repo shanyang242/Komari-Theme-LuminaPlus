@@ -36,21 +36,15 @@ export function pruneRenewalReminderPreferences(
   for (const node of nodes) {
     currentCycleByUuid.set(node.uuid, renewalCycleKey(node));
   }
-  const hasLoadedNodes = currentCycleByUuid.size > 0;
-
   const keepCycleKey = (cycleKey: string) => {
     const parsed = parseCycleKey(cycleKey);
     if (!parsed) return false;
-    if (hasLoadedNodes) {
-      if (currentCycleByUuid.has(parsed.uuid)) {
-        // 节点仍存在：仅保留其当前到期周期，已续费进入新周期的旧记录立即清理。
-        return currentCycleByUuid.get(parsed.uuid) === cycleKey;
-      }
-      // 节点已不存在于当前列表且该周期已过到期日，视为已删除节点残留。
-      return parsed.expiresAt > now;
+    if (currentCycleByUuid.has(parsed.uuid)) {
+      // 仅在当前列表能确认节点到期周期变化时，清理其旧周期记录。
+      return currentCycleByUuid.get(parsed.uuid) === cycleKey;
     }
-    // 节点列表尚未加载时不能按到期时长清理忽略记录，避免已过期超过 30 天的在线节点
-    // 在刷新页面时丢失仍有效的忽略状态；等节点加载后再按真实节点周期清理。
+    // 列表可能尚未加载，或经过鉴权/主题可见性过滤；缺席不能证明节点已删除。
+    // 保留未知节点的忽略记录，稍后提醒的时间过期仍在下方正常清理。
     return true;
   };
 

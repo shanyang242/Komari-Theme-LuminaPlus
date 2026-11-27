@@ -38,6 +38,7 @@ function extractRpcError(errorValue: unknown): RpcResponseError {
 
 const DEFAULT_TIMEOUT_MS = 30_000;
 const HEARTBEAT_INTERVAL_MS = 15_000;
+const SOCKET_PROBE_TIMEOUT_MS = 10_000;
 const RECONNECT_INTERVAL_MS = 3_000;
 const MAX_RECONNECT_INTERVAL_MS = 30_000;
 
@@ -68,6 +69,7 @@ export class RPC2Client {
   private connectPromise: Promise<void> | null = null;
   private reconnectTimer: number | null = null;
   private heartbeatTimer: number | null = null;
+  private probingSocket: WebSocket | null = null;
   private closed = false;
   private state: "disconnected" | "connecting" | "connected" | "reconnecting" | "error" =
     "disconnected";
@@ -91,7 +93,7 @@ export class RPC2Client {
     }
     const deadline = Date.now() + timeoutMs;
 
-    if (this.state === "connected") {
+    if (this.state === "connected" && this.probingSocket !== this.ws) {
       const socket = this.ws;
       // 为 HTTP 回退预留预算：总预算 > 1ms 时最多分配一半给 WS，避免半开/无响应连接
       // 耗尽全部超时导致无法回退 HTTP，同时保持总耗时仍受调用方 timeout 约束。
@@ -106,10 +108,10 @@ export class RPC2Client {
         // 服务端已拒绝的 RPC 不能再用 HTTP 重试。
         if (error instanceof RpcResponseError) throw error;
         if (options.signal?.aborted) throw error;
-        // WS 请求超时说明当前 OPEN 连接可能已半开/黑洞，关闭失效连接并转入重连退避，
-        // 使本次请求剩余预算与后续请求都能避开该失效连接直接走 HTTP 兜底。
+        // 单次请求的剩余预算可能很短，不能据此判定共享连接失效。
+        // 独立探测期间新调用走 HTTP，已有 WS 调用继续等待自己的响应。
         if (error instanceof RpcWebSocketTimeoutError && socket) {
-          this.resetUnresponsiveSocket(socket);
+          this.probeSocket(socket);
         }
         const remaining = deadline - Date.now();
         if (remaining <= 0) throw error;
@@ -435,6 +437,21 @@ export class RPC2Client {
       this.reconnectTimer = null;
       this.autoConnect();
     }, delay);
+  }
+
+  private probeSocket(socket: WebSocket) {
+    if (this.ws !== socket || this.probingSocket === socket || this.closed) return;
+    this.probingSocket = socket;
+    void this.callViaWebSocket("rpc.ping", { timestamp: Date.now() }, {
+      timeout: SOCKET_PROBE_TIMEOUT_MS,
+    })
+      .catch((error) => {
+        // RPC 错误本身也是服务端有响应的证据；只有独立健康探测超时才关闭共享连接。
+        if (error instanceof RpcWebSocketTimeoutError) this.resetUnresponsiveSocket(socket);
+      })
+      .finally(() => {
+        if (this.probingSocket === socket) this.probingSocket = null;
+      });
   }
 
   private resetUnresponsiveSocket(socket: WebSocket) {

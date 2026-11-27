@@ -45,6 +45,24 @@ export function sanitizeMerchantIconUrl(value: unknown): string {
   return trimmed;
 }
 
+export function getMerchantLinkErrors(link: NodeMerchantLink) {
+  return {
+    url: link.url.trim() && !sanitizeMerchantUrl(link.url)
+      ? "请输入以 http:// 或 https:// 开头的完整商家网址"
+      : null,
+    iconUrl: link.iconUrl.trim() && !sanitizeMerchantIconUrl(link.iconUrl)
+      ? "请输入 HTTP(S) 图片地址或站内路径，不支持 // 地址或内联图片"
+      : null,
+  };
+}
+
+export function hasInvalidMerchantLinks(links: NodeMerchantLinks): boolean {
+  return Object.values(links).some((link) => {
+    const errors = getMerchantLinkErrors(link);
+    return Boolean(errors.url || errors.iconUrl);
+  });
+}
+
 /**
  * 商家链接由站长手动配置；归一化存储形状并过滤危险协议。
  */

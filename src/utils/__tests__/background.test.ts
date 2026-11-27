@@ -5,6 +5,7 @@ import {
   computeBackgroundScrim,
   DEFAULT_BACKGROUND_ALIGNMENT,
   DEFAULT_SURFACE_OPACITY,
+  isBackgroundUrlValid,
   normalizeBackgroundAlignment,
   normalizeBackgroundUrl,
   normalizeBackgroundVideoUrl,
@@ -43,6 +44,18 @@ function installDocumentStyle(initial: Record<string, string> = {}) {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+});
+
+describe("background image draft validation", () => {
+  it.each(["", " /light.webp | /dark.webp ", "|/dark.webp", "https://example.com/a%20b.webp"])(
+    "accepts a supported background draft: %s",
+    (value) => expect(isBackgroundUrlValid(value)).toBe(true),
+  );
+
+  it.each(["//cdn.example.com/bg.webp", "data:image/png;base64,AAAA", "/light.webp|javascript:alert(1)", "/a b.webp", "/a|/b|/c"])(
+    "flags any input that would be silently dropped or changed: %s",
+    (value) => expect(isBackgroundUrlValid(value)).toBe(false),
+  );
 });
 
 describe("normalizeBackgroundUrl", () => {

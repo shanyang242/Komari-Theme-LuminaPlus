@@ -74,3 +74,44 @@ export async function fetchWithTimeout(
     cleanup();
   }
 }
+
+/** 独立取消/限时等待共享请求；已取消或预算耗尽时不启动底层请求。 */
+export function waitForSharedRequest<T>(
+  getRequest: () => Promise<T>,
+  signal?: AbortSignal,
+  timeout?: number,
+): Promise<T> {
+  if (signal?.aborted) {
+    return Promise.reject(signal.reason ?? new DOMException("Aborted", "AbortError"));
+  }
+  if (timeout !== undefined && timeout <= 0) {
+    return Promise.reject(new DOMException("Request timed out", "TimeoutError"));
+  }
+  const request = getRequest();
+  if (!signal && timeout === undefined) return request;
+
+  return new Promise<T>((resolve, reject) => {
+    let timer: ReturnType<typeof globalThis.setTimeout> | undefined;
+    const cleanup = () => {
+      if (timer !== undefined) globalThis.clearTimeout(timer);
+      signal?.removeEventListener("abort", onAbort);
+    };
+    const onAbort = () => {
+      cleanup();
+      reject(signal?.reason ?? new DOMException("Aborted", "AbortError"));
+    };
+    signal?.addEventListener("abort", onAbort, { once: true });
+    if (timeout !== undefined) {
+      timer = globalThis.setTimeout(() => {
+        cleanup();
+        reject(new DOMException("Request timed out", "TimeoutError"));
+      }, timeout);
+    }
+    // 即使等待方先取消，也始终消费共享请求的最终失败。
+    request.then(
+      (value) => { cleanup(); resolve(value); },
+      (error) => { cleanup(); reject(error); },
+    );
+    if (signal?.aborted) onAbort();
+  });
+}
